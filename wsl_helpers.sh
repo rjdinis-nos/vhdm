@@ -94,7 +94,7 @@ wsl_attach_vhd() {
         return 1
     fi
     
-    if wsl.exe --mount --vhd "$vhd_path" --bare --name "$vhd_name" 2>/dev/null; then
+    if wsl.exe --mount --vhd "$vhd_path" --bare --name "$vhd_name" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -112,7 +112,7 @@ wsl_detach_vhd() {
         return 1
     fi
     
-    if wsl.exe --unmount "$vhd_path" 2>/dev/null; then
+    if wsl.exe --unmount "$vhd_path" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -137,7 +137,7 @@ wsl_mount_vhd_by_uuid() {
         mkdir -p "$mount_point" 2>/dev/null
     fi
     
-    if sudo mount UUID="$uuid" "$mount_point" 2>/dev/null; then
+    if sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -155,7 +155,7 @@ wsl_unmount_vhd() {
         return 1
     fi
     
-    if sudo umount "$mount_point" 2>/dev/null; then
+    if sudo umount "$mount_point" >/dev/null 2>&1; then
         return 0
     else
         return 1

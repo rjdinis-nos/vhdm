@@ -12,9 +12,15 @@ VHD_UUID="57fd0f3a-4077-44b8-91ba-5abdee575293"
 MOUNT_POINT="/home/rjdinis/share"
 VHD_NAME="share"
 
+# Quiet mode flag
+QUIET=false
+
 # Function to show usage
 show_usage() {
-    echo "Usage: $0 [mount|umount|status]"
+    echo "Usage: $0 [OPTIONS] [mount|umount|status]"
+    echo
+    echo "Options:"
+    echo "  -q, --quiet  - Run in quiet mode (minimal output)"
     echo
     echo "Commands:"
     echo "  mount   - Attach and mount the VHD disk"
@@ -26,82 +32,85 @@ show_usage() {
 
 # Function to show status
 show_status() {
-    echo "========================================"
-    echo "  VHD Disk Status"
-    echo "========================================"
-    echo "  Path: $VHD_PATH"
-    echo "  UUID: $VHD_UUID"
-    echo "  Mount Point: $MOUNT_POINT"
-    echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Status"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Path: $VHD_PATH"
+    [[ "$QUIET" == "false" ]] && echo "  UUID: $VHD_UUID"
+    [[ "$QUIET" == "false" ]] && echo "  Mount Point: $MOUNT_POINT"
+    [[ "$QUIET" == "false" ]] && echo
     
     if wsl_is_vhd_attached "$VHD_UUID"; then
-        echo -e "${GREEN}[✓] VHD is attached to WSL${NC}"
-        echo
-        wsl_get_vhd_info "$VHD_UUID"
-        echo
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD is attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo
+        [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$VHD_UUID"
+        [[ "$QUIET" == "false" ]] && echo
         
         if wsl_is_vhd_mounted "$VHD_UUID"; then
-            echo -e "${GREEN}[✓] VHD is mounted${NC}"
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD is mounted${NC}"
+            [[ "$QUIET" == "true" ]] && echo "$VHD_PATH ($VHD_UUID): attached,mounted"
         else
-            echo -e "${YELLOW}[!] VHD is attached but not mounted${NC}"
+            [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is attached but not mounted${NC}"
+            [[ "$QUIET" == "true" ]] && echo "$VHD_PATH ($VHD_UUID): attached"
         fi
     else
-        echo -e "${RED}[✗] VHD is not attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo -e "${RED}[✗] VHD is not attached to WSL${NC}"
+        [[ "$QUIET" == "true" ]] && echo "$VHD_PATH ($VHD_UUID): detached"
     fi
-    echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
 }
 
 # Function to mount VHD
 mount_vhd() {
-    echo "========================================"
-    echo "  VHD Disk Mount Operation"
-    echo "========================================"
-    echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Mount Operation"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
     
     if wsl_is_vhd_attached "$VHD_UUID"; then
-        echo -e "${GREEN}[✓] VHD is already attached to WSL${NC}"
-        echo
-        wsl_get_vhd_info "$VHD_UUID"
-        echo
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD is already attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo
+        [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$VHD_UUID"
+        [[ "$QUIET" == "false" ]] && echo
         
         if wsl_is_vhd_mounted "$VHD_UUID"; then
-            echo -e "${GREEN}[✓] VHD is already mounted${NC}"
-            echo "Nothing to do."
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD is already mounted${NC}"
+            [[ "$QUIET" == "false" ]] && echo "Nothing to do."
         else
-            echo -e "${YELLOW}[!] VHD is attached but not mounted${NC}"
+            [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is attached but not mounted${NC}"
             
             # Create mount point if it doesn't exist
             if [[ ! -d "$MOUNT_POINT" ]]; then
-                echo "Creating mount point: $MOUNT_POINT"
+                [[ "$QUIET" == "false" ]] && echo "Creating mount point: $MOUNT_POINT"
                 mkdir -p "$MOUNT_POINT"
             fi
             
-            echo "Mounting VHD to $MOUNT_POINT..."
+            [[ "$QUIET" == "false" ]] && echo "Mounting VHD to $MOUNT_POINT..."
             if wsl_mount_vhd_by_uuid "$VHD_UUID" "$MOUNT_POINT"; then
-                echo -e "${GREEN}[✓] VHD mounted successfully${NC}"
+                [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD mounted successfully${NC}"
             else
                 echo -e "${RED}[✗] Failed to mount VHD${NC}"
                 exit 1
             fi
         fi
     else
-        echo -e "${YELLOW}[!] VHD is not attached to WSL${NC}"
-        echo "Attaching VHD to WSL..."
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is not attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo "Attaching VHD to WSL..."
         
         if wsl_attach_vhd "$VHD_PATH" "$VHD_NAME"; then
-            echo -e "${GREEN}[✓] VHD attached successfully${NC}"
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD attached successfully${NC}"
             sleep 2  # Give the system time to recognize the device
-            echo
+            [[ "$QUIET" == "false" ]] && echo
             
             # Create mount point if it doesn't exist
             if [[ ! -d "$MOUNT_POINT" ]]; then
-                echo "Creating mount point: $MOUNT_POINT"
+                [[ "$QUIET" == "false" ]] && echo "Creating mount point: $MOUNT_POINT"
                 mkdir -p "$MOUNT_POINT"
             fi
             
-            echo "Mounting VHD to $MOUNT_POINT..."
+            [[ "$QUIET" == "false" ]] && echo "Mounting VHD to $MOUNT_POINT..."
             if wsl_mount_vhd_by_uuid "$VHD_UUID" "$MOUNT_POINT"; then
-                echo -e "${GREEN}[✓] VHD mounted successfully${NC}"
+                [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD mounted successfully${NC}"
             else
                 echo -e "${RED}[✗] Failed to mount VHD${NC}"
                 exit 1
@@ -112,62 +121,78 @@ mount_vhd() {
         fi
     fi
 
-    echo
-    wsl_get_vhd_info "$VHD_UUID"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$VHD_UUID"
     
-    echo
-    echo "========================================"
-    echo "  Mount operation completed"
-    echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Mount operation completed"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    
+    if [[ "$QUIET" == "true" ]]; then
+        if wsl_is_vhd_mounted "$VHD_UUID"; then
+            echo "$VHD_PATH ($VHD_UUID): attached,mounted"
+        else
+            echo "$VHD_PATH ($VHD_UUID): mount failed"
+        fi
+    fi
 }
 
 # Function to unmount VHD
 umount_vhd() {
-    echo "========================================"
-    echo "  VHD Disk Unmount Operation"
-    echo "========================================"
-    echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Unmount Operation"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
     
     if ! wsl_is_vhd_attached "$VHD_UUID"; then
-        echo -e "${YELLOW}[!] VHD is not attached to WSL${NC}"
-        echo "Nothing to do."
-        echo "========================================"
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is not attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo "Nothing to do."
+        [[ "$QUIET" == "false" ]] && echo "========================================"
         return 0
     fi
     
-    echo -e "${BLUE}[i] VHD is attached to WSL${NC}"
-    echo
+    [[ "$QUIET" == "false" ]] && echo -e "${BLUE}[i] VHD is attached to WSL${NC}"
+    [[ "$QUIET" == "false" ]] && echo
     
     # First, unmount from filesystem if mounted
     if wsl_is_vhd_mounted "$VHD_UUID"; then
-        echo "Unmounting VHD from $MOUNT_POINT..."
+        [[ "$QUIET" == "false" ]] && echo "Unmounting VHD from $MOUNT_POINT..."
         if wsl_unmount_vhd "$MOUNT_POINT"; then
-            echo -e "${GREEN}[✓] VHD unmounted successfully${NC}"
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD unmounted successfully${NC}"
         else
             echo -e "${RED}[✗] Failed to unmount VHD${NC}"
             echo "Tip: Make sure no processes are using the mount point"
             exit 1
         fi
     else
-        echo -e "${YELLOW}[!] VHD is not mounted to filesystem${NC}"
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is not mounted to filesystem${NC}"
     fi
     
     # Then, detach from WSL
-    echo "Detaching VHD from WSL..."
+    [[ "$QUIET" == "false" ]] && echo "Detaching VHD from WSL..."
     if wsl_detach_vhd "$VHD_PATH"; then
-        echo -e "${GREEN}[✓] VHD detached successfully${NC}"
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
     else
         echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
         exit 1
     fi
 
-    echo
-    wsl_get_vhd_info "$VHD_UUID"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$VHD_UUID"
     
-    echo
-    echo "========================================"
-    echo "  Unmount operation completed"
-    echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Unmount operation completed"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    
+    if [[ "$QUIET" == "true" ]]; then
+        if ! wsl_is_vhd_attached "$VHD_UUID"; then
+            echo "$VHD_PATH ($VHD_UUID): detached"
+        else
+            echo "$VHD_PATH ($VHD_UUID): umount failed"
+        fi
+    fi
 }
 
 # Main script logic
@@ -175,8 +200,30 @@ if [[ $# -eq 0 ]]; then
     show_usage
 fi
 
-COMMAND="$1"
+# Parse options
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -q|--quiet)
+            QUIET=true
+            shift
+            ;;
+        -h|--help|help)
+            show_usage
+            ;;
+        mount|umount|unmount|status)
+            COMMAND="$1"
+            shift
+            break
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option or command '$1'${NC}"
+            echo
+            show_usage
+            ;;
+    esac
+done
 
+# Execute command
 case "$COMMAND" in
     mount)
         mount_vhd
@@ -187,11 +234,8 @@ case "$COMMAND" in
     status)
         show_status
         ;;
-    -h|--help|help)
-        show_usage
-        ;;
     *)
-        echo -e "${RED}Error: Unknown command '$COMMAND'${NC}"
+        echo -e "${RED}Error: No command specified${NC}"
         echo
         show_usage
         ;;
