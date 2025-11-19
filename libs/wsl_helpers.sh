@@ -233,3 +233,175 @@ wsl_complete_unmount() {
     
     return 0
 }
+
+# Get list of block device names
+# Returns: Array of block device names
+wsl_get_block_devices() {
+    sudo lsblk -J | jq -r '.blockdevices[].name'
+}
+
+# Get list of all disk UUIDs
+# Returns: Array of UUIDs
+wsl_get_disk_uuids() {
+    sudo blkid -s UUID -o value
+}
+
+# Find UUID by mount point
+# Args: $1 - Mount point path
+# Returns: UUID if found, empty string if not found
+wsl_find_uuid_by_mountpoint() {
+    local mount_point="$1"
+    
+    if [[ -z "$mount_point" ]]; then
+        return 1
+    fi
+    
+    # Get UUID for the device mounted at the specified mount point
+    local uuid=$(lsblk -f -J | jq -r --arg MP "$mount_point" '.blockdevices[] | select(.mountpoints != null and .mountpoints != []) | select(.mountpoints[] == $MP) | .uuid' 2>/dev/null | grep -v "null" | head -n 1)
+    
+    if [[ -n "$uuid" ]]; then
+        echo "$uuid"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Find UUID by checking all attached VHDs for one matching pattern
+# This looks for dynamically attached VHDs (typically sd[d-z])
+# Returns: First non-system disk UUID found, empty if none
+wsl_find_dynamic_vhd_uuid() {
+    local all_uuids
+    all_uuids=$(wsl_get_disk_uuids)
+    
+    while IFS= read -r uuid; do
+        [[ -z "$uuid" ]] && continue
+        
+        local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+        
+        if [[ -n "$dev_name" ]]; then
+            # Look for dynamically attached disks (usually sd[d-z])
+            # Skip system disks (sda, sdb, sdc)
+            if [[ "$dev_name" =~ ^sd[d-z]$ ]]; then
+                echo "$uuid"
+                return 0
+            fi
+        fi
+    done <<< "$all_uuids"
+    
+    return 1
+}
+
+# Create a new VHD file and format it
+# Args: $1 - VHD path (Windows path format, e.g., C:/path/to/disk.vhdx)
+#       $2 - Size (e.g., 1G, 500M, 10G)
+#       $3 - Filesystem type (optional, defaults to ext4)
+#       $4 - VHD name for WSL (optional, defaults to "disk")
+# Returns: 0 on success, 1 on failure
+# Prints: The UUID of the newly created and formatted disk
+wsl_create_vhd() {
+    local vhd_path_win="$1"
+    local size="$2"
+    local fs_type="${3:-ext4}"
+    local vhd_name="${4:-disk}"
+    
+    if [[ -z "$vhd_path_win" || -z "$size" ]]; then
+        echo "Error: VHD path and size are required" >&2
+        return 1
+    fi
+    
+    # Convert Windows path to WSL path for file operations
+    local vhd_path_wsl=$(echo "$vhd_path_win" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    
+    # Check if VHD already exists
+    if [[ -e "$vhd_path_wsl" ]]; then
+        echo "Error: VHD file already exists at $vhd_path_wsl" >&2
+        return 1
+    fi
+    
+    # Create parent directory if it doesn't exist
+    local vhd_dir=$(dirname "$vhd_path_wsl")
+    if [[ ! -d "$vhd_dir" ]]; then
+        if ! mkdir -p "$vhd_dir" 2>/dev/null; then
+            echo "Error: Failed to create directory $vhd_dir" >&2
+            return 1
+        fi
+    fi
+    
+    # Ensure qemu-img is installed (check for common package managers)
+    if ! command -v qemu-img &> /dev/null; then
+        echo "Error: qemu-img is not installed. Please install it first." >&2
+        echo "  Arch/Manjaro: sudo pacman -Sy qemu-img" >&2
+        echo "  Ubuntu/Debian: sudo apt install qemu-utils" >&2
+        echo "  Fedora: sudo dnf install qemu-img" >&2
+        return 1
+    fi
+    
+    # Take snapshot of current block devices and UUIDs
+    local old_devs=($(wsl_get_block_devices))
+    local old_uuids=($(wsl_get_disk_uuids))
+    
+    # Create the VHD file
+    if ! qemu-img create -f vhdx "$vhd_path_wsl" "$size" >/dev/null 2>&1; then
+        echo "Error: Failed to create VHD file" >&2
+        return 1
+    fi
+    
+    # Attach the VHD to WSL
+    if ! wsl_attach_vhd "$vhd_path_win" "$vhd_name"; then
+        echo "Error: Failed to attach VHD to WSL" >&2
+        rm -f "$vhd_path_wsl"
+        return 1
+    fi
+    
+    sleep 2  # Give system time to recognize the device
+    
+    # Take new snapshot to detect the new device
+    local new_devs=($(wsl_get_block_devices))
+    
+    # Build lookup table for old devices
+    declare -A seen_dev
+    for dev in "${old_devs[@]}"; do
+        seen_dev["$dev"]=1
+    done
+    
+    # Find the new device
+    local new_dev=""
+    for dev in "${new_devs[@]}"; do
+        if [[ -z "${seen_dev[$dev]}" ]]; then
+            new_dev="$dev"
+            break
+        fi
+    done
+    
+    if [[ -z "$new_dev" ]]; then
+        echo "Error: Could not detect newly attached device" >&2
+        wsl_detach_vhd "$vhd_path_win"
+        rm -f "$vhd_path_wsl"
+        return 1
+    fi
+    
+    # Format the new device
+    if ! sudo mkfs -t "$fs_type" "/dev/$new_dev" >/dev/null 2>&1; then
+        echo "Error: Failed to format device /dev/$new_dev with $fs_type" >&2
+        wsl_detach_vhd "$vhd_path_win"
+        rm -f "$vhd_path_wsl"
+        return 1
+    fi
+    
+    sleep 1  # Give system time to update UUID info
+    
+    # Get the UUID of the newly formatted device
+    local new_uuid=$(sudo blkid -s UUID -o value "/dev/$new_dev" 2>/dev/null)
+    
+    if [[ -z "$new_uuid" ]]; then
+        echo "Error: Could not retrieve UUID of newly formatted device" >&2
+        wsl_detach_vhd "$vhd_path_win"
+        rm -f "$vhd_path_wsl"
+        return 1
+    fi
+    
+    # Output the UUID
+    echo "$new_uuid"
+    return 0
+}
