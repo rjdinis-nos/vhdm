@@ -2,12 +2,13 @@
 
 ## Project Overview
 
-Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Three-script architecture:
+Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Multi-script architecture:
 - `disk_management.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
 - `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
-- `libs/wsl_helpers.sh` - Shared function library
+- `libs/wsl_helpers.sh` - Shared WSL-specific function library
+- `libs/utils.sh` - Shared utility functions for size calculations and conversions
 
-Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` for core functionality.
+Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
 
 ## Architecture & Core Patterns
 
@@ -314,11 +315,21 @@ This approach eliminates hardcoded UUIDs and ensures tests work with any VHD spe
 5. Update `show_usage()` help text
 
 ### Adding Helper Functions
-1. Add to `libs/wsl_helpers.sh` with clear doc comment
+
+**WSL-specific helpers** (add to `libs/wsl_helpers.sh`):
+1. Add with clear doc comment
 2. Follow naming: `wsl_<action>_<target>` (e.g., `wsl_mount_vhd_by_uuid`)
 3. Return 0 on success, 1 on failure
 4. Print errors to stderr: `echo "Error: ..." >&2`
 5. Validate required arguments at function start
+
+**Utility helpers** (add to `libs/utils.sh`):
+1. Add with clear doc comment describing purpose and parameters
+2. Follow naming: descriptive function names (e.g., `get_directory_size_bytes`, `convert_size_to_bytes`)
+3. Return 0 on success, 1 on failure
+4. Echo result to stdout for capture by callers
+5. Respect `DEBUG` flag for command visibility when applicable
+6. Use for size calculations, format conversions, and general utilities
 
 ### Modifying Path Conversion
 Path conversion logic appears in multiple places. Consolidate into a helper function if adding more conversions:

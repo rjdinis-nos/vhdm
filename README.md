@@ -12,7 +12,8 @@ A utility script that ensures a VHD is attached and mounted at a specified locat
 
 ### 3. `libs/`
 A directory containing library functions and helper scripts:
-- `wsl_helpers.sh` - Reusable bash functions for VHD operations, providing the core functionality used by other scripts.
+- `wsl_helpers.sh` - WSL-specific functions for VHD operations, providing core WSL integration functionality.
+- `utils.sh` - Utility functions for size calculations, format conversions, and general helper operations.
 
 ### 4. `tests/`
 A directory containing test scripts for validating functionality. See [tests/README.md](tests/README.md) for details.
@@ -358,9 +359,9 @@ A convenience script for ensuring a VHD is attached and mounted, ideal for autom
 
 ## WSL Helper Functions Library
 
-The `libs/wsl_helpers.sh` file provides reusable functions that can be sourced in other scripts.
+The library files in `libs/` provide reusable functions that can be sourced in other scripts.
 
-### Key Functions
+### `libs/wsl_helpers.sh` - WSL-Specific Functions
 
 #### VHD Status Checks
 - `wsl_is_vhd_attached UUID` - Check if VHD is attached to WSL
@@ -385,18 +386,47 @@ The `libs/wsl_helpers.sh` file provides reusable functions that can be sourced i
 - `wsl_find_dynamic_vhd_uuid` - Find first non-system disk UUID
 - `wsl_create_vhd PATH SIZE [FS_TYPE] [NAME]` - Create and format new VHD
 
+### `libs/utils.sh` - Utility Functions
+
+#### Size and Conversion Functions
+- `get_directory_size_bytes DIR` - Calculate total size of files in directory (in bytes)
+  - Returns: Size in bytes or 0 on error
+  - Uses `du -sb` for accurate byte-level measurements
+  - Respects `DEBUG` flag for command visibility
+
+- `convert_size_to_bytes SIZE_STRING` - Convert size string to bytes
+  - Args: Size string (e.g., "5G", "500M", "10G")
+  - Returns: Size in bytes
+  - Supports: K/KB, M/MB, G/GB, T/TB units (case-insensitive)
+  - Handles numeric-only input (assumes bytes)
+
+- `bytes_to_human BYTES` - Convert bytes to human-readable format
+  - Args: Size in bytes
+  - Returns: Formatted string (e.g., "5.23GB", "150MB")
+  - Optional `bc` support for decimal precision (set `USE_BC=true`)
+  - Graceful fallback to bash arithmetic if `bc` not available
+
 ### Usage Example
 ```bash
 #!/bin/bash
 source /path/to/libs/wsl_helpers.sh
+source /path/to/libs/utils.sh
 
-# Check if VHD is attached
+# WSL-specific operations
 if wsl_is_vhd_attached "57fd0f3a-4077-44b8-91ba-5abdee575293"; then
     echo "VHD is attached"
 fi
 
 # Mount VHD
 wsl_mount_vhd_by_uuid "57fd0f3a-4077-44b8-91ba-5abdee575293" "/mnt/mydisk"
+
+# Utility functions for size operations
+dir_size=$(get_directory_size_bytes "/mnt/mydisk")
+echo "Directory size: $(bytes_to_human $dir_size)"
+
+# Convert size string to bytes
+target_bytes=$(convert_size_to_bytes "10G")
+echo "Target size: $target_bytes bytes"
 ```
 
 ---

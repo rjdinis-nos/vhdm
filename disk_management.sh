@@ -3,8 +3,9 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source WSL helper functions
+# Source helper functions
 source "$SCRIPT_DIR/libs/wsl_helpers.sh"
+source "$SCRIPT_DIR/libs/utils.sh"
 
 # Quiet mode flag
 QUIET=false
@@ -19,95 +20,6 @@ USE_BC=false
 export QUIET
 export DEBUG
 export USE_BC
-
-# Helper function to calculate total size of files in directory (in bytes)
-# Args: $1 - Directory path
-# Returns: Size in bytes
-get_directory_size_bytes() {
-    local dir="$1"
-    if [[ ! -d "$dir" ]]; then
-        echo "0"
-        return 1
-    fi
-    
-    # Use du to get size in bytes (--bytes or -b)
-    local size_bytes
-    if [[ "$DEBUG" == "true" ]]; then
-        echo -e "${BLUE}[DEBUG]${NC} du -sb '$dir' | awk '{print \$1}'" >&2
-    fi
-    size_bytes=$(du -sb "$dir" 2>/dev/null | awk '{print $1}')
-    
-    if [[ -z "$size_bytes" ]]; then
-        echo "0"
-        return 1
-    fi
-    
-    echo "$size_bytes"
-    return 0
-}
-
-# Helper function to convert size string to bytes
-# Args: $1 - Size string (e.g., "5G", "500M", "10G")
-# Returns: Size in bytes
-convert_size_to_bytes() {
-    local size_str="$1"
-    local num=$(echo "$size_str" | sed 's/[^0-9.]//g')
-    local unit=$(echo "$size_str" | sed 's/[0-9.]//g' | tr '[:lower:]' '[:upper:]')
-    
-    # Remove decimal point for bash arithmetic
-    local num_int=$(echo "$num" | cut -d. -f1)
-    [[ -z "$num_int" ]] && num_int=0
-    
-    case "$unit" in
-        K|KB)
-            echo $((num_int * 1024))
-            ;;
-        M|MB)
-            echo $((num_int * 1024 * 1024))
-            ;;
-        G|GB)
-            echo $((num_int * 1024 * 1024 * 1024))
-            ;;
-        T|TB)
-            echo $((num_int * 1024 * 1024 * 1024 * 1024))
-            ;;
-        *)
-            # Assume bytes if no unit
-            echo "$num_int"
-            ;;
-    esac
-}
-
-# Helper function to convert bytes to human readable format
-# Args: $1 - Size in bytes
-# Returns: Human readable size string
-bytes_to_human() {
-    local bytes="$1"
-    
-    if [[ "$USE_BC" == "true" ]] && command -v bc >/dev/null 2>&1; then
-        # Use bc for precise decimal calculations
-        if [[ $bytes -lt 1024 ]]; then
-            echo "${bytes}B"
-        elif [[ $bytes -lt $((1024 * 1024)) ]]; then
-            echo "$(echo "scale=2; $bytes / 1024" | bc)KB"
-        elif [[ $bytes -lt $((1024 * 1024 * 1024)) ]]; then
-            echo "$(echo "scale=2; $bytes / (1024 * 1024)" | bc)MB"
-        else
-            echo "$(echo "scale=2; $bytes / (1024 * 1024 * 1024)" | bc)GB"
-        fi
-    else
-        # Fallback to bash arithmetic (no decimal precision)
-        if [[ $bytes -lt 1024 ]]; then
-            echo "${bytes}B"
-        elif [[ $bytes -lt $((1024 * 1024)) ]]; then
-            echo "$((bytes / 1024))KB"
-        elif [[ $bytes -lt $((1024 * 1024 * 1024)) ]]; then
-            echo "$((bytes / (1024 * 1024)))MB"
-        else
-            echo "$((bytes / (1024 * 1024 * 1024)))GB"
-        fi
-    fi
-}
 
 # Function to show usage
 show_usage() {
@@ -222,14 +134,26 @@ show_status() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --path)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --path requires a value${NC}" >&2
+                    return 1
+                fi
                 status_path="$2"
                 shift 2
                 ;;
             --uuid)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
+                    return 1
+                fi
                 status_uuid="$2"
                 shift 2
                 ;;
             --mount-point)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
+                    return 1
+                fi
                 status_mount_point="$2"
                 shift 2
                 ;;
@@ -287,6 +211,9 @@ show_status() {
         [[ "$QUIET" == "false" ]] && echo "========================================"
         [[ "$QUIET" == "false" ]] && echo "  All Attached VHD Disks"
         [[ "$QUIET" == "false" ]] && echo "========================================"
+        [[ "$QUIET" == "false" ]] && echo "Note: VHD paths cannot be determined from UUID alone."
+        [[ "$QUIET" == "false" ]] && echo "      Use 'status --path <path>' to verify a specific VHD."
+        [[ "$QUIET" == "false" ]] && echo
         
         local all_uuids
         all_uuids=$(wsl_get_disk_uuids)
@@ -363,7 +290,11 @@ show_status() {
     [[ "$QUIET" == "false" ]] && echo "========================================"
     [[ "$QUIET" == "false" ]] && echo "  VHD Disk Status"
     [[ "$QUIET" == "false" ]] && echo "========================================"
-    [[ -n "$status_path" ]] && [[ "$QUIET" == "false" ]] && echo "  Path: $status_path"
+    if [[ -n "$status_path" ]]; then
+        [[ "$QUIET" == "false" ]] && echo "  Path: $status_path"
+    else
+        [[ "$QUIET" == "false" ]] && echo "  Path: Unknown (use --path to query by path)"
+    fi
     [[ -n "$status_uuid" ]] && [[ "$QUIET" == "false" ]] && echo "  UUID: $status_uuid"
     [[ -n "$status_mount_point" ]] && [[ "$QUIET" == "false" ]] && echo "  Mount Point: $status_mount_point"
     [[ "$QUIET" == "false" ]] && echo
@@ -399,14 +330,26 @@ mount_vhd() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --path)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --path requires a value${NC}" >&2
+                    return 1
+                fi
                 mount_path="$2"
                 shift 2
                 ;;
             --mount-point)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
+                    return 1
+                fi
                 mount_point="$2"
                 shift 2
                 ;;
             --name)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --name requires a value${NC}" >&2
+                    return 1
+                fi
                 mount_name="$2"
                 shift 2
                 ;;
@@ -578,14 +521,26 @@ umount_vhd() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --path)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --path requires a value${NC}" >&2
+                    return 1
+                fi
                 umount_path="$2"
                 shift 2
                 ;;
             --uuid)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
+                    return 1
+                fi
                 umount_uuid="$2"
                 shift 2
                 ;;
             --mount-point)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
+                    return 1
+                fi
                 umount_point="$2"
                 shift 2
                 ;;
@@ -702,10 +657,18 @@ detach_vhd() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --uuid)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
+                    return 1
+                fi
                 detach_uuid="$2"
                 shift 2
                 ;;
             --path)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --path requires a value${NC}" >&2
+                    return 1
+                fi
                 detach_path="$2"
                 shift 2
                 ;;
@@ -826,10 +789,18 @@ delete_vhd() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --path)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --path requires a value${NC}" >&2
+                    return 1
+                fi
                 delete_path="$2"
                 shift 2
                 ;;
             --uuid)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
+                    return 1
+                fi
                 delete_uuid="$2"
                 shift 2
                 ;;
@@ -934,22 +905,42 @@ create_vhd() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --path)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --path requires a value${NC}" >&2
+                    return 1
+                fi
                 create_path="$2"
                 shift 2
                 ;;
             --size)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --size requires a value${NC}" >&2
+                    return 1
+                fi
                 create_size="$2"
                 shift 2
                 ;;
             --name)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --name requires a value${NC}" >&2
+                    return 1
+                fi
                 create_name="$2"
                 shift 2
                 ;;
             --mount-point)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
+                    return 1
+                fi
                 create_mount_point="$2"
                 shift 2
                 ;;
             --filesystem)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --filesystem requires a value${NC}" >&2
+                    return 1
+                fi
                 create_filesystem="$2"
                 shift 2
                 ;;
@@ -1117,10 +1108,18 @@ resize_vhd() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --mount-point)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
+                    return 1
+                fi
                 target_mount_point="$2"
                 shift 2
                 ;;
             --size)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo -e "${RED}Error: --size requires a value${NC}" >&2
+                    return 1
+                fi
                 new_size="$2"
                 shift 2
                 ;;
@@ -1475,10 +1474,18 @@ attach_vhd() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --path)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo "Error: --path requires a value" >&2
+                    return 1
+                fi
                 attach_path="$2"
                 shift 2
                 ;;
             --name)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo "Error: --name requires a value" >&2
+                    return 1
+                fi
                 attach_name="$2"
                 shift 2
                 ;;
