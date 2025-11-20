@@ -10,6 +10,17 @@ export RED='\033[0;31m'
 export BLUE='\033[0;34m'
 export NC='\033[0m' # No Color
 
+# Debug command wrapper - prints command before execution if DEBUG=true
+# Usage: debug_cmd command [args...]
+# Returns: exit code of the command
+debug_cmd() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} $*" >&2
+    fi
+    "$@"
+    return $?
+}
+
 # Check if a VHD is attached to WSL by UUID
 # Args: $1 - UUID of the VHD
 # Returns: 0 if attached, 1 if not attached
@@ -22,6 +33,10 @@ wsl_is_vhd_attached() {
         return 2
     fi
     
+    # Note: For pipelines, we show the first command for debug visibility
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .uuid'" >&2
+    fi
     uuid_check=$(lsblk -f -J | jq --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .uuid' 2>/dev/null)
     
     if [[ -n "$uuid_check" ]]; then
@@ -43,6 +58,9 @@ wsl_is_vhd_mounted() {
         return 2
     fi
     
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .mountpoints[]' | grep -v 'null'" >&2
+    fi
     mountpoint_check=$(lsblk -f -J | jq --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .mountpoints[]' 2>/dev/null | grep -v "null")
     
     if [[ -n "$mountpoint_check" ]]; then
@@ -64,6 +82,9 @@ wsl_get_vhd_info() {
         return 1
     fi
     
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+    fi
     device_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
     fsavail=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .fsavail' 2>/dev/null)
     fsuse=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | ."fsuse%"' 2>/dev/null)
@@ -94,7 +115,7 @@ wsl_attach_vhd() {
         return 1
     fi
     
-    if wsl.exe --mount --vhd "$vhd_path" --bare --name "$vhd_name" >/dev/null 2>&1; then
+    if debug_cmd wsl.exe --mount --vhd "$vhd_path" --bare --name "$vhd_name" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -116,7 +137,7 @@ wsl_detach_vhd() {
     fi
     
     # WSL unmounts by the VHD file path that was originally used to mount
-    if wsl.exe --unmount "$vhd_path" >/dev/null 2>&1; then
+    if debug_cmd wsl.exe --unmount "$vhd_path" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -138,10 +159,10 @@ wsl_mount_vhd_by_uuid() {
     
     # Create mount point if it doesn't exist
     if [[ ! -d "$mount_point" ]]; then
-        mkdir -p "$mount_point" 2>/dev/null
+        debug_cmd mkdir -p "$mount_point" 2>/dev/null
     fi
     
-    if sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
+    if debug_cmd sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -159,7 +180,7 @@ wsl_unmount_vhd() {
         return 1
     fi
     
-    if sudo umount "$mount_point" >/dev/null 2>&1; then
+    if debug_cmd sudo umount "$mount_point" >/dev/null 2>&1; then
         return 0
     else
         return 1
@@ -241,12 +262,18 @@ wsl_complete_unmount() {
 # Get list of block device names
 # Returns: Array of block device names
 wsl_get_block_devices() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} sudo lsblk -J | jq -r '.blockdevices[].name'" >&2
+    fi
     sudo lsblk -J | jq -r '.blockdevices[].name'
 }
 
 # Get list of all disk UUIDs
 # Returns: Array of UUIDs
 wsl_get_disk_uuids() {
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} sudo blkid -s UUID -o value" >&2
+    fi
     sudo blkid -s UUID -o value
 }
 
@@ -261,6 +288,9 @@ wsl_find_uuid_by_mountpoint() {
     fi
     
     # Get UUID for the device mounted at the specified mount point
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg MP '$mount_point' '.blockdevices[] | select(.mountpoints != null and .mountpoints != []) | select(.mountpoints[] == \$MP) | .uuid' | grep -v 'null' | head -n 1" >&2
+    fi
     local uuid=$(lsblk -f -J | jq -r --arg MP "$mount_point" '.blockdevices[] | select(.mountpoints != null and .mountpoints != []) | select(.mountpoints[] == $MP) | .uuid' 2>/dev/null | grep -v "null" | head -n 1)
     
     if [[ -n "$uuid" ]]; then
@@ -281,6 +311,9 @@ wsl_find_dynamic_vhd_uuid() {
     while IFS= read -r uuid; do
         [[ -z "$uuid" ]] && continue
         
+        if [[ "$DEBUG" == "true" ]]; then
+            echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+        fi
         local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
         
         if [[ -n "$dev_name" ]]; then
@@ -345,7 +378,7 @@ wsl_delete_vhd() {
     fi
     
     # Delete the VHD file
-    if rm -f "$vhd_path_wsl" 2>/dev/null; then
+    if debug_cmd rm -f "$vhd_path_wsl" 2>/dev/null; then
         return 0
     else
         echo "Error: Failed to delete VHD file" >&2
@@ -383,7 +416,7 @@ wsl_create_vhd() {
     # Create parent directory if it doesn't exist
     local vhd_dir=$(dirname "$vhd_path_wsl")
     if [[ ! -d "$vhd_dir" ]]; then
-        if ! mkdir -p "$vhd_dir" 2>/dev/null; then
+        if ! debug_cmd mkdir -p "$vhd_dir" 2>/dev/null; then
             echo "Error: Failed to create directory $vhd_dir" >&2
             return 1
         fi
@@ -403,7 +436,7 @@ wsl_create_vhd() {
     local old_uuids=($(wsl_get_disk_uuids))
     
     # Create the VHD file
-    if ! qemu-img create -f vhdx "$vhd_path_wsl" "$size" >/dev/null 2>&1; then
+    if ! debug_cmd qemu-img create -f vhdx "$vhd_path_wsl" "$size" >/dev/null 2>&1; then
         echo "Error: Failed to create VHD file" >&2
         return 1
     fi
@@ -443,7 +476,7 @@ wsl_create_vhd() {
     fi
     
     # Format the new device
-    if ! sudo mkfs -t "$fs_type" "/dev/$new_dev" >/dev/null 2>&1; then
+    if ! debug_cmd sudo mkfs -t "$fs_type" "/dev/$new_dev" >/dev/null 2>&1; then
         echo "Error: Failed to format device /dev/$new_dev with $fs_type" >&2
         wsl_detach_vhd "$vhd_path_win" ""
         rm -f "$vhd_path_wsl"
@@ -453,6 +486,9 @@ wsl_create_vhd() {
     sleep 1  # Give system time to update UUID info
     
     # Get the UUID of the newly formatted device
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} sudo blkid -s UUID -o value /dev/$new_dev" >&2
+    fi
     local new_uuid=$(sudo blkid -s UUID -o value "/dev/$new_dev" 2>/dev/null)
     
     if [[ -z "$new_uuid" ]]; then

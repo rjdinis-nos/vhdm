@@ -20,12 +20,20 @@ fi
 # Quiet mode flag
 QUIET=false
 
+# Debug mode flag
+DEBUG=false
+
+# Export flags for child scripts
+export QUIET
+export DEBUG
+
 # Function to show usage
 show_usage() {
     echo "Usage: $0 [OPTIONS] COMMAND [COMMAND_OPTIONS]"
     echo
     echo "Options:"
     echo "  -q, --quiet  - Run in quiet mode (minimal output)"
+    echo "  -d, --debug  - Run in debug mode (show all commands before execution)"
     echo
     echo "Commands:"
     echo "  mount [OPTIONS]          - Attach and mount the VHD disk"
@@ -376,6 +384,9 @@ mount_vhd() {
         # Try to find UUID by checking which device was mounted most recently that isn't a system disk
         # We'll look for devices that match the VHD name in WSL mount info
         for uuid in "${old_uuids[@]}"; do
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+            fi
             local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
             if [[ -n "$dev_name" ]]; then
                 # Skip obvious system disks (typically sda, sdb, sdc for WSL system)
@@ -409,7 +420,7 @@ mount_vhd() {
         # Create mount point if it doesn't exist
         if [[ ! -d "$mount_point" ]]; then
             [[ "$QUIET" == "false" ]] && echo "Creating mount point: $mount_point"
-            mkdir -p "$mount_point"
+            debug_cmd mkdir -p "$mount_point"
         fi
         
         [[ "$QUIET" == "false" ]] && echo "Mounting VHD to $mount_point..."
@@ -525,6 +536,9 @@ umount_vhd() {
             echo "Tip: Make sure no processes are using the mount point"
             echo
             echo "Checking for processes using the mount point:"
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} sudo lsof +D $umount_point" >&2
+            fi
             sudo lsof +D "$umount_point" 2>/dev/null || echo "  No processes found (or lsof not available)"
             echo
             echo "You can try to force unmount with: sudo umount -l $umount_point"
@@ -775,6 +789,10 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         -q|--quiet)
             QUIET=true
+            shift
+            ;;
+        -d|--debug)
+            DEBUG=true
             shift
             ;;
         -h|--help|help)

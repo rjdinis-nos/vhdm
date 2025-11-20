@@ -52,6 +52,7 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 
 #### Global Options
 - `-q, --quiet` - Run in quiet mode (minimal output)
+- `-d, --debug` - Run in debug mode (show all commands before execution)
 - `-h, --help` - Show help message
 
 #### Available Commands
@@ -255,12 +256,42 @@ sudo mount UUID=<reported-uuid> /mnt/mydisk
 # Check specific VHD status
 ./disk_management.sh status --path C:/VMs/mydisk.vhdx
 
+# Enable debug mode to see all commands being executed
+./disk_management.sh -d status --all
+
 # Force unmount if processes are blocking
 sudo lsof +D /mnt/mydisk  # Find processes using mount point
 sudo umount -l /mnt/mydisk  # Lazy unmount
 
 # Then detach from WSL
 ./disk_management.sh umount --path C:/VMs/mydisk.vhdx
+```
+
+### Debug Mode
+
+The scripts support a debug mode (`-d` or `--debug`) that prints all Linux and WSL commands before they are executed. This is useful for:
+- Troubleshooting command failures
+- Understanding what the script is doing
+- Learning the underlying WSL/Linux commands
+- Verifying correct parameters are being used
+
+**Examples:**
+```bash
+# Debug a status check
+./disk_management.sh -d status --all
+# Output will show commands like:
+# [DEBUG] sudo blkid -s UUID -o value
+# [DEBUG] lsblk -f -J | jq -r ...
+
+# Debug a mount operation
+./disk_management.sh --debug mount --path C:/VMs/disk.vhdx --mount-point /mnt/data
+# Output will show:
+# [DEBUG] wsl.exe --mount --vhd C:/VMs/disk.vhdx --bare --name disk
+# [DEBUG] mkdir -p /mnt/data
+# [DEBUG] sudo mount UUID=... /mnt/data
+
+# Combine with quiet mode (shows commands, minimal user messages)
+./disk_management.sh -q -d status --uuid <uuid>
 ```
 
 ---

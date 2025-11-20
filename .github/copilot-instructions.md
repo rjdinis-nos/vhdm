@@ -32,6 +32,26 @@ Functions must support both verbose and quiet modes using `QUIET` flag:
 ```
 Quiet mode outputs parseable status strings like `path (uuid): attached,mounted`.
 
+### Debug Mode
+Scripts support debug mode via `DEBUG` flag (enabled with `-d` or `--debug`):
+- **Purpose**: Shows all Linux and WSL commands before execution for troubleshooting
+- **Implementation**: `debug_cmd()` wrapper function in `wsl_helpers.sh` prints commands to stderr when `DEBUG=true`
+- **Output format**: `[DEBUG] command args...` (blue text to stderr)
+- **Command coverage**: Wraps all `wsl.exe`, `sudo`, `lsblk`, `jq`, `mkdir`, `rm`, `qemu-img`, `blkid` invocations
+- **Pipeline handling**: Complex pipelines show full command for visibility
+- **Compatibility**: Works with quiet mode (`-q -d` shows commands but minimal user output)
+
+```bash
+# Debug command wrapper usage
+debug_cmd sudo mount UUID="$uuid" "$mount_point"
+
+# Manual debug output for pipelines
+if [[ "$DEBUG" == "true" ]]; then
+    echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq ..." >&2
+fi
+command | pipeline
+```
+
 ### State-Check-Then-Operate Pattern
 Always check state before operations to handle idempotent behavior:
 ```bash
@@ -51,10 +71,14 @@ Located at top of `disk_management.sh`:
 WSL_DISKS_DIR="C:/aNOS/VMs/wsl_disks/"
 VHD_PATH="${WSL_DISKS_DIR}disk.vhdx"
 MOUNT_POINT="/home/rjdinis/disk"
+QUIET=false
+DEBUG=false
 ```
 These are environment-specific and should be parameterized in new deployments.
 
 **Note**: VHD_UUID is no longer stored as a default. UUIDs are discovered automatically from path or mount point when needed.
+
+**Flags are exported** for use in child scripts: `export QUIET` and `export DEBUG`
 
 ### UUID vs Device Names
 VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
@@ -94,6 +118,8 @@ After attach/create operations, scripts include `sleep 2` to allow the kernel to
 # Test status output formats
 ./disk_management.sh status --all
 ./disk_management.sh -q status --all  # Machine-readable
+./disk_management.sh -d status --all  # Debug mode (show all commands)
+./disk_management.sh -q -d status --all  # Combined (machine-readable + commands)
 
 # Test error handling
 ./disk_management.sh mount --path C:/NonExistent/disk.vhdx  # Should fail gracefully
@@ -101,6 +127,9 @@ After attach/create operations, scripts include `sleep 2` to allow the kernel to
 
 ### Debugging Block Device Issues
 ```bash
+# Use debug mode to see all commands executed
+./disk_management.sh -d mount --path C:/VMs/disk.vhdx
+
 # Inspect current block devices
 sudo lsblk -J | jq
 
@@ -115,6 +144,55 @@ sudo lsof +D /mnt/mydisk
 - `qemu-img` (Arch: `qemu-img`, Debian: `qemu-utils`) - VHD creation
 - `jq` - JSON parsing of lsblk output
 - `wsl.exe` - Built-in on WSL2
+
+### Linux and WSL Command Reference
+
+Complete list of all Linux and WSL commands used in the scripts:
+
+**WSL Integration Commands:**
+- `wsl.exe --mount --vhd "$path" --bare --name "$name"` - Attach VHD to WSL
+- `wsl.exe --unmount "$path"` - Detach VHD from WSL
+
+**Block Device Management:**
+- `lsblk -f -J` - List block devices with filesystem info in JSON format
+- `lsblk -J` - List block devices in JSON format
+- `sudo blkid -s UUID -o value` - Get all disk UUIDs
+- `sudo blkid -s UUID -o value "/dev/$device"` - Get UUID for specific device
+
+**JSON Processing:**
+- `jq -r '.blockdevices[].name'` - Extract device names
+- `jq -r '.blockdevices[] | select(.uuid == $UUID) | .name'` - Find device by UUID
+- `jq -r '.blockdevices[] | select(.uuid == $UUID) | .mountpoints[]'` - Get mount points
+- `jq -r '.blockdevices[] | select(.uuid == $UUID) | .fsavail'` - Get available space
+- `jq -r '.blockdevices[] | select(.uuid == $UUID) | ."fsuse%"'` - Get usage percentage
+- `jq -r '.blockdevices[] | select(.mountpoints[] == $MP) | .uuid'` - Find UUID by mount point
+
+**Filesystem Operations:**
+- `sudo mount UUID="$uuid" "$mount_point"` - Mount filesystem by UUID
+- `sudo umount "$mount_point"` - Unmount filesystem
+- `sudo mkfs -t "$fs_type" "/dev/$device"` - Format device with filesystem
+- `mkdir -p "$path"` - Create directory recursively
+
+**VHD File Operations:**
+- `qemu-img create -f vhdx "$path" "$size"` - Create VHD file
+- `rm -f "$path"` - Delete file
+
+**Process Management:**
+- `sudo lsof +D "$mount_point"` - List processes using mount point
+- `command -v qemu-img` - Check if command exists
+
+**Text Processing:**
+- `sed 's|^\([A-Za-z]\):|/mnt/\L\1|'` - Convert Windows drive letter to WSL mount path
+- `sed 's|\\\\|/|g'` - Convert backslashes to forward slashes
+- `grep -v "null"` - Filter out null values
+- `head -n 1` - Get first line
+
+**Other Utilities:**
+- `dirname "$path"` - Get directory portion of path
+- `basename "$path"` - Get filename from path
+- `sleep N` - Wait N seconds for kernel device recognition
+
+**All commands wrapped with debug_cmd() when DEBUG=true** to show execution before running.
 
 ### Test Suite (tests/test_status.sh)
 Comprehensive test suite validating status command functionality:
@@ -208,16 +286,18 @@ wsl_convert_path() {
 1. **Snapshot timing**: Take snapshots immediately before/after attach operations, not earlier
 2. **Windows path format**: `wsl.exe` commands require Windows paths; filesystem checks require WSL paths
 3. **Quiet mode completeness**: Every user-facing echo must have a quiet mode alternative
-4. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
-5. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
-6. **Already-attached detection**: Mount command has complex fallback logic for detecting already-attached VHDs; maintain this when refactoring
-7. **Test exit codes**: Status queries return 1 when VHD not found/not attached; tests must expect actual behavior (0 for success, 1 for not found)
-8. **Test environment state**: Test expectations must match actual VHD state (attached/mounted/unmounted); verify state before creating assertions
-9. **Test state setup**: Some tests need specific states (e.g., attached-but-not-mounted); set up state explicitly before testing
-10. **Grep test patterns**: Use `grep -q` for silent pattern matching in tests; return codes are 0 (match) or 1 (no match)
-11. **Test output suppression**: All disk_management.sh calls in tests must suppress non-test output using `2>&1` for commands or `>/dev/null 2>&1` for setup/cleanup operations
-12. **Optional test dependencies**: Tests requiring optional tools (xfs, etc.) should check availability and gracefully skip or adjust the test
-13. **Filesystem unmount vs detach**: To test "attached but not mounted" state, use `sudo umount` (not the script's umount command which fully detaches)
+4. **Debug mode implementation**: All command executions must use `debug_cmd` wrapper or manual debug output; debug messages go to stderr
+5. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
+6. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
+7. **Already-attached detection**: Mount command has complex fallback logic for detecting already-attached VHDs; maintain this when refactoring
+8. **Test exit codes**: Status queries return 1 when VHD not found/not attached; tests must expect actual behavior (0 for success, 1 for not found)
+9. **Test environment state**: Test expectations must match actual VHD state (attached/mounted/unmounted); verify state before creating assertions
+10. **Test state setup**: Some tests need specific states (e.g., attached-but-not-mounted); set up state explicitly before testing
+11. **Grep test patterns**: Use `grep -q` for silent pattern matching in tests; return codes are 0 (match) or 1 (no match)
+12. **Test output suppression**: All disk_management.sh calls in tests must suppress non-test output using `2>&1` for commands or `>/dev/null 2>&1` for setup/cleanup operations
+13. **Optional test dependencies**: Tests requiring optional tools (xfs, etc.) should check availability and gracefully skip or adjust the test
+14. **Filesystem unmount vs detach**: To test "attached but not mounted" state, use `sudo umount` (not the script's umount command which fully detaches)
+15. **Flag exports**: QUIET and DEBUG flags must be exported at script initialization for child script access
 
 ## Workflow-Specific Notes
 
