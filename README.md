@@ -29,6 +29,10 @@ A directory containing test scripts for validating functionality. See [tests/REA
   - Fedora: `sudo dnf install qemu-img`
 - **jq** - For JSON parsing
   - Most distributions: `sudo <package-manager> install jq`
+- **bc** - For size calculations (used by resize command)
+  - Most distributions: `sudo <package-manager> install bc`
+- **rsync** - For file copying with attribute preservation (used by resize command)
+  - Usually pre-installed, otherwise: `sudo <package-manager> install rsync`
 
 ### Setup
 ```bash
@@ -177,6 +181,82 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 # Note: After creation, the VHD is attached but not mounted
 # To mount: sudo mkdir -p /mnt/test && sudo mount UUID=<reported-uuid> /mnt/test
 ```
+
+---
+
+##### 5. **delete** - Delete a VHD disk file
+
+**Format:**
+```bash
+./disk_management.sh delete [OPTIONS]
+```
+
+**Options:**
+- `--path PATH` - VHD file path (Windows format, **required**)
+- `--uuid UUID` - VHD UUID (optional if path provided)
+- `--force` - Skip confirmation prompt
+
+**Note**: VHD must be unmounted and detached before deletion.
+
+**Examples:**
+```bash
+# Delete with confirmation prompt
+./disk_management.sh delete --path C:/VMs/oldisk.vhdx
+
+# Delete without confirmation (force)
+./disk_management.sh delete --path C:/VMs/testdisk.vhdx --force
+
+# Unmount and then delete
+./disk_management.sh umount --path C:/VMs/disk.vhdx
+./disk_management.sh delete --path C:/VMs/disk.vhdx --force
+```
+
+---
+
+##### 6. **resize** - Resize a VHD disk
+
+**Format:**
+```bash
+./disk_management.sh resize --mount-point <PATH> --size <SIZE>
+```
+
+**Options:**
+- `--mount-point PATH` - Target disk mount point (**required**)
+- `--size SIZE` - New disk size (e.g., 5G, 10G) (**required**)
+
+**How It Works:**
+The resize operation creates a new VHD, migrates all data, and replaces the original disk with a backup. See [RESIZE_COMMAND.md](RESIZE_COMMAND.md) for detailed documentation.
+
+**Key Features:**
+- Automatic size calculation (uses data size + 30% if requested size is too small)
+- File count and size verification
+- Original disk backed up as `<name>_bkp.vhdx`
+- Safe operation with automatic cleanup on failure
+- Supports debug mode to see all commands
+
+**Examples:**
+```bash
+# Resize disk to 10GB
+./disk_management.sh resize --mount-point /home/user/disk --size 10G
+
+# Resize with automatic size calculation
+# (If current data is 7GB, actual size will be ~9.1GB minimum)
+./disk_management.sh resize --mount-point /mnt/data --size 5G
+
+# Quiet mode
+./disk_management.sh -q resize --mount-point /mnt/data --size 10G
+
+# Debug mode to see all commands
+./disk_management.sh -d resize --mount-point /home/user/disk --size 10G
+```
+
+**Important Notes:**
+- Disk must be mounted before resizing
+- Ensure sufficient Windows filesystem space (needs space for both old and new VHD during operation)
+- Original VHD is backed up, not deleted - verify and manually delete backup when satisfied
+- Operation may take time depending on data size (e.g., 10GB might take 5-10 minutes)
+
+For complete documentation including size calculations, safety features, and troubleshooting, see **[RESIZE_COMMAND.md](RESIZE_COMMAND.md)**.
 
 ---
 

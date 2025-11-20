@@ -102,6 +102,27 @@ wsl_get_vhd_info() {
     fi
 }
 
+# Get the mount point for a VHD by UUID
+# Args: $1 - UUID of the VHD
+# Returns: Mount point path (empty if not mounted)
+wsl_get_vhd_mount_point() {
+    local uuid="$1"
+    
+    if [[ -z "$uuid" ]]; then
+        echo "Error: UUID is required" >&2
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .mountpoints[]' | grep -v 'null' | head -n 1" >&2
+    fi
+    
+    local mount_point=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .mountpoints[]' 2>/dev/null | grep -v "null" | head -n 1)
+    
+    echo "$mount_point"
+    return 0
+}
+
 # Attach a VHD to WSL
 # Args: $1 - VHD path (Windows path format)
 #       $2 - VHD name (optional, defaults to "disk")
@@ -137,10 +158,35 @@ wsl_detach_vhd() {
     fi
     
     # WSL unmounts by the VHD file path that was originally used to mount
-    if debug_cmd wsl.exe --unmount "$vhd_path" >/dev/null 2>&1; then
-        return 0
+    # Use timeout to prevent hanging (30 seconds max)
+    local error_output
+    if command -v timeout >/dev/null 2>&1; then
+        error_output=$(timeout 30 wsl.exe --unmount "$vhd_path" 2>&1)
+        local exit_code=$?
+        
+        if [[ $exit_code -eq 0 ]]; then
+            return 0
+        elif [[ $exit_code -eq 124 ]]; then
+            # Timeout occurred
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} WSL unmount timed out after 30 seconds" >&2
+            fi
+            echo "Warning: WSL unmount operation timed out. The VHD may still be detaching." >&2
+            return 1
+        else
+            # Other error
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} WSL unmount failed: $error_output" >&2
+            fi
+            return 1
+        fi
     else
-        return 1
+        # No timeout command available, try without it
+        if debug_cmd wsl.exe --unmount "$vhd_path" >/dev/null 2>&1; then
+            return 0
+        else
+            return 1
+        fi
     fi
 }
 

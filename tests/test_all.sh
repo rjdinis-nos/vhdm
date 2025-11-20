@@ -41,6 +41,7 @@ while [[ $# -gt 0 ]]; do
             echo "  - test_umount.sh"
             echo "  - test_create.sh"
             echo "  - test_delete.sh"
+            echo "  - test_resize.sh"
             exit 0
             ;;
         *)
@@ -58,6 +59,7 @@ TEST_SUITES=(
     "test_umount.sh"
     "test_create.sh"
     "test_delete.sh"
+    "test_resize.sh"
 )
 
 # Counters

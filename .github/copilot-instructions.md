@@ -3,7 +3,7 @@
 ## Project Overview
 
 Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Three-script architecture:
-- `disk_management.sh` - Comprehensive CLI for VHD operations
+- `disk_management.sh` - Comprehensive CLI for VHD operations (mount, umount, status, create, delete, resize)
 - `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
 - `libs/wsl_helpers.sh` - Shared function library
 
@@ -146,9 +146,13 @@ sudo lsof +D /mnt/mydisk
 ```
 
 ### Dependencies
-- `qemu-img` (Arch: `qemu-img`, Debian: `qemu-utils`) - VHD creation
+- `qemu-img` (Arch: `qemu-img`, Debian: `qemu-utils`) - VHD creation and resize
 - `jq` - JSON parsing of lsblk output
 - `wsl.exe` - Built-in on WSL2
+- `rsync` - Data migration during resize operations
+- `bc` - Optional: Enhanced arithmetic for size calculations (degrades gracefully)
+- `du` - Directory size calculation
+- `find` - File counting for integrity verification
 
 ### Linux and WSL Command Reference
 
@@ -180,7 +184,15 @@ Complete list of all Linux and WSL commands used in the scripts:
 
 **VHD File Operations:**
 - `qemu-img create -f vhdx "$path" "$size"` - Create VHD file
+- `qemu-img info --output=json "$path"` - Get VHD information in JSON format
 - `rm -f "$path"` - Delete file
+- `mv "$old_path" "$new_path"` - Rename/move VHD file (for backup)
+
+**Data Migration (Resize):**
+- `rsync -aP --stats "$source/" "$dest/"` - Copy files with progress and stats
+- `du -sb "$path"` - Calculate directory size in bytes
+- `find "$path" -type f` - Count files in directory
+- `bc -l` - Arbitrary precision calculator (optional)
 
 **Process Management:**
 - `sudo lsof +D "$mount_point"` - List processes using mount point
@@ -199,18 +211,20 @@ Complete list of all Linux and WSL commands used in the scripts:
 
 **All commands wrapped with debug_cmd() when DEBUG=true** to show execution before running.
 
-### Test Suite (tests/test_status.sh)
-Comprehensive test suite validating status command functionality:
+### Test Suite
+Comprehensive test suites validating all command functionality:
 
 **Running Tests:**
 ```bash
-./tests/test_status.sh           # Concise output (CI-friendly)
-./tests/test_status.sh -v        # Verbose output (development)
+./tests/test_all.sh              # Run all test suites
+./tests/test_all.sh -v           # All tests with verbose output
+./tests/test_status.sh           # Individual suite (concise)
+./tests/test_status.sh -v        # Individual suite (verbose)
 ```
 
-**Test Coverage (10 tests per suite):**
+**Test Coverage:**
 
-**test_status.sh:**
+**test_status.sh (10 tests):**
 1. Default status output validation (shows usage)
 2. Status lookup by UUID
 3. Status lookup by path (expects exit code 1 when not attached)
@@ -222,7 +236,22 @@ Comprehensive test suite validating status command functionality:
 9. Error handling: non-existent mount point
 10. Error handling: non-existent UUID
 
-**test_mount.sh, test_umount.sh, test_create.sh, test_delete.sh:** See tests/README.md for detailed coverage
+**test_mount.sh (10 tests):** Mount operations, idempotency, custom mount points
+
+**test_umount.sh (10 tests):** Unmount operations, cleanup verification, multiple unmount methods
+
+**test_create.sh (10 tests):** VHD creation with various parameters, filesystem validation
+
+**test_delete.sh (10 tests):** VHD deletion with safety checks and error handling
+
+**test_resize.sh (21 tests):**
+1-4: Parameter validation (missing/invalid parameters)
+5-9: Helper functions (size calculations, conversion utilities)
+10-15: Primary resize operation (data migration, file integrity, backup creation)
+16-19: Edge cases (auto-size calculation, multiple resizes, quiet/debug modes)
+20-21: Post-resize operations (unmount/remount verification)
+
+See tests/README.md for detailed coverage of all test suites.
 
 **Test Implementation Pattern:**
 ```bash
@@ -320,3 +349,8 @@ Note: VHD is left in attached-but-not-mounted state; user must mount separately.
 1. Parse args → 2. Check attached → 3. Unmount from filesystem → 4. Detach from WSL → 5. Verify detached
 
 Error handling: If unmount fails, suggest `lsof +D` to find blocking processes.
+
+### Resize Operation Flow
+1. Parse args (mount-point, size) → 2. Validate mount point exists and is mounted → 3. Calculate directory size → 4. Determine target size (max of requested size or data+30%) → 5. Create new VHD with target size → 6. Mount new VHD to temporary location → 7. Copy all data with rsync → 8. Verify file counts match → 9. Unmount both disks → 10. Backup original VHD (rename with _bkp suffix) → 11. Rename new VHD to original name → 12. Remount at original location → 13. Verify integrity → 14. Return new UUID
+
+Critical: Original VHD is preserved as backup. Data migration uses rsync with progress reporting. Size calculation ensures disk is large enough for data plus 30% overhead. File count verification ensures data integrity.

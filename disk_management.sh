@@ -23,9 +23,102 @@ QUIET=false
 # Debug mode flag
 DEBUG=false
 
+# Use bc for precise decimal calculations (requires bc installed)
+USE_BC=false
+
 # Export flags for child scripts
 export QUIET
 export DEBUG
+export USE_BC
+
+# Helper function to calculate total size of files in directory (in bytes)
+# Args: $1 - Directory path
+# Returns: Size in bytes
+get_directory_size_bytes() {
+    local dir="$1"
+    if [[ ! -d "$dir" ]]; then
+        echo "0"
+        return 1
+    fi
+    
+    # Use du to get size in bytes (--bytes or -b)
+    local size_bytes
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} du -sb '$dir' | awk '{print \$1}'" >&2
+    fi
+    size_bytes=$(du -sb "$dir" 2>/dev/null | awk '{print $1}')
+    
+    if [[ -z "$size_bytes" ]]; then
+        echo "0"
+        return 1
+    fi
+    
+    echo "$size_bytes"
+    return 0
+}
+
+# Helper function to convert size string to bytes
+# Args: $1 - Size string (e.g., "5G", "500M", "10G")
+# Returns: Size in bytes
+convert_size_to_bytes() {
+    local size_str="$1"
+    local num=$(echo "$size_str" | sed 's/[^0-9.]//g')
+    local unit=$(echo "$size_str" | sed 's/[0-9.]//g' | tr '[:lower:]' '[:upper:]')
+    
+    # Remove decimal point for bash arithmetic
+    local num_int=$(echo "$num" | cut -d. -f1)
+    [[ -z "$num_int" ]] && num_int=0
+    
+    case "$unit" in
+        K|KB)
+            echo $((num_int * 1024))
+            ;;
+        M|MB)
+            echo $((num_int * 1024 * 1024))
+            ;;
+        G|GB)
+            echo $((num_int * 1024 * 1024 * 1024))
+            ;;
+        T|TB)
+            echo $((num_int * 1024 * 1024 * 1024 * 1024))
+            ;;
+        *)
+            # Assume bytes if no unit
+            echo "$num_int"
+            ;;
+    esac
+}
+
+# Helper function to convert bytes to human readable format
+# Args: $1 - Size in bytes
+# Returns: Human readable size string
+bytes_to_human() {
+    local bytes="$1"
+    
+    if [[ "$USE_BC" == "true" ]] && command -v bc >/dev/null 2>&1; then
+        # Use bc for precise decimal calculations
+        if [[ $bytes -lt 1024 ]]; then
+            echo "${bytes}B"
+        elif [[ $bytes -lt $((1024 * 1024)) ]]; then
+            echo "$(echo "scale=2; $bytes / 1024" | bc)KB"
+        elif [[ $bytes -lt $((1024 * 1024 * 1024)) ]]; then
+            echo "$(echo "scale=2; $bytes / (1024 * 1024)" | bc)MB"
+        else
+            echo "$(echo "scale=2; $bytes / (1024 * 1024 * 1024)" | bc)GB"
+        fi
+    else
+        # Fallback to bash arithmetic (no decimal precision)
+        if [[ $bytes -lt 1024 ]]; then
+            echo "${bytes}B"
+        elif [[ $bytes -lt $((1024 * 1024)) ]]; then
+            echo "$((bytes / 1024))KB"
+        elif [[ $bytes -lt $((1024 * 1024 * 1024)) ]]; then
+            echo "$((bytes / (1024 * 1024)))MB"
+        else
+            echo "$((bytes / (1024 * 1024 * 1024)))GB"
+        fi
+    fi
+}
 
 # Function to show usage
 show_usage() {
@@ -34,13 +127,16 @@ show_usage() {
     echo "Options:"
     echo "  -q, --quiet  - Run in quiet mode (minimal output)"
     echo "  -d, --debug  - Run in debug mode (show all commands before execution)"
+    echo "  --use-bc     - Use bc for precise decimal calculations (requires bc installed)"
     echo
     echo "Commands:"
     echo "  mount [OPTIONS]          - Attach and mount the VHD disk"
     echo "  umount [OPTIONS]         - Unmount and detach the VHD disk"
+    echo "  detach [OPTIONS]         - Detach a VHD disk (unmounts first if needed)"
     echo "  status [OPTIONS]         - Show current VHD disk status"
     echo "  create [OPTIONS]         - Create a new VHD disk"
     echo "  delete [OPTIONS]         - Delete a VHD disk file"
+    echo "  resize [OPTIONS]         - Resize a VHD disk by creating new disk and migrating data"
     echo
     echo "Mount Command Options:"
     echo "  --path PATH              - VHD file path (Windows format)"
@@ -52,6 +148,12 @@ show_usage() {
     echo "  --uuid UUID              - VHD UUID (optional if path or mount-point provided)"
     echo "  --mount-point PATH       - Mount point path (UUID will be discovered)"
     echo "  Note: Provide at least one option. UUID will be auto-discovered when possible."
+    echo
+    echo "Detach Command Options:"
+    echo "  --uuid UUID              - VHD UUID to detach (required)"
+    echo "  --path PATH              - VHD file path (optional, improves reliability)"
+    echo "  Note: If VHD is mounted, it will be unmounted first."
+    echo "        Path is auto-discovered from WSL_DISKS_DIR if not provided."
     echo
     echo "Status Command Options:"
     echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
@@ -65,6 +167,7 @@ show_usage() {
     echo "  --name NAME              - VHD name for WSL attachment [default: share]"
     echo "  --mount-point PATH       - Mount point path [default: /home/\$USER/share]"
     echo "  --filesystem TYPE        - Filesystem type (ext4, ext3, xfs, etc.) [default: ext4]"
+    echo "  --force                  - Overwrite existing VHD (auto-unmounts if attached, prompts for confirmation)"
     echo
     echo "Delete Command Options:"
     echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
@@ -72,16 +175,23 @@ show_usage() {
     echo "  --force                  - Skip confirmation prompt"
     echo "  Note: VHD must be unmounted and detached before deletion."
     echo
+    echo "Resize Command Options:"
+    echo "  --mount-point PATH       - Target disk mount point (required)"
+    echo "  --size SIZE              - New disk size (e.g., 5G, 10G) (required)"
+    echo "  Note: Creates new disk, migrates data, and replaces original with backup."
+    echo
     echo "Examples:"
     echo "  $0 mount --path C:/VMs/disk.vhdx --mount-point /mnt/data"
     echo "  $0 umount --path C:/VMs/disk.vhdx"
     echo "  $0 umount --mount-point /mnt/data"
     echo "  $0 umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293"
+    echo "  $0 detach --uuid 72a3165c-f1be-4497-a1fb-2c55054ac472"
     echo "  $0 status --path C:/VMs/disk.vhdx"
     echo "  $0 status --all"
     echo "  $0 create --path C:/VMs/disk.vhdx --size 5G --name mydisk"
     echo "  $0 delete --path C:/VMs/disk.vhdx"
     echo "  $0 delete --path C:/VMs/disk.vhdx --force"
+    echo "  $0 resize --mount-point /mnt/data --size 10G"
     echo "  $0 -q status --all"
     echo
     exit 0
@@ -574,6 +684,152 @@ umount_vhd() {
     fi
 }
 
+# Function to detach VHD by UUID
+detach_vhd() {
+    # Parse detach command arguments
+    local detach_uuid=""
+    local detach_path=""
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --uuid)
+                detach_uuid="$2"
+                shift 2
+                ;;
+            --path)
+                detach_path="$2"
+                shift 2
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown detach option '$1'${NC}"
+                echo
+                show_usage
+                ;;
+        esac
+    done
+    
+    # Validate that UUID is provided
+    if [[ -z "$detach_uuid" ]]; then
+        echo -e "${RED}Error: --uuid is required${NC}"
+        echo "Use --uuid to specify the VHD UUID to detach"
+        echo "To find UUIDs, run: $0 status --all"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Detach Operation"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Check if VHD is attached
+    if ! wsl_is_vhd_attached "$detach_uuid"; then
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is not attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo "Nothing to do."
+        [[ "$QUIET" == "true" ]] && echo "$detach_uuid: not attached"
+        [[ "$QUIET" == "false" ]] && echo "========================================"
+        return 0
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo -e "${BLUE}[i] VHD is attached to WSL${NC}"
+    [[ "$QUIET" == "false" ]] && echo "  UUID: $detach_uuid"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # If path not provided, try to find it by searching WSL disks directory
+    if [[ -z "$detach_path" ]]; then
+        local wsl_disks_dir_wsl=$(echo "$WSL_DISKS_DIR" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+        
+        # Search for .vhdx and .vhd files in the WSL disks directory
+        if [[ "$DEBUG" == "true" ]]; then
+            echo -e "${BLUE}[DEBUG]${NC} Searching for VHD files in '$wsl_disks_dir_wsl'" >&2
+        fi
+        
+        while IFS= read -r vhd_file_wsl; do
+            [[ -z "$vhd_file_wsl" ]] && continue
+            
+            # Convert WSL path back to Windows path for WSL operations
+            local vhd_file_win=$(echo "$vhd_file_wsl" | sed 's|^/mnt/\([a-z]\)|\U\1:|')
+            
+            # Check if this VHD matches our UUID
+            local test_uuid=$(wsl_find_uuid_by_path "$vhd_file_win" 2>/dev/null)
+            if [[ "$test_uuid" == "$detach_uuid" ]]; then
+                detach_path="$vhd_file_win"
+                [[ "$QUIET" == "false" ]] && echo "  Found VHD path: $detach_path"
+                [[ "$QUIET" == "false" ]] && echo
+                break
+            fi
+        done < <(find "$wsl_disks_dir_wsl" -maxdepth 1 \( -name "*.vhdx" -o -name "*.vhd" \) 2>/dev/null)
+    fi
+    
+    # Show current VHD info
+    [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$detach_uuid"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Check if mounted and unmount first
+    if wsl_is_vhd_mounted "$detach_uuid"; then
+        local mount_point=$(wsl_get_vhd_mount_point "$detach_uuid")
+        [[ "$QUIET" == "false" ]] && echo "VHD is mounted at: $mount_point"
+        [[ "$QUIET" == "false" ]] && echo "Unmounting VHD first..."
+        
+        if wsl_unmount_vhd "$mount_point"; then
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD unmounted successfully${NC}"
+        else
+            echo -e "${RED}[✗] Failed to unmount VHD${NC}"
+            echo "Tip: Make sure no processes are using the mount point"
+            echo
+            echo "Checking for processes using the mount point:"
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} sudo lsof +D $mount_point" >&2
+            fi
+            sudo lsof +D "$mount_point" 2>/dev/null || echo "  No processes found (or lsof not available)"
+            echo
+            echo "You can try to force unmount with: sudo umount -l $mount_point"
+            exit 1
+        fi
+        [[ "$QUIET" == "false" ]] && echo
+    else
+        [[ "$QUIET" == "false" ]] && echo -e "${BLUE}[i] VHD is not mounted to filesystem${NC}"
+        [[ "$QUIET" == "false" ]] && echo
+    fi
+    
+    # Detach from WSL
+    [[ "$QUIET" == "false" ]] && echo "Detaching VHD from WSL..."
+    
+    if [[ -n "$detach_path" ]]; then
+        # Use path if we have it
+        if wsl_detach_vhd "$detach_path" "$detach_uuid"; then
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
+        else
+            echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
+            exit 1
+        fi
+    else
+        # If we couldn't find the path, report error with helpful message
+        echo -e "${RED}[✗] Could not determine VHD path${NC}"
+        echo
+        echo "The VHD path could not be found automatically."
+        echo "Please provide the path explicitly:"
+        echo "  $0 detach --uuid $detach_uuid --path <vhd_path>"
+        echo
+        echo "Or use the umount command if you know the path or mount point:"
+        echo "  $0 umount --path <vhd_path>"
+        echo "  $0 umount --mount-point <mount_point>"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Detach operation completed"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    
+    if [[ "$QUIET" == "true" ]]; then
+        if ! wsl_is_vhd_attached "$detach_uuid"; then
+            echo "$detach_uuid: detached"
+        else
+            echo "$detach_uuid: detach failed"
+        fi
+    fi
+}
+
 # Function to delete VHD
 delete_vhd() {
     # Parse delete command arguments
@@ -687,6 +943,7 @@ create_vhd() {
     local create_name="disk"
     local create_mount_point=""
     local create_filesystem="ext4"
+    local force="false"
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -709,6 +966,10 @@ create_vhd() {
             --filesystem)
                 create_filesystem="$2"
                 shift 2
+                ;;
+            --force)
+                force="true"
+                shift
                 ;;
             *)
                 echo -e "${RED}Error: Unknown create option '$1'${NC}"
@@ -741,9 +1002,94 @@ create_vhd() {
     # Check if VHD already exists
     local vhd_path_wsl=$(echo "$create_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
     if [[ -e "$vhd_path_wsl" ]]; then
-        echo -e "${RED}[✗] VHD file already exists at $create_path${NC}"
-        echo "Use 'mount' command to attach the existing VHD"
-        exit 1
+        if [[ "$force" == "false" ]]; then
+            echo -e "${RED}[✗] VHD file already exists at $create_path${NC}"
+            echo "Use 'mount' command to attach the existing VHD, or use --force to overwrite"
+            exit 1
+        else
+            # Force mode: prompt for confirmation before deleting
+            [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD file already exists at $create_path${NC}"
+            [[ "$QUIET" == "false" ]] && echo
+            
+            # Check if VHD is currently attached
+            local existing_uuid=$(wsl_find_uuid_by_path "$create_path" 2>/dev/null)
+            if [[ -n "$existing_uuid" ]] && wsl_is_vhd_attached "$existing_uuid"; then
+                [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is currently attached to WSL${NC}"
+                [[ "$QUIET" == "false" ]] && echo
+                
+                # Ask for permission to unmount in non-quiet mode
+                if [[ "$QUIET" == "false" ]]; then
+                    echo -e "${YELLOW}[!] The VHD must be unmounted before overwriting.${NC}"
+                    echo -n "Do you want to unmount it now? (yes/no): "
+                    read -r unmount_confirmation
+                    
+                    if [[ "$unmount_confirmation" != "yes" ]]; then
+                        echo "Operation cancelled."
+                        echo
+                        echo "To unmount manually, run:"
+                        echo "  $0 umount --path $create_path"
+                        exit 0
+                    fi
+                    echo
+                fi
+                
+                # Perform unmount operation
+                [[ "$QUIET" == "false" ]] && echo "Unmounting VHD..."
+                
+                # Check if mounted and unmount from filesystem first
+                if wsl_is_vhd_mounted "$existing_uuid"; then
+                    local existing_mount_point=$(wsl_get_vhd_mount_point "$existing_uuid")
+                    if [[ -n "$existing_mount_point" ]]; then
+                        if wsl_unmount_vhd "$existing_mount_point"; then
+                            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD unmounted from filesystem${NC}"
+                        else
+                            echo -e "${RED}[✗] Failed to unmount VHD from filesystem${NC}"
+                            echo "Checking for processes using the mount point:"
+                            sudo lsof +D "$existing_mount_point" 2>/dev/null || echo "  No processes found"
+                            exit 1
+                        fi
+                    fi
+                fi
+                
+                # Detach from WSL
+                if wsl_detach_vhd "$create_path" "$existing_uuid"; then
+                    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached from WSL${NC}"
+                    [[ "$QUIET" == "false" ]] && echo
+                else
+                    echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
+                    exit 1
+                fi
+                
+                # Small delay to ensure detachment is complete
+                sleep 1
+            fi
+            
+            # Confirmation prompt in non-quiet mode
+            if [[ "$QUIET" == "false" ]]; then
+                echo -e "${YELLOW}[!] WARNING: This will permanently delete the existing VHD file!${NC}"
+                echo -n "Are you sure you want to overwrite $create_path? (yes/no): "
+                read -r confirmation
+                
+                if [[ "$confirmation" != "yes" ]]; then
+                    echo "Operation cancelled."
+                    exit 0
+                fi
+                echo
+            fi
+            
+            # Delete the existing VHD
+            [[ "$QUIET" == "false" ]] && echo "Deleting existing VHD file..."
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} rm -f '$vhd_path_wsl'" >&2
+            fi
+            if rm -f "$vhd_path_wsl"; then
+                [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Existing VHD deleted${NC}"
+                [[ "$QUIET" == "false" ]] && echo
+            else
+                echo -e "${RED}[✗] Failed to delete existing VHD${NC}"
+                exit 1
+            fi
+        fi
     fi
     
     [[ "$QUIET" == "false" ]] && echo "Creating VHD disk..."
@@ -779,6 +1125,374 @@ create_vhd() {
     fi
 }
 
+# Function to resize VHD
+resize_vhd() {
+    # Parse resize command arguments
+    local target_mount_point=""
+    local new_size=""
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --mount-point)
+                target_mount_point="$2"
+                shift 2
+                ;;
+            --size)
+                new_size="$2"
+                shift 2
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown resize option '$1'${NC}"
+                echo
+                show_usage
+                ;;
+        esac
+    done
+    
+    # Validate required parameters
+    if [[ -z "$target_mount_point" ]]; then
+        echo -e "${RED}Error: --mount-point is required${NC}"
+        echo "Specify the mount point of the target disk to resize"
+        exit 1
+    fi
+    
+    if [[ -z "$new_size" ]]; then
+        echo -e "${RED}Error: --size is required${NC}"
+        echo "Specify the new size for the disk (e.g., 5G, 10G)"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Resize Operation"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Check if target mount point exists and is mounted
+    if [[ ! -d "$target_mount_point" ]]; then
+        echo -e "${RED}[✗] Target mount point does not exist: $target_mount_point${NC}"
+        exit 1
+    fi
+    
+    # Find UUID of target disk
+    local target_uuid=$(wsl_find_uuid_by_mountpoint "$target_mount_point")
+    if [[ -z "$target_uuid" ]]; then
+        echo -e "${RED}[✗] No VHD mounted at $target_mount_point${NC}"
+        echo "Please ensure the target disk is mounted first"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Found target disk${NC}"
+    [[ "$QUIET" == "false" ]] && echo "  UUID: $target_uuid"
+    [[ "$QUIET" == "false" ]] && echo "  Mount Point: $target_mount_point"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Get target disk path by finding device and checking lsblk
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$target_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+    fi
+    local target_device=$(lsblk -f -J | jq -r --arg UUID "$target_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+    
+    if [[ -z "$target_device" ]]; then
+        echo -e "${RED}[✗] Could not find device for UUID $target_uuid${NC}"
+        exit 1
+    fi
+    
+    # Calculate total size of all files in target disk
+    [[ "$QUIET" == "false" ]] && echo "Calculating size of files in target disk..."
+    local target_size_bytes=$(get_directory_size_bytes "$target_mount_point")
+    local target_size_human=$(bytes_to_human "$target_size_bytes")
+    
+    [[ "$QUIET" == "false" ]] && echo "  Total size of files: $target_size_human ($target_size_bytes bytes)"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Convert new_size to bytes
+    local new_size_bytes=$(convert_size_to_bytes "$new_size")
+    local required_size_bytes=$((target_size_bytes * 130 / 100))  # Add 30%
+    local required_size_human=$(bytes_to_human "$required_size_bytes")
+    
+    # Determine actual size to use
+    local actual_size_bytes=$new_size_bytes
+    local actual_size_str="$new_size"
+    
+    if [[ $new_size_bytes -lt $required_size_bytes ]]; then
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] Requested size ($new_size) is smaller than required${NC}"
+        [[ "$QUIET" == "false" ]] && echo "  Minimum required: $required_size_human (files + 30%)"
+        [[ "$QUIET" == "false" ]] && echo "  Using minimum required size instead"
+        actual_size_bytes=$required_size_bytes
+        actual_size_str=$required_size_human
+        [[ "$QUIET" == "false" ]] && echo
+    fi
+    
+    # Count files in target disk
+    [[ "$QUIET" == "false" ]] && echo "Counting files in target disk..."
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} find '$target_mount_point' -type f | wc -l" >&2
+    fi
+    local target_file_count=$(find "$target_mount_point" -type f 2>/dev/null | wc -l)
+    [[ "$QUIET" == "false" ]] && echo "  File count: $target_file_count"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # We need to find the VHD path - search through WSL disks directory
+    # First, try to get it from the script's configuration
+    local target_vhd_path=""
+    local target_vhd_name=""
+    
+    # Try to infer VHD path from mount point name
+    target_vhd_name=$(basename "$target_mount_point")
+    local wsl_disks_dir_wsl=$(echo "$WSL_DISKS_DIR" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    
+    # Search for .vhdx files in the WSL disks directory
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} find '$wsl_disks_dir_wsl' -maxdepth 1 -name '*.vhdx' -o -name '*.vhd'" >&2
+    fi
+    local vhd_files=($(find "$wsl_disks_dir_wsl" -maxdepth 1 \( -name "*.vhdx" -o -name "*.vhd" \) 2>/dev/null))
+    
+    # Try to match by checking which VHD has the target UUID
+    for vhd_file_wsl in "${vhd_files[@]}"; do
+        # Convert WSL path back to Windows path for WSL operations
+        local vhd_file_win=$(echo "$vhd_file_wsl" | sed 's|^/mnt/\([a-z]\)|\U\1:|')
+        
+        # Check if this VHD has our UUID (would need to be attached)
+        # Since we know it's attached, check device patterns
+        local vhd_basename=$(basename "$vhd_file_wsl" .vhdx)
+        vhd_basename=$(basename "$vhd_basename" .vhd)
+        
+        if [[ "$vhd_basename" == "$target_vhd_name" ]]; then
+            target_vhd_path="$vhd_file_win"
+            break
+        fi
+    done
+    
+    # If we still don't have a path, try default
+    if [[ -z "$target_vhd_path" ]]; then
+        target_vhd_path="${WSL_DISKS_DIR}${target_vhd_name}.vhdx"
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "Target VHD path: $target_vhd_path"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Create new VHD with temporary name
+    local target_vhd_dir=$(dirname "${target_vhd_path}")
+    local target_vhd_basename=$(basename "$target_vhd_path" .vhdx)
+    target_vhd_basename=$(basename "$target_vhd_basename" .vhd)
+    local new_vhd_path="${target_vhd_dir}/${target_vhd_basename}_temp.vhdx"
+    local temp_mount_point="${target_mount_point}_temp"
+    
+    [[ "$QUIET" == "false" ]] && echo -e "${BLUE}[i] Creating new VHD${NC}"
+    [[ "$QUIET" == "false" ]] && echo "  Path: $new_vhd_path"
+    [[ "$QUIET" == "false" ]] && echo "  Size: $actual_size_str"
+    [[ "$QUIET" == "false" ]] && echo "  Mount Point: $temp_mount_point"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Create new VHD
+    local new_uuid
+    if new_uuid=$(wsl_create_vhd "$new_vhd_path" "$actual_size_str" "ext4" "${target_vhd_basename}_temp" 2>&1); then
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] New VHD created${NC}"
+        [[ "$QUIET" == "false" ]] && echo "  New UUID: $new_uuid"
+    else
+        echo -e "${RED}[✗] Failed to create new VHD${NC}"
+        echo "$new_uuid"  # Print error message
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Mount the new VHD
+    [[ "$QUIET" == "false" ]] && echo "Mounting new VHD at $temp_mount_point..."
+    if [[ ! -d "$temp_mount_point" ]]; then
+        debug_cmd mkdir -p "$temp_mount_point"
+    fi
+    
+    if wsl_mount_vhd_by_uuid "$new_uuid" "$temp_mount_point"; then
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] New VHD mounted${NC}"
+    else
+        echo -e "${RED}[✗] Failed to mount new VHD${NC}"
+        # Cleanup
+        wsl_detach_vhd "$new_vhd_path" "$new_uuid"
+        wsl_delete_vhd "$new_vhd_path"
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Copy all files from target disk to new disk
+    [[ "$QUIET" == "false" ]] && echo "Copying files from target disk to new disk..."
+    [[ "$QUIET" == "false" ]] && echo "  This may take a while depending on data size..."
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} sudo rsync -a '$target_mount_point/' '$temp_mount_point/'" >&2
+    fi
+    
+    if sudo rsync -a "$target_mount_point/" "$temp_mount_point/" 2>&1; then
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Files copied successfully${NC}"
+    else
+        echo -e "${RED}[✗] Failed to copy files${NC}"
+        # Cleanup
+        wsl_unmount_vhd "$temp_mount_point"
+        wsl_detach_vhd "$new_vhd_path" "$new_uuid"
+        wsl_delete_vhd "$new_vhd_path"
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Verify file count and size
+    [[ "$QUIET" == "false" ]] && echo "Verifying new disk..."
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} find '$temp_mount_point' -type f | wc -l" >&2
+    fi
+    local new_file_count=$(find "$temp_mount_point" -type f 2>/dev/null | wc -l)
+    local new_size_bytes=$(get_directory_size_bytes "$temp_mount_point")
+    local new_size_human=$(bytes_to_human "$new_size_bytes")
+    
+    [[ "$QUIET" == "false" ]] && echo "  Original file count: $target_file_count"
+    [[ "$QUIET" == "false" ]] && echo "  New file count: $new_file_count"
+    [[ "$QUIET" == "false" ]] && echo "  Original size: $target_size_human"
+    [[ "$QUIET" == "false" ]] && echo "  New size: $new_size_human"
+    
+    if [[ $new_file_count -ne $target_file_count ]]; then
+        echo -e "${RED}[✗] File count mismatch!${NC}"
+        echo "  Expected: $target_file_count, Got: $new_file_count"
+        echo "  Aborting resize operation"
+        # Cleanup
+        wsl_unmount_vhd "$temp_mount_point"
+        wsl_detach_vhd "$new_vhd_path" "$new_uuid"
+        wsl_delete_vhd "$new_vhd_path"
+        exit 1
+    fi
+    
+    if [[ $new_size_bytes -ne $target_size_bytes ]]; then
+        echo -e "${YELLOW}[!] Warning: Size differs slightly (expected with filesystem metadata)${NC}"
+        echo "  Difference: $((new_size_bytes - target_size_bytes)) bytes"
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Verification passed${NC}"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Unmount and detach target disk
+    [[ "$QUIET" == "false" ]] && echo "Unmounting target disk..."
+    if ! wsl_unmount_vhd "$target_mount_point"; then
+        echo -e "${RED}[✗] Failed to unmount target disk${NC}"
+        exit 1
+    fi
+    
+    if ! wsl_detach_vhd "$target_vhd_path" "$target_uuid"; then
+        echo -e "${RED}[✗] Failed to detach target disk${NC}"
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Target disk detached${NC}"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Rename target VHD to backup
+    local target_vhd_path_wsl=$(echo "$target_vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    local backup_vhd_path_wsl="${target_vhd_path_wsl%.vhdx}_bkp.vhdx"
+    local backup_vhd_path_wsl="${backup_vhd_path_wsl%.vhd}_bkp.vhd"
+    
+    [[ "$QUIET" == "false" ]] && echo "Renaming target VHD to backup..."
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} mv '$target_vhd_path_wsl' '$backup_vhd_path_wsl'" >&2
+    fi
+    
+    if mv "$target_vhd_path_wsl" "$backup_vhd_path_wsl" 2>/dev/null; then
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Target VHD renamed to backup${NC}"
+        [[ "$QUIET" == "false" ]] && echo "  Backup: $backup_vhd_path_wsl"
+    else
+        echo -e "${RED}[✗] Failed to rename target VHD${NC}"
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Unmount new disk temporarily
+    [[ "$QUIET" == "false" ]] && echo "Unmounting new disk..."
+    if ! wsl_unmount_vhd "$temp_mount_point"; then
+        echo -e "${RED}[✗] Failed to unmount new disk${NC}"
+        exit 1
+    fi
+    
+    if ! wsl_detach_vhd "$new_vhd_path" "$new_uuid"; then
+        echo -e "${RED}[✗] Failed to detach new disk${NC}"
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] New disk detached${NC}"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Rename new VHD to target name
+    local new_vhd_path_wsl=$(echo "$new_vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    
+    [[ "$QUIET" == "false" ]] && echo "Renaming new VHD to target name..."
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} mv '$new_vhd_path_wsl' '$target_vhd_path_wsl'" >&2
+    fi
+    
+    if mv "$new_vhd_path_wsl" "$target_vhd_path_wsl" 2>/dev/null; then
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] New VHD renamed to target name${NC}"
+    else
+        echo -e "${RED}[✗] Failed to rename new VHD${NC}"
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Mount the renamed VHD
+    [[ "$QUIET" == "false" ]] && echo "Mounting resized VHD at $target_mount_point..."
+    
+    # Attach the VHD (it will get a new UUID since it was formatted)
+    local old_uuids=($(wsl_get_disk_uuids))
+    
+    if ! wsl_attach_vhd "$target_vhd_path" "$target_vhd_name"; then
+        echo -e "${RED}[✗] Failed to attach resized VHD${NC}"
+        exit 1
+    fi
+    
+    sleep 2  # Give system time to recognize the device
+    
+    # Find the new UUID
+    local new_uuids=($(wsl_get_disk_uuids))
+    declare -A seen_uuid
+    for uuid in "${old_uuids[@]}"; do
+        seen_uuid["$uuid"]=1
+    done
+    
+    local final_uuid=""
+    for uuid in "${new_uuids[@]}"; do
+        if [[ -z "${seen_uuid[$uuid]}" ]]; then
+            final_uuid="$uuid"
+            break
+        fi
+    done
+    
+    if [[ -z "$final_uuid" ]]; then
+        echo -e "${RED}[✗] Failed to detect UUID of resized VHD${NC}"
+        exit 1
+    fi
+    
+    # Mount the resized VHD
+    if wsl_mount_vhd_by_uuid "$final_uuid" "$target_mount_point"; then
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Resized VHD mounted${NC}"
+    else
+        echo -e "${RED}[✗] Failed to mount resized VHD${NC}"
+        exit 1
+    fi
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Display final disk info
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Resized VHD Information"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  UUID: $final_uuid"
+    [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$final_uuid"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "  Files: $new_file_count"
+    [[ "$QUIET" == "false" ]] && echo "  Data Size: $new_size_human"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "  Backup VHD: $backup_vhd_path_wsl"
+    [[ "$QUIET" == "false" ]] && echo "  (You can delete the backup once you verify the resized disk)"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Resize operation completed successfully"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    
+    if [[ "$QUIET" == "true" ]]; then
+        echo "$target_vhd_path: resized to $actual_size_str with UUID=$final_uuid"
+    fi
+}
+
 # Main script logic
 if [[ $# -eq 0 ]]; then
     show_usage
@@ -795,10 +1509,14 @@ while [[ $# -gt 0 ]]; do
             DEBUG=true
             shift
             ;;
+        --use-bc)
+            USE_BC=true
+            shift
+            ;;
         -h|--help|help)
             show_usage
             ;;
-        mount|umount|unmount|status|create|delete)
+        mount|umount|unmount|detach|status|create|delete|resize)
             COMMAND="$1"
             shift
             break
@@ -819,6 +1537,9 @@ case "$COMMAND" in
     umount|unmount)
         umount_vhd "$@"  # Pass remaining arguments to umount_vhd
         ;;
+    detach)
+        detach_vhd "$@"  # Pass remaining arguments to detach_vhd
+        ;;
     status)
         show_status "$@"  # Pass remaining arguments to show_status
         ;;
@@ -827,6 +1548,9 @@ case "$COMMAND" in
         ;;
     delete)
         delete_vhd "$@"  # Pass remaining arguments to delete_vhd
+        ;;
+    resize)
+        resize_vhd "$@"  # Pass remaining arguments to resize_vhd
         ;;
     *)
         echo -e "${RED}Error: No command specified${NC}"

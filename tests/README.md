@@ -69,9 +69,24 @@ Tests for the create command, validating VHD creation with various parameters.
 **Coverage**: 10 tests covering default creation, custom sizes, filesystems, quiet mode, duplicate detection, and cleanup.
 
 ### `test_delete.sh`
-Placeholder tests for the delete command (not yet implemented in disk_management.sh).
+Tests for the delete command, validating VHD file deletion with safety checks.
 
-**Coverage**: 10 placeholder tests ready for when delete functionality is added.
+**Coverage**: 10 tests covering basic deletion, force mode, error handling, and cleanup verification.
+
+### `test_resize.sh`
+Tests for the resize command, validating VHD resizing through data migration including size calculations, file integrity, and backup creation.
+
+**Coverage**: 21 tests covering parameter validation, helper functions, actual resize operations, size calculations, data integrity verification, backup creation, and multiple resize scenarios.
+
+**Features tested:**
+- Parameter validation (mount-point, size requirements)
+- Helper functions (get_directory_size_bytes, convert_size_to_bytes, bytes_to_human)
+- Actual resize operations with data migration (100M→200M)
+- File integrity verification (file count, sample data)
+- Backup creation (original VHD preserved with _bkp suffix)
+- Multiple resize operations (successive resizing)
+- Output modes (quiet, debug)
+- Post-resize operations (unmount, remount)
 
 ---
 
@@ -88,7 +103,8 @@ Placeholder tests for the delete command (not yet implemented in disk_management
 ./tests/test_mount.sh         # Mount command tests
 ./tests/test_umount.sh        # Umount command tests
 ./tests/test_create.sh        # Create command tests
-./tests/test_delete.sh        # Delete command tests (placeholder)
+./tests/test_delete.sh        # Delete command tests
+./tests/test_resize.sh        # Resize command tests
 
 # Run with verbose output
 ./tests/test_status.sh -v
@@ -171,6 +187,30 @@ Tests for the delete command, validating VHD deletion with proper state checking
 9. **Verify deletion** - Confirms temp VHD is removed
 10. **Delete already deleted** - Tests error handling for double deletion
 
+### test_resize.sh (21 tests)
+Comprehensive tests for the resize command, validating VHD resizing through data migration:
+1. **Missing mount-point parameter** - Verifies error when --mount-point not provided
+2. **Missing size parameter** - Verifies error when --size not provided
+3. **Non-existent mount point** - Tests error handling for invalid mount points
+4. **Unmounted disk** - Verifies error when attempting to resize unmounted VHD
+5. **Test VHD creation** - Creates 100M test VHD with 10MB sample data
+6. **Directory size calculation** - Tests get_directory_size_bytes() helper function
+7. **Size conversion (5G)** - Tests convert_size_to_bytes() with gigabytes
+8. **Size conversion (100M)** - Tests convert_size_to_bytes() with megabytes
+9. **Bytes to human** - Tests bytes_to_human() conversion function
+10. **Resize to larger size** - Performs actual resize operation from 100M to 200M
+11. **Disk mounted after resize** - Verifies disk remains mounted after operation
+12. **File count matches** - Confirms all files copied during migration
+13. **Data integrity** - Verifies sample files exist and are accessible
+14. **Backup VHD created** - Confirms original VHD backed up with _bkp suffix
+15. **Status shows new UUID** - Verifies disk has new UUID after resize
+16. **Automatic size calculation** - Tests minimum size calculation (data + 30%)
+17. **Disk functional after second resize** - Confirms disk works after multiple resizes
+18. **Quiet mode output** - Tests machine-readable output format
+19. **Debug mode** - Verifies debug mode shows [DEBUG] command output
+20. **Unmount resized disk** - Tests unmount still works after resize
+21. **Re-mount resized disk** - Tests mount still works after resize
+
 ---
 
 ## Test Configuration
@@ -186,6 +226,8 @@ VHD_NAME="disk"
 ```
 
 **Note**: While the main scripts use automatic UUID discovery, tests explicitly use `VHD_UUID` for validation scenarios to ensure correct behavior.
+
+**Resize Tests**: The resize test suite creates its own temporary VHD (`resize_test.vhdx`) to avoid interfering with the main test VHD. This temporary VHD is automatically cleaned up after tests complete.
 
 ---
 
