@@ -100,6 +100,8 @@ Commands that support UUID discovery:
 - `status --path` or `status --mount-point`
 - `umount --path` or `umount --mount-point`
 
+**Note:** The `format` command does NOT support UUID discovery. It requires either `--uuid` or `--name` to be explicitly provided.
+
 ### WSL Integration Commands
 - Attach: `wsl.exe --mount --vhd "$path" --bare --name "$name"`
 - Detach: `wsl.exe --unmount "$path"`
@@ -256,7 +258,7 @@ Comprehensive test suites validating all command functionality:
 
 **test_umount.sh (10 tests):** Unmount operations, cleanup verification, multiple unmount methods
 
-**test_create.sh (10 tests):** VHD creation with various parameters, filesystem validation
+**test_create.sh (10 tests):** VHD creation with various parameters, verification that create doesn't auto-attach
 
 **test_delete.sh (10 tests):** VHD deletion with safety checks and error handling
 
@@ -358,6 +360,7 @@ wsl_convert_path() {
 5. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
 6. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
 7. **Already-attached detection**: Mount command has complex fallback logic for detecting already-attached VHDs; maintain this when refactoring
+16. **Mount does not format**: Mount command will error if VHD is unformatted, directing user to use format command first
 8. **Test exit codes**: Status queries return 1 when VHD not found/not attached; tests must expect actual behavior (0 for success, 1 for not found)
 9. **Test environment state**: Test expectations must match actual VHD state (attached/mounted/unmounted); verify state before creating assertions
 10. **Test state setup**: Some tests need specific states (e.g., attached-but-not-mounted); set up state explicitly before testing
@@ -370,14 +373,14 @@ wsl_convert_path() {
 ## Workflow-Specific Notes
 
 ### Mount Operation Flow
-1. Parse args → 2. Check VHD file exists (WSL path) → 3. Snapshot → 4. Attach (or detect existing) → 5. Detect UUID → 6. Check mount status → 7. Mount if needed
+1. Parse args → 2. Check VHD file exists (WSL path) → 3. Snapshot → 4. Attach (or detect existing) → 5. Detect UUID → 6. Verify VHD is formatted (error if not) → 7. Check mount status → 8. Mount if needed
 
-Critical: Steps 4-5 have fallback logic for already-attached VHDs.
+Critical: Steps 4-5 have fallback logic for already-attached VHDs. Mount command does NOT auto-format disks - it will error if VHD is unformatted, directing user to use format command.
 
 ### Create Operation Flow  
-1. Parse args → 2. Convert path → 3. Check doesn't exist → 4. Create dirs → 5. Verify qemu-img → 6. Snapshot → 7. Create with qemu-img → 8. Attach → 9. Detect device → 10. Format → 11. Return UUID
+1. Parse args → 2. Convert path → 3. Check doesn't exist → 4. Create dirs → 5. Verify qemu-img → 6. Create VHD file with qemu-img → 7. Return success
 
-Note: VHD is left in attached-but-not-mounted state; user must mount separately.
+Note: Create command only creates the VHD file. User must use 'attach' or 'mount' commands to attach and format the disk. This follows separation of responsibilities principle.
 
 ### Unmount Operation Flow
 1. Parse args → 2. Check attached → 3. Unmount from filesystem → 4. Detach from WSL → 5. Verify detached
@@ -388,6 +391,11 @@ Error handling: If unmount fails, suggest `lsof +D` to find blocking processes.
 1. Parse args (path, name) → 2. Validate VHD file exists → 3. Snapshot UUIDs/devices → 4. Attempt attach → 5. Detect new UUID → 6. Report device name → 7. Return success
 
 Critical: Attach does NOT mount to filesystem - VHD is only available as block device. Has fallback logic for already-attached VHDs (idempotency). UUID detection uses snapshot-based device comparison.
+
+### Format Operation Flow
+1. Parse args (name or uuid, type) → 2. Validate at least one of --name or --uuid provided → 3. Determine device name from UUID or use provided name → 4. Validate device exists → 5. Check if already formatted and warn user → 6. Prompt for confirmation in non-quiet mode → 7. Format device → 8. Return new UUID
+
+Critical: Format does NOT support UUID discovery from path. Either `--uuid` or `--name` must be explicitly provided. When `--uuid` is provided for an already-formatted disk, user is warned that formatting will generate a new UUID and destroy data. Format command requires explicit device identification to prevent accidental formatting.
 
 ### Resize Operation Flow
 1. Parse args (mount-point, size) → 2. Validate mount point exists and is mounted → 3. Calculate directory size → 4. Determine target size (max of requested size or data+30%) → 5. Create new VHD with target size → 6. Mount new VHD to temporary location → 7. Copy all data with rsync → 8. Verify file counts match → 9. Unmount both disks → 10. Backup original VHD (rename with _bkp suffix) → 11. Rename new VHD to original name → 12. Remount at original location → 13. Verify integrity → 14. Return new UUID

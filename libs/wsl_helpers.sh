@@ -402,6 +402,55 @@ wsl_find_uuid_by_path() {
     wsl_find_dynamic_vhd_uuid
 }
 
+# Format an attached VHD with a filesystem
+# Args: $1 - Device name (e.g., sdd) or full path (e.g., /dev/sdd)
+#       $2 - Filesystem type (optional, defaults to ext4)
+# Returns: UUID of formatted device on success, empty string on failure
+# Note: VHD must be attached to WSL before formatting
+format_vhd() {
+    local device="$1"
+    local fs_type="${2:-ext4}"
+    
+    if [[ -z "$device" ]]; then
+        echo "Error: Device is required" >&2
+        return 1
+    fi
+    
+    # Normalize device path (add /dev/ if not present)
+    if [[ ! "$device" =~ ^/dev/ ]]; then
+        device="/dev/$device"
+    fi
+    
+    # Verify device exists
+    if [[ ! -b "$device" ]]; then
+        echo "Error: Device $device does not exist or is not a block device" >&2
+        return 1
+    fi
+    
+    # Format the device
+    if ! debug_cmd sudo mkfs -t "$fs_type" "$device" >/dev/null 2>&1; then
+        echo "Error: Failed to format device $device with $fs_type" >&2
+        return 1
+    fi
+    
+    sleep 1  # Give system time to update UUID info
+    
+    # Get the UUID of the newly formatted device
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} sudo blkid -s UUID -o value $device" >&2
+    fi
+    local new_uuid=$(sudo blkid -s UUID -o value "$device" 2>/dev/null)
+    
+    if [[ -z "$new_uuid" ]]; then
+        echo "Error: Could not retrieve UUID after formatting" >&2
+        return 1
+    fi
+    
+    # Output the UUID
+    echo "$new_uuid"
+    return 0
+}
+
 # Delete a VHD file
 # Args: $1 - VHD path (Windows path format)
 # Returns: 0 on success, 1 on failure
@@ -521,24 +570,10 @@ wsl_create_vhd() {
         return 1
     fi
     
-    # Format the new device
-    if ! debug_cmd sudo mkfs -t "$fs_type" "/dev/$new_dev" >/dev/null 2>&1; then
+    # Format the new device using helper function
+    local new_uuid=$(format_vhd "$new_dev" "$fs_type")
+    if [[ $? -ne 0 || -z "$new_uuid" ]]; then
         echo "Error: Failed to format device /dev/$new_dev with $fs_type" >&2
-        wsl_detach_vhd "$vhd_path_win" ""
-        rm -f "$vhd_path_wsl"
-        return 1
-    fi
-    
-    sleep 1  # Give system time to update UUID info
-    
-    # Get the UUID of the newly formatted device
-    if [[ "$DEBUG" == "true" ]]; then
-        echo -e "${BLUE}[DEBUG]${NC} sudo blkid -s UUID -o value /dev/$new_dev" >&2
-    fi
-    local new_uuid=$(sudo blkid -s UUID -o value "/dev/$new_dev" 2>/dev/null)
-    
-    if [[ -z "$new_uuid" ]]; then
-        echo "Error: Could not retrieve UUID of newly formatted device" >&2
         wsl_detach_vhd "$vhd_path_win" ""
         rm -f "$vhd_path_wsl"
         return 1

@@ -175,15 +175,15 @@ run_test "Status with specific UUID" \
     "bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID 2>&1" \
     0
 
-# Test 3: Status with specific path
+# Test 3: Status with specific path (VHD should be attached and mounted from test 2)
 run_test "Status with specific path" \
     "bash $PARENT_DIR/disk_management.sh status --path $VHD_PATH 2>&1" \
-    1
+    0
 
-# Test 4: Status with specific mount point
+# Test 4: Status with specific mount point (VHD should be attached and mounted)
 run_test "Status with specific mount point" \
     "bash $PARENT_DIR/disk_management.sh status --mount-point $MOUNT_POINT 2>&1" \
-    1
+    0
 
 # Test 5: Status shows attached but not mounted
 # First ensure VHD is attached but not mounted

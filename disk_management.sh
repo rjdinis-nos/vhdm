@@ -32,7 +32,8 @@ show_usage() {
     echo
     echo "Commands:"
     echo "  attach [OPTIONS]         - Attach a VHD to WSL (without mounting to filesystem)"
-    echo "  mount [OPTIONS]          - Attach and mount the VHD disk"
+    echo "  format [OPTIONS]         - Format an attached VHD with a filesystem"
+    echo "  mount [OPTIONS]          - Attach and mount a formatted VHD disk"
     echo "  umount [OPTIONS]         - Unmount and detach the VHD disk"
     echo "  detach [OPTIONS]         - Detach a VHD disk (unmounts first if needed)"
     echo "  status [OPTIONS]         - Show current VHD disk status"
@@ -41,54 +42,63 @@ show_usage() {
     echo "  resize [OPTIONS]         - Resize a VHD disk by creating new disk and migrating data"
     echo
     echo "Attach Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
-    echo "  --name NAME              - VHD name for WSL attachment [default: disk]"
+    echo "  --path PATH              - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
+    echo "  --name NAME              - [optional] VHD name for WSL attachment [default: disk]"
     echo "  Note: Attaches VHD to WSL without mounting to filesystem."
     echo "        VHD will be accessible as a block device (/dev/sdX) after attachment."
     echo
+    echo "Format Command Options:"
+    echo "  --name NAME              - [optional] VHD device block name (e.g., sdd, sde)"
+    echo "  --uuid UUID              - [optional] VHD UUID"
+    echo "  --type TYPE              - [optional] Filesystem type (ext4, ext3, xfs, etc.) [default: ext4]"
+    echo "  Note: Either --uuid or --name must be provided."
+    echo "        VHD must be attached before formatting. Use 'attach' command first."
+    echo "        If --uuid is provided for an already-formatted disk, confirmation will be required."
+    echo
     echo "Mount Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format)"
-    echo "  --mount-point PATH       - Mount point path"
-    echo "  --name NAME              - VHD name for WSL attachment"
+    echo "  --path PATH              - [mandatory] VHD file path (Windows format)"
+    echo "  --mount-point PATH       - [mandatory] Mount point path"
+    echo "  --name NAME              - [optional] VHD name for WSL attachment"
+    echo "  Note: VHD must be formatted before mounting. Use 'format' command if needed."
     echo
     echo "Umount Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
-    echo "  --uuid UUID              - VHD UUID (optional if path or mount-point provided)"
-    echo "  --mount-point PATH       - Mount point path (UUID will be discovered)"
+    echo "  --path PATH              - [optional] VHD file path (Windows format, UUID will be discovered)"
+    echo "  --uuid UUID              - [optional] VHD UUID (can be used instead of path or mount-point)"
+    echo "  --mount-point PATH       - [optional] Mount point path (UUID will be discovered)"
     echo "  Note: Provide at least one option. UUID will be auto-discovered when possible."
     echo
     echo "Detach Command Options:"
-    echo "  --uuid UUID              - VHD UUID to detach (required)"
-    echo "  --path PATH              - VHD file path (optional, improves reliability)"
+    echo "  --uuid UUID              - [mandatory] VHD UUID to detach"
+    echo "  --path PATH              - [optional] VHD file path (improves reliability)"
     echo "  Note: If VHD is mounted, it will be unmounted first."
     echo
     echo "Status Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
-    echo "  --uuid UUID              - VHD UUID (optional if path or mount-point provided)"
-    echo "  --mount-point PATH       - Mount point path (UUID will be discovered)"
-    echo "  --all                    - Show all attached VHDs"
+    echo "  --path PATH              - [optional] VHD file path (Windows format, UUID will be discovered)"
+    echo "  --uuid UUID              - [optional] VHD UUID (can be used instead of path or mount-point)"
+    echo "  --mount-point PATH       - [optional] Mount point path (UUID will be discovered)"
+    echo "  --all                    - [optional] Show all attached VHDs"
     echo
     echo "Create Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
-    echo "  --size SIZE              - VHD size (e.g., 1G, 500M, 10G) [default: 1G]"
-    echo "  --name NAME              - VHD name for WSL attachment [default: share]"
-    echo "  --mount-point PATH       - Mount point path [default: /home/\$USER/share]"
-    echo "  --filesystem TYPE        - Filesystem type (ext4, ext3, xfs, etc.) [default: ext4]"
-    echo "  --force                  - Overwrite existing VHD (auto-unmounts if attached, prompts for confirmation)"
+    echo "  --path PATH              - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
+    echo "  --size SIZE              - [optional] VHD size (e.g., 1G, 500M, 10G) [default: 1G]"
+    echo "  --force                  - [optional] Overwrite existing VHD (auto-unmounts if attached, prompts for confirmation)"
+    echo "  Note: Creates VHD file only. Use 'attach' or 'mount' commands to attach and use the disk."
     echo
     echo "Delete Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
-    echo "  --uuid UUID              - VHD UUID (optional if path provided)"
-    echo "  --force                  - Skip confirmation prompt"
+    echo "  --path PATH              - [mandatory] VHD file path (Windows format, UUID will be discovered)"
+    echo "  --uuid UUID              - [optional] VHD UUID (can be used instead of path)"
+    echo "  --force                  - [optional] Skip confirmation prompt"
     echo "  Note: VHD must be unmounted and detached before deletion."
     echo
     echo "Resize Command Options:"
-    echo "  --mount-point PATH       - Target disk mount point (required)"
-    echo "  --size SIZE              - New disk size (e.g., 5G, 10G) (required)"
+    echo "  --mount-point PATH       - [mandatory] Target disk mount point"
+    echo "  --size SIZE              - [mandatory] New disk size (e.g., 5G, 10G)"
     echo "  Note: Creates new disk, migrates data, and replaces original with backup."
     echo
     echo "Examples:"
     echo "  $0 attach --path C:/VMs/disk.vhdx --name mydisk"
+    echo "  $0 format --name sdd --type ext4"
+    echo "  $0 format --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --type ext4"
     echo "  $0 mount --path C:/VMs/disk.vhdx --mount-point /mnt/data"
     echo "  $0 umount --path C:/VMs/disk.vhdx"
     echo "  $0 umount --mount-point /mnt/data"
@@ -96,7 +106,7 @@ show_usage() {
     echo "  $0 detach --uuid 72a3165c-f1be-4497-a1fb-2c55054ac472"
     echo "  $0 status --path C:/VMs/disk.vhdx"
     echo "  $0 status --all"
-    echo "  $0 create --path C:/VMs/disk.vhdx --size 5G --name mydisk"
+    echo "  $0 create --path C:/VMs/disk.vhdx --size 5G"
     echo "  $0 delete --path C:/VMs/disk.vhdx"
     echo "  $0 delete --path C:/VMs/disk.vhdx --force"
     echo "  $0 resize --mount-point /mnt/data --size 10G"
@@ -430,12 +440,28 @@ mount_vhd() {
             fi
         done
         
+        # If no UUID found, the VHD is unformatted
         if [[ -z "$mount_uuid" ]]; then
-            echo -e "${RED}[✗] Failed to detect UUID of attached VHD${NC}"
+            if [[ -z "$new_dev" ]]; then
+                echo -e "${RED}[✗] Failed to detect device of attached VHD${NC}"
+                exit 1
+            fi
+            
+            echo -e "${RED}[✗] VHD has no filesystem${NC}"
+            echo
+            echo "The VHD is attached but not formatted."
+            echo "  Device: /dev/$new_dev"
+            echo
+            echo "To format the VHD, run:"
+            echo "  $0 format --name $new_dev --type ext4"
+            echo
+            echo "Or use a different filesystem type (ext3, xfs, etc.):"
+            echo "  $0 format --name $new_dev --type xfs"
             exit 1
         fi
+        
         [[ "$QUIET" == "false" ]] && echo "  Detected UUID: $mount_uuid"
-        [[ "$QUIET" == "false" ]] && echo "  Detected Device: /dev/$new_dev"
+        [[ "$QUIET" == "false" ]] && [[ -n "$new_dev" ]] && echo "  Detected Device: /dev/$new_dev"
     else
         # VHD might already be attached, try to find it
         [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD appears to be already attached, searching for UUID...${NC}"
@@ -897,9 +923,6 @@ create_vhd() {
     # Parse create command arguments
     local create_path=""
     local create_size="1G"
-    local create_name="disk"
-    local create_mount_point=""
-    local create_filesystem="ext4"
     local force="false"
     
     while [[ $# -gt 0 ]]; do
@@ -920,30 +943,6 @@ create_vhd() {
                 create_size="$2"
                 shift 2
                 ;;
-            --name)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --name requires a value${NC}" >&2
-                    return 1
-                fi
-                create_name="$2"
-                shift 2
-                ;;
-            --mount-point)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
-                    return 1
-                fi
-                create_mount_point="$2"
-                shift 2
-                ;;
-            --filesystem)
-                if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --filesystem requires a value${NC}" >&2
-                    return 1
-                fi
-                create_filesystem="$2"
-                shift 2
-                ;;
             --force)
                 force="true"
                 shift
@@ -955,11 +954,6 @@ create_vhd() {
                 ;;
         esac
     done
-    
-    # Use defaults if not specified
-    if [[ -z "$create_mount_point" ]]; then
-        create_mount_point="/home/$USER/$create_name"
-    fi
     
     # Validate required parameters
     if [[ -z "$create_path" ]]; then
@@ -1069,33 +1063,52 @@ create_vhd() {
     [[ "$QUIET" == "false" ]] && echo "Creating VHD disk..."
     [[ "$QUIET" == "false" ]] && echo "  Path: $create_path"
     [[ "$QUIET" == "false" ]] && echo "  Size: $create_size"
-    [[ "$QUIET" == "false" ]] && echo "  Name: $create_name"
-    [[ "$QUIET" == "false" ]] && echo "  Filesystem: $create_filesystem"
-    [[ "$QUIET" == "false" ]] && echo "  Mount Point: $create_mount_point"
     [[ "$QUIET" == "false" ]] && echo
     
-    # Create the VHD and capture the UUID
-    local new_uuid
-    if new_uuid=$(wsl_create_vhd "$create_path" "$create_size" "$create_filesystem" "$create_name" 2>&1); then
-        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD created successfully${NC}"
-        [[ "$QUIET" == "false" ]] && echo "  New UUID: $new_uuid"
-        [[ "$QUIET" == "false" ]] && echo
-        [[ "$QUIET" == "false" ]] && echo "The VHD is now attached to WSL but not mounted."
-        [[ "$QUIET" == "false" ]] && echo "To mount it, run:"
-        [[ "$QUIET" == "false" ]] && echo "  sudo mkdir -p $create_mount_point"
-        [[ "$QUIET" == "false" ]] && echo "  sudo mount UUID=$new_uuid $create_mount_point"
-        [[ "$QUIET" == "false" ]] && echo
-        [[ "$QUIET" == "false" ]] && echo "========================================"
-        [[ "$QUIET" == "false" ]] && echo "  Creation completed"
-        [[ "$QUIET" == "false" ]] && echo "========================================"
-        
-        if [[ "$QUIET" == "true" ]]; then
-            echo "$create_path: created with UUID=$new_uuid"
-        fi
-    else
-        echo -e "${RED}[✗] Failed to create VHD${NC}"
-        echo "$new_uuid"  # Print error message
+    # Ensure qemu-img is installed
+    if ! command -v qemu-img &> /dev/null; then
+        echo -e "${RED}[✗] qemu-img is not installed${NC}"
+        echo "Please install it first:"
+        echo "  Arch/Manjaro: sudo pacman -Sy qemu-img"
+        echo "  Ubuntu/Debian: sudo apt install qemu-utils"
+        echo "  Fedora: sudo dnf install qemu-img"
         exit 1
+    fi
+    
+    # Create parent directory if it doesn't exist
+    local vhd_dir=$(dirname "$vhd_path_wsl")
+    if [[ ! -d "$vhd_dir" ]]; then
+        [[ "$QUIET" == "false" ]] && echo "Creating directory: $vhd_dir"
+        if ! debug_cmd mkdir -p "$vhd_dir" 2>/dev/null; then
+            echo -e "${RED}[✗] Failed to create directory $vhd_dir${NC}"
+            exit 1
+        fi
+    fi
+    
+    # Create the VHD file
+    if ! debug_cmd qemu-img create -f vhdx "$vhd_path_wsl" "$create_size" >/dev/null 2>&1; then
+        echo -e "${RED}[✗] Failed to create VHD file${NC}"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD file created successfully${NC}"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Creation completed"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "The VHD file has been created but is not attached or formatted."
+    [[ "$QUIET" == "false" ]] && echo "To use it, you need to:"
+    [[ "$QUIET" == "false" ]] && echo "  1. Attach the VHD:"
+    [[ "$QUIET" == "false" ]] && echo "     $0 attach --path $create_path --name <name>"
+    [[ "$QUIET" == "false" ]] && echo "  2. Format the VHD:"
+    [[ "$QUIET" == "false" ]] && echo "     $0 format --name <device_name> --type ext4"
+    [[ "$QUIET" == "false" ]] && echo "  3. Mount the formatted VHD:"
+    [[ "$QUIET" == "false" ]] && echo "     $0 mount --path $create_path --mount-point <mount_point>"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    if [[ "$QUIET" == "true" ]]; then
+        echo "$create_path: created"
     fi
 }
 
@@ -1465,6 +1478,174 @@ resize_vhd() {
     fi
 }
 
+# Function to format VHD
+format_vhd_command() {
+    # Parse format command arguments
+    local format_name=""
+    local format_uuid=""
+    local format_type="ext4"
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --name)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo "Error: --name requires a value" >&2
+                    return 1
+                fi
+                format_name="$2"
+                shift 2
+                ;;
+            --uuid)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo "Error: --uuid requires a value" >&2
+                    return 1
+                fi
+                format_uuid="$2"
+                shift 2
+                ;;
+            --type)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    echo "Error: --type requires a value" >&2
+                    return 1
+                fi
+                format_type="$2"
+                shift 2
+                ;;
+            *)
+                echo "Error: Unknown option: $1" >&2
+                echo "Use --help to see available options" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Validate that at least name or UUID is provided
+    if [[ -z "$format_name" && -z "$format_uuid" ]]; then
+        echo -e "${RED}Error: Either --name or --uuid is required${NC}" >&2
+        echo >&2
+        echo "Usage: $0 format [OPTIONS]" >&2
+        echo >&2
+        echo "Options:" >&2
+        echo "  --name NAME   - VHD device block name (e.g., sdd, sde)" >&2
+        echo "  --uuid UUID   - VHD UUID" >&2
+        echo "  --type TYPE   - Filesystem type [default: ext4]" >&2
+        echo >&2
+        echo "Examples:" >&2
+        echo "  $0 format --name sdd --type ext4" >&2
+        echo "  $0 format --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --type ext4" >&2
+        echo >&2
+        echo "To find attached VHDs, run: $0 status --all" >&2
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Format Operation"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    local device_name=""
+    local target_identifier=""
+    
+    # Determine device name based on provided arguments
+    if [[ -n "$format_uuid" ]]; then
+        # Check if UUID exists and if it's already formatted
+        if [[ "$DEBUG" == "true" ]]; then
+            echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$format_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+        fi
+        device_name=$(lsblk -f -J | jq -r --arg UUID "$format_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+        
+        if [[ -z "$device_name" ]]; then
+            echo -e "${RED}[✗] No device found with UUID: $format_uuid${NC}"
+            echo
+            echo "The UUID might be incorrect or the VHD is not attached."
+            echo "To find attached VHDs, run: $0 status --all"
+            exit 1
+        fi
+        
+        # Warn user that disk is already formatted
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] WARNING: Device /dev/$device_name is already formatted${NC}"
+        [[ "$QUIET" == "false" ]] && echo "  Current UUID: $format_uuid"
+        [[ "$QUIET" == "false" ]] && echo
+        [[ "$QUIET" == "false" ]] && echo "Formatting will destroy all existing data and generate a new UUID."
+        
+        if [[ "$QUIET" == "false" ]]; then
+            echo -n "Are you sure you want to format /dev/$device_name? (yes/no): "
+            read -r confirmation
+            
+            if [[ "$confirmation" != "yes" ]]; then
+                echo "Format operation cancelled."
+                exit 0
+            fi
+            echo
+        fi
+        
+        target_identifier="UUID $format_uuid"
+    else
+        # Using device name directly
+        device_name="$format_name"
+        target_identifier="device name $format_name"
+        
+        # Validate device exists
+        if [[ ! -b "/dev/$device_name" ]]; then
+            echo -e "${RED}[✗] Block device /dev/$device_name does not exist${NC}"
+            echo
+            echo "Please check the device name is correct."
+            echo "To find attached VHDs, run: $0 status --all"
+            exit 1
+        fi
+        
+        # Check if device has existing UUID (already formatted)
+        local existing_uuid=$(sudo blkid -s UUID -o value "/dev/$device_name" 2>/dev/null)
+        if [[ -n "$existing_uuid" ]]; then
+            [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] WARNING: Device /dev/$device_name is already formatted${NC}"
+            [[ "$QUIET" == "false" ]] && echo "  Current UUID: $existing_uuid"
+            [[ "$QUIET" == "false" ]] && echo
+            [[ "$QUIET" == "false" ]] && echo "Formatting will destroy all existing data and generate a new UUID."
+            
+            if [[ "$QUIET" == "false" ]]; then
+                echo -n "Are you sure you want to format /dev/$device_name? (yes/no): "
+                read -r confirmation
+                
+                if [[ "$confirmation" != "yes" ]]; then
+                    echo "Format operation cancelled."
+                    exit 0
+                fi
+                echo
+            fi
+        else
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Device /dev/$device_name is not formatted${NC}"
+            [[ "$QUIET" == "false" ]] && echo
+        fi
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "Formatting device /dev/$device_name with $format_type..."
+    [[ "$QUIET" == "false" ]] && echo "  Target: $target_identifier"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Format using helper function
+    local new_uuid=$(format_vhd "$device_name" "$format_type")
+    if [[ $? -ne 0 || -z "$new_uuid" ]]; then
+        echo -e "${RED}[✗] Failed to format device /dev/$device_name${NC}"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD formatted successfully${NC}"
+    [[ "$QUIET" == "false" ]] && echo "  Device: /dev/$device_name"
+    [[ "$QUIET" == "false" ]] && echo "  New UUID: $new_uuid"
+    [[ "$QUIET" == "false" ]] && echo "  Filesystem: $format_type"
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$new_uuid"
+    
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Format operation completed"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    
+    if [[ "$QUIET" == "true" ]]; then
+        echo "/dev/$device_name: formatted with UUID=$new_uuid"
+    fi
+}
+
 # Function to attach VHD
 attach_vhd() {
     # Parse attach command arguments
@@ -1633,7 +1814,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help|help)
             show_usage
             ;;
-        attach|mount|umount|unmount|detach|status|create|delete|resize)
+        attach|format|mount|umount|unmount|detach|status|create|delete|resize)
             COMMAND="$1"
             shift
             break
@@ -1650,6 +1831,9 @@ done
 case "$COMMAND" in
     attach)
         attach_vhd "$@"  # Pass remaining arguments to attach_vhd
+        ;;
+    format)
+        format_vhd_command "$@"  # Pass remaining arguments to format_vhd_command
         ;;
     mount)
         mount_vhd "$@"  # Pass remaining arguments to mount_vhd

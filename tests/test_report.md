@@ -1,18 +1,195 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-20 13:12:20
+Last Updated: 2025-11-20 19:18:33
 
 ## Test Suite Summary
 
 | Test Suite | Last Run | Status | Tests Run | Passed | Failed | Duration |
 |------------|----------|--------|-----------|--------|--------|----------|
-| test_status.sh | 2025-11-20 | ✗ FAILED | 10 | 9 | 1 | 6s |
-| test_mount.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 30s |
+| test_status.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 25s |
+| test_mount.sh | 2025-11-20 | ✗ FAILED | 10 | 7 | 3 | 7s |
 | test_umount.sh | 2025-11-20 | ✗ FAILED | 10 | 2 | 8 | 6s |
-| test_create.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 26s |
+| test_create.sh | 2025-11-20 | ✗ FAILED | 10 | 9 | 1 | 5s |
 | test_delete.sh | 2025-11-20 | ✗ FAILED | 10 | 4 | 6 | 31s |
 
 ## Test History
+
+### 2025-11-20 19:18:33 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 7s
+
+**Failed Tests:**
+- Test 4: Mount with custom mount point
+- Test 6: Mount creates mount point directory
+- Test 10: Status shows VHD as mounted after mount
+
+
+### 2025-11-20 19:18:26 - test_create.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 5s
+
+**Failed Tests:**
+- Test 8: Create VHD with 2G size
+
+
+### 2025-11-20 19:10:34 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 6s
+
+
+### 2025-11-20 19:09:31 - test_create.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 1s
+
+**Failed Tests:**
+- Test 8: Create VHD with 2G size
+
+
+### 2025-11-20 19:09:21 - test_create.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 5s
+
+**Failed Tests:**
+- Test 8: Create VHD with 2G size
+
+
+### 2025-11-20 18:54:59 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 4: Mount with custom mount point
+- Test 6: Mount creates mount point directory
+- Test 10: Status shows VHD as mounted after mount
+
+
+### 2025-11-20 18:54:51 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 6s
+
+
+### 2025-11-20 18:53:48 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 11s
+
+**Failed Tests:**
+- Test 4: Mount with custom mount point
+- Test 6: Mount creates mount point directory
+- Test 10: Status shows VHD as mounted after mount
+
+
+### 2025-11-20 18:53:18 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 9s
+
+
+### 2025-11-20 18:52:30 - test_create.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 1
+- **Duration:** 1s
+
+**Failed Tests:**
+- Test 3: Verify created VHD is NOT attached
+
+
+### 2025-11-20 18:51:42 - test_create.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 9s
+
+**Failed Tests:**
+- Test 3: Verify created VHD is NOT attached
+
+
+### 2025-11-20 16:02:36 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 25s
+
+
+### 2025-11-20 16:00:48 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 8
+- **Tests Failed:** 2
+- **Duration:** 13s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+
+
+### 2025-11-20 15:00:59 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 8
+- **Tests Failed:** 2
+- **Duration:** 7s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+
+
+### 2025-11-20 14:59:48 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 8
+- **Tests Failed:** 2
+- **Duration:** 4s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+
 
 ### 2025-11-20 13:12:20 - test_delete.sh
 
