@@ -260,12 +260,16 @@ Tests use the `.env.test` configuration file located in the `tests/` directory. 
 ```bash
 WSL_DISKS_DIR="C:/aNOS/VMs/wsl_test/"
 VHD_PATH="${WSL_DISKS_DIR}disk.vhdx"
-VHD_UUID="3e76fe9e-c345-4097-b8e2-aa3936ab83bc"  # Used for explicit test validation
 MOUNT_POINT="/home/$USER/disk"
 VHD_NAME="disk"
 ```
 
-**Note**: While the main scripts use automatic UUID discovery, tests explicitly use `VHD_UUID` for validation scenarios to ensure correct behavior.
+**UUID Discovery**: Tests automatically discover VHD UUIDs dynamically using the `status --path` or `status --mount-point` commands. Each test suite includes a `get_vhd_uuid()` helper function that:
+1. Ensures the VHD is attached (via `attach` or `mount`)
+2. Queries the UUID using `status` command with quiet mode
+3. Parses the UUID from the machine-readable output
+
+This approach eliminates the need for hardcoded UUIDs in test configuration and ensures tests work with any VHD file specified in `.env.test`.
 
 **Resize Tests**: The resize test suite creates its own temporary VHD (`resize_test.vhdx`) to avoid interfering with the main test VHD. This temporary VHD is automatically cleaned up after tests complete.
 

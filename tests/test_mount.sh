@@ -52,6 +52,15 @@ else
     exit 1
 fi
 
+# Helper function to get UUID from VHD path
+get_vhd_uuid() {
+    # Mount the VHD first to ensure it's attached
+    bash "$PARENT_DIR/disk_management.sh" mount --path "$VHD_PATH" --mount-point "$MOUNT_POINT" --name "$VHD_NAME" >/dev/null 2>&1
+    # Get UUID from mount point
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$MOUNT_POINT" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+    echo "$uuid"
+}
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -145,7 +154,9 @@ is_mounted() {
 # Helper function to unmount VHD (cleanup)
 cleanup_mount() {
     if is_mounted; then
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$VHD_PATH" --uuid "$VHD_UUID" --mount-point "$MOUNT_POINT" >/dev/null 2>&1
+        # Get UUID dynamically for cleanup
+        local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$MOUNT_POINT" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$VHD_PATH" --uuid "$uuid" --mount-point "$MOUNT_POINT" >/dev/null 2>&1
     fi
 }
 
@@ -154,10 +165,13 @@ echo -e "${BLUE}========================================"
 echo -e "  Disk Management Mount Tests"
 echo -e "========================================${NC}"
 
+# Get VHD UUID dynamically
+VHD_UUID=$(get_vhd_uuid)
+
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Testing with configuration from .env.test:"
     echo "  VHD_PATH: $VHD_PATH"
-    echo "  VHD_UUID: $VHD_UUID"
+    echo "  VHD_UUID (discovered): $VHD_UUID"
     echo "  MOUNT_POINT: $MOUNT_POINT"
     echo "  VHD_NAME: $VHD_NAME"
     echo

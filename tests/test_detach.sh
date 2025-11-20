@@ -57,6 +57,15 @@ else
     exit 1
 fi
 
+# Helper function to get UUID from VHD path
+get_vhd_uuid() {
+    # Attach the VHD first to ensure it's available
+    bash "$PARENT_DIR/disk_management.sh" attach --path "$VHD_PATH" --name "$VHD_NAME" >/dev/null 2>&1
+    # Get UUID from path
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$VHD_PATH" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+    echo "$uuid"
+}
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -144,7 +153,8 @@ run_test() {
 
 # Helper function to check if VHD is attached
 is_attached() {
-    bash "$PARENT_DIR/disk_management.sh" status --uuid "$VHD_UUID" 2>&1 | grep -iq "attached"
+    local uuid="$1"
+    bash "$PARENT_DIR/disk_management.sh" status --uuid "$uuid" 2>&1 | grep -iq "attached"
 }
 
 # Helper function to check if VHD is mounted
@@ -154,8 +164,9 @@ is_mounted() {
 
 # Helper function to ensure VHD is attached but not mounted (setup)
 setup_attach_only() {
+    local uuid="${1:-$VHD_UUID}"
     # First, ensure it's mounted so we can detach properly
-    if ! is_attached; then
+    if ! is_attached "$uuid"; then
         bash "$PARENT_DIR/disk_management.sh" mount --path "$VHD_PATH" --mount-point "$MOUNT_POINT" --name "$VHD_NAME" >/dev/null 2>&1
     fi
     
@@ -177,10 +188,13 @@ echo -e "${BLUE}========================================"
 echo -e "  Disk Management Detach Tests"
 echo -e "========================================${NC}"
 
+# Get VHD UUID dynamically
+VHD_UUID=$(get_vhd_uuid)
+
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Testing with configuration from .env.test:"
     echo "  VHD_PATH: $VHD_PATH"
-    echo "  VHD_UUID: $VHD_UUID"
+    echo "  VHD_UUID (discovered): $VHD_UUID"
     echo "  MOUNT_POINT: $MOUNT_POINT"
     echo "  VHD_NAME: $VHD_NAME"
     echo

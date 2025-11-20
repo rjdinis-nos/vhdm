@@ -283,20 +283,28 @@ run_test "Description" "command | grep -q 'pattern'" 0
 - File/mount point validation failures provide suggestions and return appropriate codes
 
 **Configuration:**
-Tests source `tests/.env.test` for VHD configuration. Ensure test environment matches:
-- VHD exists at `$VHD_PATH`
-- VHD has correct `$VHD_UUID` (used explicitly in tests for validation)
-- Mount point `$MOUNT_POINT` is configured
+Tests source `tests/.env.test` for VHD configuration:
+- VHD must exist at `$VHD_PATH`
+- Mount point `$MOUNT_POINT` must be configured
+- VHD_NAME specifies the name for WSL attachment
 
-**Note**: While the main scripts no longer use VHD_UUID as a default, test files still use it for explicit validation scenarios.
+**UUID Discovery in Tests:**
+Tests automatically discover UUIDs dynamically using `get_vhd_uuid()` helper functions:
+- Mount or attach the VHD to ensure it's available
+- Query UUID using `status --path` or `status --mount-point` in quiet mode
+- Parse UUID from machine-readable output using grep
+
+This approach eliminates hardcoded UUIDs and ensures tests work with any VHD specified in `.env.test`.
 
 **Test Maintenance:**
 - Test expectations must match actual VHD state (mounted vs unmounted)
-- Update `tests/.env.test` if creating new test VHDs
+- Update `tests/.env.test` if creating new test VHDs (path, mount point, name)
+- UUIDs are discovered dynamically - no manual UUID configuration needed
 - Verbose mode aids debugging without modifying test logic
 - Tests requiring specific states must set up that state before assertions
 - Exit code expectations must match actual command behavior (not assumed behavior)
 - Use `sudo umount` for filesystem-only unmount; script's umount command fully detaches VHD
+- Each test suite includes `get_vhd_uuid()` helper for dynamic UUID discovery
 
 ## Common Modifications
 

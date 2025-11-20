@@ -52,6 +52,15 @@ else
     exit 1
 fi
 
+# Helper function to get UUID from VHD path (attach first to ensure it exists)
+get_vhd_uuid() {
+    # Attach the VHD first to ensure it's available
+    bash "$PARENT_DIR/disk_management.sh" attach --path "$VHD_PATH" --name "$VHD_NAME" >/dev/null 2>&1
+    # Get UUID from path
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$VHD_PATH" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+    echo "$uuid"
+}
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -148,7 +157,6 @@ echo -e "${BLUE}  VHD Attach Command Test Suite${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo
 echo "Test VHD: $VHD_PATH"
-echo "Test UUID: $VHD_UUID"
 echo "Mount Point: $MOUNT_POINT"
 echo
 echo -e "${BLUE}========================================${NC}"
@@ -156,6 +164,9 @@ echo
 
 # Ensure VHD is detached before starting tests
 echo "Preparing test environment..."
+# Discover UUID dynamically
+VHD_UUID=$(get_vhd_uuid)
+echo "Discovered VHD UUID: $VHD_UUID"
 "$PARENT_DIR/disk_management.sh" umount --uuid "$VHD_UUID" >/dev/null 2>&1
 sleep 1
 echo "Environment ready."
