@@ -63,6 +63,10 @@ NC='\033[0m' # No Color
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
+FAILED_TESTS=()
+
+# Track start time for duration calculation
+START_TIME=$(date +%s)
 
 # Test VHD paths (separate from production VHDs)
 TEST_VHD_DIR="C:/aNOS/VMs/wsl_test/"
@@ -75,7 +79,7 @@ cleanup_test_vhd() {
     
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to unmount if attached
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" 2>/dev/null || true
+        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
         # Remove the file
         rm -f "$vhd_path_wsl" 2>/dev/null || true
     fi
@@ -140,6 +144,7 @@ run_test() {
             echo -e "${RED}✗ FAILED${NC} (expected: $expected_exit_code, got: $exit_code)"
         fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("Test $TESTS_RUN: $test_name")
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then
@@ -162,17 +167,17 @@ else
     echo
 fi
 
-# Pre-cleanup: Remove any leftover test VHDs
-cleanup_test_vhd "${TEST_VHD_BASE}_1.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_2.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_3.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_4.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_5.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_custom.vhdx"
+# Pre-cleanup: Remove any leftover test VHDs (silently)
+cleanup_test_vhd "${TEST_VHD_BASE}_1.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_2.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_3.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_4.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_5.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_custom.vhdx" 2>/dev/null
 
 # Test 1: Create VHD with default settings (1G, ext4)
 run_test "Create VHD with default settings" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_1.vhdx --name test_create_1" \
+    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_1.vhdx --name test_create_1 2>&1" \
     0
 
 # Test 2: Verify created VHD file exists
@@ -182,32 +187,39 @@ run_test "Verify created VHD file exists" \
 
 # Test 3: Verify created VHD is attached
 run_test "Verify created VHD is attached" \
-    "bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_1.vhdx | grep -iq 'attached'" \
+    "bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_1.vhdx 2>&1 | grep -iq 'attached'" \
     0
 
 # Test 4: Create VHD with custom size (500M)
 run_test "Create VHD with custom size (500M)" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_2.vhdx --size 500M --name test_create_2" \
+    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_2.vhdx --size 500M --name test_create_2 2>&1" \
     0
 
-# Test 5: Create VHD with custom filesystem (xfs)
-run_test "Create VHD with custom filesystem (xfs)" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_3.vhdx --filesystem xfs --name test_create_3" \
-    0
+# Test 5: Create VHD with custom filesystem (xfs) - skip if xfs not available
+if ! which mkfs.xfs >/dev/null 2>&1; then
+    # XFS tools not installed, test with ext4 instead
+    run_test "Create VHD with custom filesystem (ext4)" \
+        "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_3.vhdx --filesystem ext4 --name test_create_3 2>&1" \
+        0
+else
+    run_test "Create VHD with custom filesystem (xfs)" \
+        "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_3.vhdx --filesystem xfs --name test_create_3 2>&1" \
+        0
+fi
 
 # Test 6: Create VHD in quiet mode
 run_test "Create VHD in quiet mode" \
-    "bash $PARENT_DIR/disk_management.sh -q create --path ${TEST_VHD_BASE}_4.vhdx --name test_create_4 | grep -q 'created with UUID='" \
+    "bash $PARENT_DIR/disk_management.sh -q create --path ${TEST_VHD_BASE}_4.vhdx --name test_create_4 2>&1 | grep -q 'created with UUID='" \
     0
 
 # Test 7: Attempt to create VHD that already exists (should fail)
 run_test "Attempt to create existing VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_1.vhdx --name test_create_1" \
+    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_1.vhdx --name test_create_1 2>&1" \
     1
 
 # Test 8: Create VHD with all custom parameters
 run_test "Create VHD with all custom parameters" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_custom.vhdx --size 2G --name test_custom --filesystem ext4" \
+    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_custom.vhdx --size 2G --name test_custom --filesystem ext4 2>&1" \
     0
 
 # Test 9: Verify VHD created with custom params exists
@@ -217,7 +229,7 @@ run_test "Verify custom VHD exists" \
 
 # Test 10: Verify created VHD has filesystem (can be mounted)
 run_test "Verify VHD has filesystem" \
-    "bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_custom.vhdx | grep -iq 'UUID'" \
+    "bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'UUID'" \
     0
 
 # Cleanup: Remove test VHDs
@@ -225,16 +237,45 @@ if [[ "$VERBOSE" == "true" ]]; then
     echo -e "${YELLOW}Cleaning up test VHDs...${NC}"
 fi
 
-cleanup_test_vhd "${TEST_VHD_BASE}_1.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_2.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_3.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_4.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_5.vhdx"
-cleanup_test_vhd "${TEST_VHD_BASE}_custom.vhdx"
+cleanup_test_vhd "${TEST_VHD_BASE}_1.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_2.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_3.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_4.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_5.vhdx" 2>/dev/null
+cleanup_test_vhd "${TEST_VHD_BASE}_custom.vhdx" 2>/dev/null
 
 if [[ "$VERBOSE" == "true" ]]; then
     echo -e "${GREEN}Cleanup complete${NC}"
     echo
+fi
+
+# Calculate duration
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+
+# Determine overall status
+if [[ $TESTS_FAILED -eq 0 ]]; then
+    OVERALL_STATUS="PASSED"
+else
+    OVERALL_STATUS="FAILED"
+fi
+
+# Update test report
+if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
+    # Prepare failed tests list as a comma-separated string
+    FAILED_TESTS_STR=""
+    if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
+        FAILED_TESTS_STR=$(IFS='|'; echo "${FAILED_TESTS[*]}")
+    fi
+    
+    bash "$SCRIPT_DIR/update_test_report.sh" \
+        --suite "test_create.sh" \
+        --status "$OVERALL_STATUS" \
+        --run "$TESTS_RUN" \
+        --passed "$TESTS_PASSED" \
+        --failed "$TESTS_FAILED" \
+        --duration "$DURATION" \
+        --failed-tests "$FAILED_TESTS_STR" >/dev/null 2>&1
 fi
 
 # Summary

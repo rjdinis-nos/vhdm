@@ -64,6 +64,10 @@ TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_SKIPPED=0
+FAILED_TESTS=()
+
+# Track start time for duration calculation
+START_TIME=$(date +%s)
 
 # Test VHD paths (separate from production VHDs)
 TEST_VHD_DIR="C:/aNOS/VMs/wsl_test/"
@@ -76,7 +80,7 @@ cleanup_test_vhd() {
     
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to unmount if attached
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" 2>/dev/null || true
+        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
         # Remove the file
         rm -f "$vhd_path_wsl" 2>/dev/null || true
     fi
@@ -141,6 +145,7 @@ run_test() {
             echo -e "${RED}✗ FAILED${NC} (expected: $expected_exit_code, got: $exit_code)"
         fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("Test $TESTS_RUN: $test_name")
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then
@@ -167,25 +172,25 @@ fi
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 1..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_1.vhdx" --name test_delete_1 --size 100M 2>/dev/null
+bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_1.vhdx" --name test_delete_1 --size 100M >/dev/null 2>&1
 
 run_test "Attempt to delete attached VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_1.vhdx --force" \
+    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_1.vhdx --force 2>&1" \
     1
 
 # Cleanup test 1 VHD
-bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_1.vhdx" 2>/dev/null
-bash "$PARENT_DIR/disk_management.sh" -q delete --path "${TEST_VHD_BASE}_1.vhdx" --force 2>/dev/null
+bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
+bash "$PARENT_DIR/disk_management.sh" -q delete --path "${TEST_VHD_BASE}_1.vhdx" --force >/dev/null 2>&1
 
 # Test 2: Delete detached VHD by path
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 2..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_2.vhdx" --name test_delete_2 --size 100M 2>/dev/null
-bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_2.vhdx" 2>/dev/null
+bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_2.vhdx" --name test_delete_2 --size 100M >/dev/null 2>&1
+bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_2.vhdx" >/dev/null 2>&1
 
 run_test "Delete detached VHD by path" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force" \
+    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force 2>&1" \
     0
 
 # Test 3: Verify VHD file is removed after delete
@@ -197,32 +202,32 @@ run_test "Verify VHD file is removed after delete" \
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 4..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_3.vhdx" --name test_delete_3 --size 100M 2>/dev/null
-bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_3.vhdx" 2>/dev/null
+bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_3.vhdx" --name test_delete_3 --size 100M >/dev/null 2>&1
+bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_3.vhdx" >/dev/null 2>&1
 
 run_test "Delete detached VHD with --force flag" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_3.vhdx --force" \
+    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_3.vhdx --force 2>&1" \
     0
 
 # Test 5: Delete in quiet mode
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 5..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_4.vhdx" --name test_delete_4 --size 100M 2>/dev/null
-bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_4.vhdx" 2>/dev/null
+bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_4.vhdx" --name test_delete_4 --size 100M >/dev/null 2>&1
+bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_4.vhdx" >/dev/null 2>&1
 
 run_test "Delete in quiet mode" \
-    "bash $PARENT_DIR/disk_management.sh -q delete --path ${TEST_VHD_BASE}_4.vhdx --force | grep -q 'deleted'" \
+    "bash $PARENT_DIR/disk_management.sh -q delete --path ${TEST_VHD_BASE}_4.vhdx --force 2>&1 | grep -q 'deleted'" \
     0
 
 # Test 6: Attempt to delete non-existent VHD (should fail)
 run_test "Attempt to delete non-existent VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --path C:/NonExistent/disk.vhdx --force" \
+    "bash $PARENT_DIR/disk_management.sh delete --path C:/NonExistent/disk.vhdx --force 2>&1" \
     1
 
 # Test 7: Delete with missing required parameter (should fail)
 run_test "Delete with missing required parameter (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --force" \
+    "bash $PARENT_DIR/disk_management.sh delete --force 2>&1" \
     1
 
 # Test 8: Create and immediately delete a VHD
@@ -231,7 +236,7 @@ if [[ "$VERBOSE" == "true" ]]; then
 fi
 
 run_test "Create, detach, and delete a VHD" \
-    "bash $PARENT_DIR/disk_management.sh -q create --path ${TEST_VHD_BASE}_temp.vhdx --name test_temp --size 100M && bash $PARENT_DIR/disk_management.sh -q umount --path ${TEST_VHD_BASE}_temp.vhdx && bash $PARENT_DIR/disk_management.sh -q delete --path ${TEST_VHD_BASE}_temp.vhdx --force" \
+    "bash $PARENT_DIR/disk_management.sh -q create --path ${TEST_VHD_BASE}_temp.vhdx --name test_temp --size 100M >/dev/null 2>&1 && bash $PARENT_DIR/disk_management.sh -q umount --path ${TEST_VHD_BASE}_temp.vhdx >/dev/null 2>&1 && bash $PARENT_DIR/disk_management.sh -q delete --path ${TEST_VHD_BASE}_temp.vhdx --force 2>&1" \
     0
 
 # Test 9: Verify temp VHD is gone
@@ -241,7 +246,7 @@ run_test "Verify temp VHD is removed" \
 
 # Test 10: Attempt to delete already deleted VHD (should fail)
 run_test "Attempt to delete already deleted VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force" \
+    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force 2>&1" \
     1
 
 # Cleanup: Remove any remaining test VHDs
@@ -258,6 +263,35 @@ cleanup_test_vhd "${TEST_VHD_BASE}_temp.vhdx"
 if [[ "$VERBOSE" == "true" ]]; then
     echo -e "${GREEN}Cleanup complete${NC}"
     echo
+fi
+
+# Calculate duration
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+
+# Determine overall status
+if [[ $TESTS_FAILED -eq 0 ]]; then
+    OVERALL_STATUS="PASSED"
+else
+    OVERALL_STATUS="FAILED"
+fi
+
+# Update test report
+if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
+    # Prepare failed tests list as a comma-separated string
+    FAILED_TESTS_STR=""
+    if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
+        FAILED_TESTS_STR=$(IFS='|'; echo "${FAILED_TESTS[*]}")
+    fi
+    
+    bash "$SCRIPT_DIR/update_test_report.sh" \
+        --suite "test_delete.sh" \
+        --status "$OVERALL_STATUS" \
+        --run "$TESTS_RUN" \
+        --passed "$TESTS_PASSED" \
+        --failed "$TESTS_FAILED" \
+        --duration "$DURATION" \
+        --failed-tests "$FAILED_TESTS_STR" >/dev/null 2>&1
 fi
 
 # Summary

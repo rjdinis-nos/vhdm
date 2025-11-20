@@ -4,6 +4,50 @@ This directory contains the test suite for validating the WSL VHD disk managemen
 
 ## Test Scripts
 
+### `test_all.sh`
+A comprehensive test runner that executes all test suites in sequence and reports overall results.
+
+**Usage:**
+```bash
+./test_all.sh              # Run all tests
+./test_all.sh -v           # Run all tests with verbose output
+./test_all.sh -s           # Stop on first failure
+./test_all.sh -v -s        # Verbose mode and stop on failure
+```
+
+**Features:**
+- Runs all test suites in sequence
+- Color-coded output with suite-level results
+- Overall summary with pass/fail counts
+- Optional verbose mode for detailed output
+- Optional stop-on-failure mode for CI/CD
+
+### `test_report.md`
+An automatically generated test report that tracks test execution results over time.
+
+**Features:**
+- Summary table showing the latest status of all test suites
+- Includes test run date, pass/fail status, test counts, and duration
+- Maintains a chronological history of all test runs
+- Updated automatically when test suites are executed
+
+**View the report:**
+```bash
+cat tests/test_report.md
+# Or open in any markdown viewer
+```
+
+### `update_test_report.sh`
+Script that updates the test report with results from test suite executions. This script is called automatically by individual test scripts and generally doesn't need to be run manually.
+
+**Usage (if needed manually):**
+```bash
+./update_test_report.sh --suite test_status.sh --status PASSED \
+  --run 10 --passed 10 --failed 0 --duration 5
+```
+
+---
+
 ### `test_status.sh`
 A comprehensive test suite for validating the status command functionality, including UUID lookup, path validation, and error handling scenarios.
 
@@ -34,6 +78,11 @@ Placeholder tests for the delete command (not yet implemented in disk_management
 ## Running Tests
 
 ```bash
+# Run all test suites at once
+./tests/test_all.sh          # All tests in sequence
+./tests/test_all.sh -v       # All tests with verbose output
+./tests/test_all.sh -s       # Stop on first failure
+
 # Run individual test suites
 ./tests/test_status.sh        # Status command tests
 ./tests/test_mount.sh         # Mount command tests
@@ -50,23 +99,22 @@ Placeholder tests for the delete command (not yet implemented in disk_management
 ./tests/test_create.sh -t 1 -t 3   # Run tests 1 and 3
 ./tests/test_status.sh -v -t 2     # Run test 2 with verbose output
 
-# Run all test suites
-for test in ./tests/test_*.sh; do
-    echo "Running $test..."
-    $test || exit 1
-done
+# View test report
+cat ./tests/test_report.md   # View the automatically generated test report
 ```
+
+**Note:** Test results are automatically recorded to `tests/test_report.md` after each test run, including the date, pass/fail status, test counts, and execution duration.
 
 ---
 
 ## Test Coverage
 
 ### test_status.sh (10 tests)
-1. **Default Status** - Validates status output with default configuration
+1. **Default Status** - Validates status output with default configuration (shows usage/help)
 2. **Status by UUID** - Tests UUID-based status lookup
-3. **Status by Path** - Tests path-based status lookup
+3. **Status by Path** - Tests path-based status lookup (expects error when VHD not attached)
 4. **Status by Mount Point** - Tests mount point-based status lookup
-5. **Attached but Not Mounted** - Verifies detection of attached-but-unmounted state
+5. **Attached but Not Mounted** - Verifies detection of attached-but-unmounted state (sets up state first)
 6. **Show All VHDs** - Tests `--all` flag functionality
 7. **Quiet Mode** - Validates machine-readable output format
 8. **Non-existent Path** - Tests error handling for invalid VHD paths
@@ -78,21 +126,50 @@ done
 2. **Verify file exists** - Confirms VHD file was created on disk
 3. **Verify attached** - Confirms VHD is attached to WSL after creation
 4. **Custom size** - Creates VHD with custom size (500M)
-5. **Custom filesystem** - Creates VHD with xfs filesystem
+5. **Custom filesystem** - Creates VHD with xfs filesystem (falls back to ext4 if xfs tools not installed)
 6. **Quiet mode** - Tests machine-readable output format
 7. **Duplicate detection** - Attempts to create existing VHD (should fail)
 8. **All custom params** - Creates VHD with all parameters specified
 9. **Verify custom VHD** - Confirms custom VHD exists
 10. **Verify filesystem** - Confirms VHD has proper filesystem with UUID
 
-### test_mount.sh
-Tests mount operations including idempotency, path/UUID/mount-point variants, and error handling.
+### test_mount.sh (10 tests)
+1. **Mount with default config** - Tests basic mount operation
+2. **Mount idempotency** - Verifies mounting already-mounted VHD succeeds
+3. **Mount with explicit path** - Tests mount with path parameter
+4. **Mount with custom mount point** - Tests custom mount point creation and usage
+5. **Mount non-existent VHD** - Verifies error handling for missing files
+6. **Mount creates directory** - Confirms mount point directory is created if needed
+7. **Quiet mode** - Tests minimal output mode
+8. **Mount point accessible** - Verifies mount point is accessible after mounting
+9. **Filesystem mounted** - Confirms filesystem is properly mounted (checks mount point existence)
+10. **Status shows mounted** - Verifies status command reflects mounted state
 
-### test_umount.sh
-Tests unmount operations including cleanup verification and multiple unmount methods.
+### test_umount.sh (10 tests)
+Tests unmount operations including cleanup verification and multiple unmount methods:
+1. **Umount with default config** - Tests basic unmount operation
+2. **Umount idempotency** - Verifies unmounting already-unmounted VHD succeeds
+3. **Umount with UUID** - Tests unmount by UUID parameter
+4. **Umount with path** - Tests unmount by path parameter
+5. **Umount with mount point** - Tests unmount by mount point parameter
+6. **Mount point not accessible** - Confirms mount point is unmounted after operation
+7. **Quiet mode** - Tests minimal output mode
+8. **VHD detached** - Verifies VHD is detached from WSL after unmount
+9. **Status shows not mounted** - Confirms status reflects unmounted state
+10. **Non-existent UUID handling** - Tests graceful handling of invalid UUIDs
 
-### test_delete.sh (10 placeholder tests)
-Tests prepared for future delete command implementation. Currently all tests are skipped with helpful implementation guidance.
+### test_delete.sh (10 tests)
+Tests for the delete command, validating VHD deletion with proper state checking:
+1. **Delete attached VHD fails** - Verifies error when attempting to delete attached VHD
+2. **Delete detached VHD** - Tests successful deletion of detached VHD
+3. **Verify file removed** - Confirms VHD file is deleted from disk
+4. **Delete with --force flag** - Tests force deletion without prompts
+5. **Delete in quiet mode** - Tests minimal output mode
+6. **Delete non-existent VHD** - Verifies error handling for missing files
+7. **Delete without path parameter** - Tests error handling for missing required parameter
+8. **Create and delete** - Tests full lifecycle (create, detach, delete)
+9. **Verify deletion** - Confirms temp VHD is removed
+10. **Delete already deleted** - Tests error handling for double deletion
 
 ---
 
@@ -164,9 +241,24 @@ For output validation using grep:
 run_test "Description" "command | grep -q 'pattern'" 0
 ```
 
+### Output Suppression
+All test commands suppress non-test output to keep results clean:
+
+```bash
+# For commands that need output validation (grep)
+run_test "Test" "bash $PARENT_DIR/disk_management.sh command 2>&1 | grep -q 'pattern'" 0
+
+# For setup/cleanup operations (full suppression)
+cleanup_test_vhd "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
+```
+
+This ensures only test framework output (test names, PASSED/FAILED status) is displayed.
+
 ### Exit Code Expectations
-- Status queries return `0` on successful information display (even if VHD not found)
+- Status queries return `0` when displaying information, `1` when VHD not found or error occurs
+- Status with `--path` returns `1` if VHD exists but is not attached (with helpful suggestions)
 - Grep-based tests return `0` when pattern matches, `1` when it doesn't
+- Mount/umount operations are idempotent: return `0` even if already in desired state
 - File/mount point validation failures provide suggestions and return appropriate codes
 
 ### Color-Coded Output
@@ -188,16 +280,27 @@ run_test "Test description" "command to execute" expected_exit_code
 
 2. For output validation, use grep patterns:
 ```bash
-run_test "Test name" "command | grep -q 'expected pattern'" 0
+run_test "Test name" "command 2>&1 | grep -q 'expected pattern'" 0
 ```
 
-3. Increment test numbering sequentially
+3. Suppress non-test output:
+   - For commands: redirect stderr to stdout with `2>&1`
+   - For setup/cleanup: use `>/dev/null 2>&1`
 
-4. Test both success and error scenarios
+4. Handle optional dependencies:
+```bash
+if ! which mkfs.xfs >/dev/null 2>&1; then
+    # Adjust test or skip
+fi
+```
 
-5. Verify exit codes match actual command behavior
+5. Increment test numbering sequentially
 
-6. Add verbose output details if needed
+6. Test both success and error scenarios
+
+7. Verify exit codes match actual command behavior
+
+8. Add verbose output details if needed
 
 ---
 
@@ -209,11 +312,18 @@ run_test "Test name" "command | grep -q 'expected pattern'" 0
 - Confirm VHD UUID matches the configuration
 - Check mount point is correctly set
 
+### Test State Management
+Some tests require specific VHD states:
+- **Attached but not mounted**: Test 5 in test_status.sh mounts then unmounts filesystem (keeping VHD attached)
+- **Detached state**: Tests ensure cleanup by fully detaching VHDs after testing
+- **Setup/teardown**: Tests use setup functions to establish required states before assertions
+
 ### When Tests Fail
 1. Run in verbose mode to see detailed output: `./tests/test_status.sh -v`
 2. Check VHD state (attached vs mounted vs detached)
 3. Verify `.env.test` configuration matches actual VHD
 4. Review test expectations match current implementation
+5. Check if test setup properly establishes required state
 
 ### Updating Tests
 - Test expectations must match actual VHD state (mounted vs unmounted)
@@ -230,13 +340,16 @@ The test suite is designed to work in CI/CD environments:
 - **Concise mode** (default) produces clean, one-line-per-test output
 - **Exit codes** properly indicate success (0) or failure (non-zero)
 - **No user interaction** required
-- **Fast execution** - all 10 tests complete in seconds
+- **Fast execution** - all tests complete in under a minute
+- **Comprehensive runner** - `test_all.sh` runs all suites with overall status
 
 ### CI Example
 ```bash
 #!/bin/bash
 cd /path/to/scripts
-./tests/test_status.sh
+
+# Run all tests
+./tests/test_all.sh
 if [ $? -eq 0 ]; then
     echo "All tests passed"
     exit 0
@@ -244,6 +357,9 @@ else
     echo "Tests failed"
     exit 1
 fi
+
+# Or stop on first failure
+./tests/test_all.sh --stop-on-failure
 ```
 
 ---
@@ -271,6 +387,20 @@ fi
 
 ---
 
+## Test Reporting
+
+All test suites automatically update the `test_report.md` file with their results. The report includes:
+
+- **Last Updated**: Timestamp of the most recent test run
+- **Test Suite Summary Table**: Shows latest run date, status, counts, and duration for each suite
+- **Test History**: Chronological log of all test executions with detailed results
+
+The report is useful for:
+- Tracking test trends over time
+- Identifying frequently failing tests
+- Monitoring test execution performance
+- Quick overview of test suite health
+
 ## Future Enhancements
 
 Potential areas for test expansion:
@@ -278,12 +408,12 @@ Potential areas for test expansion:
 - [x] Mount operation tests - `test_mount.sh`
 - [x] Unmount operation tests - `test_umount.sh`
 - [x] Create operation tests - `test_create.sh`
+- [x] Automated test reporting - `test_report.md`
 - [ ] Delete operation tests - `test_delete.sh` (waiting for delete command implementation)
 - [ ] Error recovery tests
 - [ ] Performance benchmarks
 - [ ] Integration tests with multiple VHDs
 - [ ] Concurrent operation tests
 - [ ] Edge case validation (special characters in paths, etc.)
-- [ ] Automated test runner script
 - [ ] Test coverage reporting
 - [ ] CI/CD pipeline integration

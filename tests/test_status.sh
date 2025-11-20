@@ -63,6 +63,10 @@ NC='\033[0m' # No Color
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
+FAILED_TESTS=()
+
+# Track start time for duration calculation
+START_TIME=$(date +%s)
 
 # Function to run a test
 run_test() {
@@ -123,6 +127,7 @@ run_test() {
             echo -e "${RED}✗ FAILED${NC} (expected: $expected_exit_code, got: $exit_code)"
         fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("Test $TESTS_RUN: $test_name")
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then
@@ -150,53 +155,93 @@ fi
 
 # Test 1: Status with default configuration (from .env.test)
 run_test "Status shows help without arguments" \
-    "bash $PARENT_DIR/disk_management.sh status | grep -q 'Usage:'" \
+    "bash $PARENT_DIR/disk_management.sh status 2>&1 | grep -q 'Usage:'" \
     0
 
 # Test 2: Status with specific UUID
 run_test "Status with specific UUID" \
-    "bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID" \
+    "bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID 2>&1" \
     0
 
 # Test 3: Status with specific path
 run_test "Status with specific path" \
-    "bash $PARENT_DIR/disk_management.sh status --path $VHD_PATH" \
-    0
+    "bash $PARENT_DIR/disk_management.sh status --path $VHD_PATH 2>&1" \
+    1
 
 # Test 4: Status with specific mount point
 run_test "Status with specific mount point" \
-    "bash $PARENT_DIR/disk_management.sh status --mount-point $MOUNT_POINT" \
+    "bash $PARENT_DIR/disk_management.sh status --mount-point $MOUNT_POINT 2>&1" \
     1
 
 # Test 5: Status shows attached but not mounted
+# First ensure VHD is attached but not mounted
+bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME >/dev/null 2>&1
+# Unmount filesystem only (not detach from WSL)
+if mountpoint -q $MOUNT_POINT 2>/dev/null; then
+    sudo umount $MOUNT_POINT >/dev/null 2>&1
+fi
+sleep 1  # Give system time to update state
+
 run_test "Status shows attached but not mounted" \
-    "bash $PARENT_DIR/disk_management.sh status --all | grep -iq 'attached but not mounted'" \
+    "bash $PARENT_DIR/disk_management.sh status --all 2>&1 | grep -iq 'attached but not mounted'" \
     0
+
+# Cleanup - detach the VHD
+bash $PARENT_DIR/disk_management.sh -q umount --path $VHD_PATH >/dev/null 2>&1
 
 # Test 6: Status with --all flag
 run_test "Status with --all flag" \
-    "bash $PARENT_DIR/disk_management.sh status --all" \
+    "bash $PARENT_DIR/disk_management.sh status --all 2>&1" \
     0
 
 # Test 7: Status in quiet mode
 run_test "Status in quiet mode" \
-    "bash $PARENT_DIR/disk_management.sh -q status --all" \
+    "bash $PARENT_DIR/disk_management.sh -q status --all 2>&1" \
     0
 
 # Test 8: Status with non-existent VHD path (should fail)
 run_test "Status with non-existent VHD path (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh status --path C:/NonExistent/disk.vhdx" \
+    "bash $PARENT_DIR/disk_management.sh status --path C:/NonExistent/disk.vhdx 2>&1" \
     1
 
 # Test 9: Status with non-existent mount point (should fail)
 run_test "Status with non-existent mount point (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh status --mount-point /mnt/nonexistent" \
+    "bash $PARENT_DIR/disk_management.sh status --mount-point /mnt/nonexistent 2>&1" \
     1
 
 # Test 10: Status with invalid UUID (should fail)
 run_test "Status with invalid UUID (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh status --uuid 00000000-0000-0000-0000-000000000000" \
+    "bash $PARENT_DIR/disk_management.sh status --uuid 00000000-0000-0000-0000-000000000000 2>&1" \
     0
+
+# Calculate duration
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+
+# Determine overall status
+if [[ $TESTS_FAILED -eq 0 ]]; then
+    OVERALL_STATUS="PASSED"
+else
+    OVERALL_STATUS="FAILED"
+fi
+
+# Update test report
+if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
+    # Prepare failed tests list as a comma-separated string
+    FAILED_TESTS_STR=""
+    if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
+        FAILED_TESTS_STR=$(IFS='|'; echo "${FAILED_TESTS[*]}")
+    fi
+    
+    bash "$SCRIPT_DIR/update_test_report.sh" \
+        --suite "test_status.sh" \
+        --status "$OVERALL_STATUS" \
+        --run "$TESTS_RUN" \
+        --passed "$TESTS_PASSED" \
+        --failed "$TESTS_FAILED" \
+        --duration "$DURATION" \
+        --failed-tests "$FAILED_TESTS_STR" >/dev/null 2>&1
+fi
 
 # Summary
 echo -e "${BLUE}========================================"

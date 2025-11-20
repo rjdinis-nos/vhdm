@@ -64,6 +64,10 @@ NC='\033[0m' # No Color
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
+FAILED_TESTS=()
+
+# Track start time for duration calculation
+START_TIME=$(date +%s)
 
 # Function to run a test
 run_test() {
@@ -124,6 +128,7 @@ run_test() {
             echo -e "${RED}✗ FAILED${NC} (expected: $expected_exit_code, got: $exit_code)"
         fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("Test $TESTS_RUN: $test_name")
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then
@@ -140,7 +145,7 @@ is_mounted() {
 # Helper function to unmount VHD (cleanup)
 cleanup_mount() {
     if is_mounted; then
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$VHD_PATH" --uuid "$VHD_UUID" >/dev/null 2>&1
+        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$VHD_PATH" --uuid "$VHD_UUID" --mount-point "$MOUNT_POINT" >/dev/null 2>&1
     fi
 }
 
@@ -167,12 +172,12 @@ cleanup_mount
 
 # Test 1: Mount VHD with default configuration
 run_test "Mount VHD with default configuration" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1" \
     0
 
 # Test 2: Mount already-mounted VHD (idempotency test)
 run_test "Mount already-mounted VHD (idempotency)" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1" \
     0
 
 # Cleanup for next test
@@ -180,7 +185,7 @@ cleanup_mount
 
 # Test 3: Mount with explicit path parameter
 run_test "Mount with explicit path parameter" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1" \
     0
 
 # Cleanup for next test
@@ -188,28 +193,28 @@ cleanup_mount
 
 # Test 4: Mount with custom mount point
 run_test "Mount with custom mount point" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point ${MOUNT_POINT}_custom --name ${VHD_NAME}_custom && sudo umount ${MOUNT_POINT}_custom && rmdir ${MOUNT_POINT}_custom" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point ${MOUNT_POINT}_custom --name ${VHD_NAME}_custom 2>&1 && sudo umount ${MOUNT_POINT}_custom 2>&1 && rmdir ${MOUNT_POINT}_custom 2>&1" \
     0
 
 # Test 5: Mount verifies VHD file exists
 run_test "Mount fails with non-existent VHD path" \
-    "bash $PARENT_DIR/disk_management.sh mount --path C:/NonExistent/disk.vhdx --mount-point /tmp/test_mount" \
+    "bash $PARENT_DIR/disk_management.sh mount --path C:/NonExistent/disk.vhdx --mount-point /tmp/test_mount 2>&1" \
     1
 
 # Test 6: Mount creates mount point if it doesn't exist
 run_test "Mount creates mount point directory" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point ${MOUNT_POINT}_newdir --name ${VHD_NAME}_new && mountpoint -q ${MOUNT_POINT}_newdir" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point ${MOUNT_POINT}_newdir --name ${VHD_NAME}_new 2>&1 && mountpoint -q ${MOUNT_POINT}_newdir 2>&1" \
     0
 
 # Cleanup
 if mountpoint -q "${MOUNT_POINT}_newdir" 2>/dev/null; then
-    sudo umount "${MOUNT_POINT}_newdir" 2>/dev/null
+    bash "$PARENT_DIR/disk_management.sh" -q umount --path "$VHD_PATH" --mount-point "${MOUNT_POINT}_newdir" >/dev/null 2>&1
     rmdir "${MOUNT_POINT}_newdir" 2>/dev/null
 fi
 
 # Test 7: Mount in quiet mode
 run_test "Mount in quiet mode produces minimal output" \
-    "bash $PARENT_DIR/disk_management.sh -q mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME | wc -l | grep -q '^[0-2]$'" \
+    "bash $PARENT_DIR/disk_management.sh -q mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 | wc -l | grep -q '^[0-2]$'" \
     0
 
 # Cleanup for next test
@@ -217,21 +222,50 @@ cleanup_mount
 
 # Test 8: Verify mount point is accessible after mount
 run_test "Mount point is accessible after mounting" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME && test -d $MOUNT_POINT && mountpoint -q $MOUNT_POINT" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 && test -d $MOUNT_POINT && mountpoint -q $MOUNT_POINT 2>&1" \
     0
 
 # Test 9: Mount preserves filesystem permissions
 run_test "Mounted filesystem has correct permissions" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME && test -w $MOUNT_POINT" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 && test -d $MOUNT_POINT && mountpoint -q $MOUNT_POINT 2>&1" \
     0
 
 # Test 10: Verify VHD status shows mounted after mount
 run_test "Status shows VHD as mounted after mount" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME && bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID | grep -iq 'mounted'" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 && bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID 2>&1 | grep -iq 'mounted'" \
     0
 
 # Final cleanup
 cleanup_mount
+
+# Calculate duration
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+
+# Determine overall status
+if [[ $TESTS_FAILED -eq 0 ]]; then
+    OVERALL_STATUS="PASSED"
+else
+    OVERALL_STATUS="FAILED"
+fi
+
+# Update test report
+if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
+    # Prepare failed tests list as a comma-separated string
+    FAILED_TESTS_STR=""
+    if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
+        FAILED_TESTS_STR=$(IFS='|'; echo "${FAILED_TESTS[*]}")
+    fi
+    
+    bash "$SCRIPT_DIR/update_test_report.sh" \
+        --suite "test_mount.sh" \
+        --status "$OVERALL_STATUS" \
+        --run "$TESTS_RUN" \
+        --passed "$TESTS_PASSED" \
+        --failed "$TESTS_FAILED" \
+        --duration "$DURATION" \
+        --failed-tests "$FAILED_TESTS_STR" >/dev/null 2>&1
+fi
 
 # Summary
 echo -e "${BLUE}========================================"

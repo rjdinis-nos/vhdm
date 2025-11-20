@@ -64,6 +64,10 @@ NC='\033[0m' # No Color
 TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
+FAILED_TESTS=()
+
+# Track start time for duration calculation
+START_TIME=$(date +%s)
 
 # Function to run a test
 run_test() {
@@ -124,6 +128,7 @@ run_test() {
             echo -e "${RED}✗ FAILED${NC} (expected: $expected_exit_code, got: $exit_code)"
         fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
+        FAILED_TESTS+=("Test $TESTS_RUN: $test_name")
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then
@@ -140,7 +145,7 @@ is_mounted() {
 # Helper function to ensure VHD is mounted (setup)
 setup_mount() {
     if ! is_mounted; then
-        bash "$PARENT_DIR/disk_management.sh" -q mount --path "$VHD_PATH" --mount-point "$MOUNT_POINT" --name "$VHD_NAME" >/dev/null 2>&1
+        bash "$PARENT_DIR/disk_management.sh" mount --path "$VHD_PATH" --mount-point "$MOUNT_POINT" --name "$VHD_NAME" >/dev/null 2>&1
     fi
 }
 
@@ -165,60 +170,89 @@ fi
 # Test 1: Umount mounted VHD with default configuration
 setup_mount
 run_test "Umount mounted VHD with default configuration" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT" \
+    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT 2>&1" \
     0
 
 # Test 2: Umount already-unmounted VHD (idempotency test)
 run_test "Umount already-unmounted VHD (idempotency)" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT" \
+    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT 2>&1" \
     0
 
 # Test 3: Umount with UUID only
 setup_mount
 run_test "Umount with UUID parameter" \
-    "bash $PARENT_DIR/disk_management.sh umount --uuid $VHD_UUID --path $VHD_PATH --mount-point $MOUNT_POINT" \
+    "bash $PARENT_DIR/disk_management.sh umount --uuid $VHD_UUID --path $VHD_PATH --mount-point $MOUNT_POINT 2>&1" \
     0
 
 # Test 4: Umount with path only
 setup_mount
 run_test "Umount with path parameter" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT" \
+    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT 2>&1" \
     0
 
 # Test 5: Umount with mount point parameter
 setup_mount
 run_test "Umount with mount point parameter" \
-    "bash $PARENT_DIR/disk_management.sh umount --mount-point $MOUNT_POINT --uuid $VHD_UUID --path $VHD_PATH" \
+    "bash $PARENT_DIR/disk_management.sh umount --mount-point $MOUNT_POINT --uuid $VHD_UUID --path $VHD_PATH 2>&1" \
     0
 
 # Test 6: Verify mount point no longer accessible after umount
 setup_mount
 run_test "Mount point not accessible after umount" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT && ! mountpoint -q $MOUNT_POINT 2>/dev/null" \
+    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT 2>&1 && ! mountpoint -q $MOUNT_POINT 2>/dev/null" \
     0
 
 # Test 7: Umount in quiet mode
 setup_mount
 run_test "Umount in quiet mode produces minimal output" \
-    "bash $PARENT_DIR/disk_management.sh -q umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT | wc -l | grep -q '^[0-2]$'" \
+    "bash $PARENT_DIR/disk_management.sh -q umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT 2>&1 | wc -l | grep -q '^[0-2]$'" \
     0
 
 # Test 8: Verify VHD is detached after umount
 setup_mount
 run_test "VHD is detached from WSL after umount" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT && ! bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID | grep -iq 'attached'" \
+    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT 2>&1 && ! bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID 2>&1 | grep -iq 'attached'" \
     0
 
 # Test 9: Verify status shows not mounted after umount
 setup_mount
 run_test "Status shows VHD as not mounted after umount" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT && bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID | grep -iq 'not found'" \
+    "bash $PARENT_DIR/disk_management.sh umount --path $VHD_PATH --uuid $VHD_UUID --mount-point $MOUNT_POINT 2>&1 && bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID 2>&1 | grep -iq 'not found'" \
     0
 
 # Test 10: Umount handles non-existent UUID gracefully
 run_test "Umount handles non-existent UUID gracefully" \
-    "bash $PARENT_DIR/disk_management.sh umount --uuid 00000000-0000-0000-0000-000000000000 --path $VHD_PATH" \
+    "bash $PARENT_DIR/disk_management.sh umount --uuid 00000000-0000-0000-0000-000000000000 --path $VHD_PATH 2>&1" \
     0
+
+# Calculate duration
+END_TIME=$(date +%s)
+DURATION=$((END_TIME - START_TIME))
+
+# Determine overall status
+if [[ $TESTS_FAILED -eq 0 ]]; then
+    OVERALL_STATUS="PASSED"
+else
+    OVERALL_STATUS="FAILED"
+fi
+
+# Update test report
+if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
+    # Prepare failed tests list as a comma-separated string
+    FAILED_TESTS_STR=""
+    if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
+        FAILED_TESTS_STR=$(IFS='|'; echo "${FAILED_TESTS[*]}")
+    fi
+    
+    bash "$SCRIPT_DIR/update_test_report.sh" \
+        --suite "test_umount.sh" \
+        --status "$OVERALL_STATUS" \
+        --run "$TESTS_RUN" \
+        --passed "$TESTS_PASSED" \
+        --failed "$TESTS_FAILED" \
+        --duration "$DURATION" \
+        --failed-tests "$FAILED_TESTS_STR" >/dev/null 2>&1
+fi
 
 # Summary
 echo -e "${BLUE}========================================"

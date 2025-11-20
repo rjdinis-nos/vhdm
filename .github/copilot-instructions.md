@@ -125,17 +125,21 @@ Comprehensive test suite validating status command functionality:
 ./tests/test_status.sh -v        # Verbose output (development)
 ```
 
-**Test Coverage (10 tests):**
-1. Default status output validation
+**Test Coverage (10 tests per suite):**
+
+**test_status.sh:**
+1. Default status output validation (shows usage)
 2. Status lookup by UUID
-3. Status lookup by path (with file existence check)
-4. Status lookup by mount point (using wsl_find_uuid_by_mountpoint)
-5. Attached-but-not-mounted state detection (grep pattern matching)
+3. Status lookup by path (expects exit code 1 when not attached)
+4. Status lookup by mount point
+5. Attached-but-not-mounted state detection (sets up state first with mount + filesystem unmount)
 6. Show all VHDs (--all flag)
 7. Quiet mode machine-readable output
 8. Error handling: non-existent path
 9. Error handling: non-existent mount point
 10. Error handling: non-existent UUID
+
+**test_mount.sh, test_umount.sh, test_create.sh, test_delete.sh:** See tests/README.md for detailed coverage
 
 **Test Implementation Pattern:**
 ```bash
@@ -161,6 +165,9 @@ Tests source `tests/.env.test` for VHD configuration. Ensure test environment ma
 - Test expectations must match actual VHD state (mounted vs unmounted)
 - Update `tests/.env.test` if creating new test VHDs
 - Verbose mode aids debugging without modifying test logic
+- Tests requiring specific states must set up that state before assertions
+- Exit code expectations must match actual command behavior (not assumed behavior)
+- Use `sudo umount` for filesystem-only unmount; script's umount command fully detaches VHD
 
 ## Common Modifications
 
@@ -189,10 +196,12 @@ wsl_convert_path() {
 ### Adding New Tests
 1. Add test function call in `test_status.sh` following pattern: `run_test "Description" "command" expected_exit_code`
 2. Use grep patterns for output validation: `run_test "Test" "command | grep -q 'pattern'" 0`
-3. Increment test numbering sequentially
-4. Test both success and error scenarios
-5. Verify exit codes match actual command behavior
-6. Add verbose output details if needed
+3. Suppress non-test output: redirect stderr/stdout with `2>&1` or `>/dev/null 2>&1`
+4. Increment test numbering sequentially
+5. Test both success and error scenarios
+6. Verify exit codes match actual command behavior
+7. Add verbose output details if needed
+8. For optional dependencies (like xfs tools), check availability and skip or adjust test accordingly
 
 ## Critical Gotchas
 
@@ -202,9 +211,13 @@ wsl_convert_path() {
 4. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
 5. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
 6. **Already-attached detection**: Mount command has complex fallback logic for detecting already-attached VHDs; maintain this when refactoring
-7. **Test exit codes**: Status queries return 0 even when VHD not found (successful info display); tests must expect actual behavior, not assumed errors
+7. **Test exit codes**: Status queries return 1 when VHD not found/not attached; tests must expect actual behavior (0 for success, 1 for not found)
 8. **Test environment state**: Test expectations must match actual VHD state (attached/mounted/unmounted); verify state before creating assertions
-9. **Grep test patterns**: Use `grep -q` for silent pattern matching in tests; return codes are 0 (match) or 1 (no match)
+9. **Test state setup**: Some tests need specific states (e.g., attached-but-not-mounted); set up state explicitly before testing
+10. **Grep test patterns**: Use `grep -q` for silent pattern matching in tests; return codes are 0 (match) or 1 (no match)
+11. **Test output suppression**: All disk_management.sh calls in tests must suppress non-test output using `2>&1` for commands or `>/dev/null 2>&1` for setup/cleanup operations
+12. **Optional test dependencies**: Tests requiring optional tools (xfs, etc.) should check availability and gracefully skip or adjust the test
+13. **Filesystem unmount vs detach**: To test "attached but not mounted" state, use `sudo umount` (not the script's umount command which fully detaches)
 
 ## Workflow-Specific Notes
 

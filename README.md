@@ -267,16 +267,37 @@ sudo umount -l /mnt/mydisk  # Lazy unmount
 
 ## Testing
 
-The repository includes a comprehensive test suite for validating functionality. 
+The repository includes a comprehensive test suite for validating functionality. Tests produce clean output with only test results displayed.
 
 **Quick Start:**
 ```bash
-# Run all tests
-./tests/test_status.sh
+# Run all tests at once
+./tests/test_all.sh
 
-# Run with verbose output
+# Run all tests with verbose output
+./tests/test_all.sh -v
+
+# Stop on first failure (useful for CI/CD)
+./tests/test_all.sh --stop-on-failure
+
+# Run individual test suites
+./tests/test_status.sh
+./tests/test_create.sh
+./tests/test_delete.sh
+./tests/test_mount.sh
+./tests/test_umount.sh
+
+# Run with verbose output (shows commands and details)
 ./tests/test_status.sh -v
+
+# Run specific tests
+./tests/test_create.sh -t 1 -t 5
 ```
+
+**Test Output:** All non-test messages are suppressed, showing only:
+- Test names and results (PASSED/FAILED)
+- Summary statistics
+- Detailed output in verbose mode
 
 For detailed information about the test suite, coverage, configuration, and adding new tests, see **[tests/README.md](tests/README.md)**.
 
