@@ -14,7 +14,6 @@ else
     WSL_DISKS_DIR="${WSL_DISKS_DIR:-C:/aNOS/VMs/wsl_test/}"
     VHD_NAME="${VHD_NAME:-disk}"
     VHD_PATH="${VHD_PATH:-${WSL_DISKS_DIR}${VHD_NAME}.vhdx}"
-    VHD_UUID="${VHD_UUID:-57fd0f3a-4077-44b8-91ba-5abdee3345c5}"
     MOUNT_POINT="${MOUNT_POINT:-/home/$USER/$VHD_NAME}"
 fi
 
@@ -40,16 +39,16 @@ show_usage() {
     echo "  --name NAME              - VHD name for WSL attachment"
     echo
     echo "Umount Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format)"
-    echo "  --uuid UUID              - VHD UUID"
-    echo "  --mount-point PATH       - Mount point path"
+    echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
+    echo "  --uuid UUID              - VHD UUID (optional if path or mount-point provided)"
+    echo "  --mount-point PATH       - Mount point path (UUID will be discovered)"
+    echo "  Note: Provide at least one option. UUID will be auto-discovered when possible."
     echo
     echo "Status Command Options:"
-    echo "  --path PATH              - VHD file path (Windows format)"
-    echo "  --uuid UUID              - VHD UUID"
-    echo "  --mount-point PATH       - Mount point path"
+    echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
+    echo "  --uuid UUID              - VHD UUID (optional if path or mount-point provided)"
+    echo "  --mount-point PATH       - Mount point path (UUID will be discovered)"
     echo "  --all                    - Show all attached VHDs"
-    echo "  (No options)             - Show default VHD or all if no defaults set"
     echo
     echo "Create Command Options:"
     echo "  --path PATH              - VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
@@ -59,12 +58,12 @@ show_usage() {
     echo "  --filesystem TYPE        - Filesystem type (ext4, ext3, xfs, etc.) [default: ext4]"
     echo
     echo "Examples:"
-    echo "  $0 mount"
     echo "  $0 mount --path C:/VMs/disk.vhdx --mount-point /mnt/data"
-    echo "  $0 umount --path C:/VMs/disk.vhdx --uuid xxx"
-    echo "  $0 status"
+    echo "  $0 umount --path C:/VMs/disk.vhdx"
+    echo "  $0 umount --mount-point /mnt/data"
+    echo "  $0 umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293"
+    echo "  $0 status --path C:/VMs/disk.vhdx"
     echo "  $0 status --all"
-    echo "  $0 status --uuid xxx"
     echo "  $0 create --path C:/VMs/disk.vhdx --size 5G --name mydisk"
     echo "  $0 -q status --all"
     echo
@@ -84,9 +83,9 @@ show_status() {
         echo "Usage: $0 status [OPTIONS]"
         echo
         echo "Options:"
-        echo "  --path PATH         Show status for specific VHD path"
+        echo "  --path PATH         Show status for specific VHD path (UUID auto-discovered)"
         echo "  --uuid UUID         Show status for specific UUID"
-        echo "  --mount-point PATH  Show status for specific mount point"
+        echo "  --mount-point PATH  Show status for specific mount point (UUID auto-discovered)"
         echo "  --all               Show all attached VHDs"
         echo
         echo "Examples:"
@@ -144,9 +143,8 @@ show_status() {
                 return 1
             fi
             
-            # File exists, try to find a dynamically attached VHD
-            # This is a heuristic approach - looks for non-system disks
-            status_uuid=$(wsl_find_dynamic_vhd_uuid)
+            # File exists, try to find UUID by path
+            status_uuid=$(wsl_find_uuid_by_path "$status_path")
             if [[ -n "$status_uuid" ]]; then
                 [[ "$QUIET" == "false" ]] && echo "Found dynamic VHD UUID: $status_uuid"
                 [[ "$QUIET" == "false" ]] && echo
@@ -261,8 +259,9 @@ show_status() {
             [[ "$QUIET" == "true" ]] && echo "$status_path ($status_uuid): attached"
         fi
     else
-        [[ "$QUIET" == "false" ]] && echo -e "${RED}[✗] VHD is not attached to WSL${NC}"
-        [[ "$QUIET" == "true" ]] && echo "$status_path ($status_uuid): detached"
+        [[ "$QUIET" == "false" ]] && echo -e "${RED}[✗] VHD not found${NC}"
+        [[ "$QUIET" == "false" ]] && echo "The VHD with UUID $status_uuid is not currently in WSL."
+        [[ "$QUIET" == "true" ]] && echo "$status_path ($status_uuid): not found"
     fi
     [[ "$QUIET" == "false" ]] && echo "========================================"
 }
@@ -434,7 +433,7 @@ mount_vhd() {
 umount_vhd() {
     # Parse umount command arguments
     local umount_path="$VHD_PATH"
-    local umount_uuid="$VHD_UUID"
+    local umount_uuid=""
     local umount_point="$MOUNT_POINT"
     
     while [[ $# -gt 0 ]]; do
@@ -458,6 +457,39 @@ umount_vhd() {
                 ;;
         esac
     done
+    
+    # Try to discover UUID if not provided
+    if [[ -z "$umount_uuid" ]]; then
+        if [[ -n "$umount_path" ]]; then
+            # Try to find UUID by path
+            umount_uuid=$(wsl_find_uuid_by_path "$umount_path")
+            if [[ -n "$umount_uuid" ]]; then
+                [[ "$QUIET" == "false" ]] && echo "Discovered UUID from path: $umount_uuid"
+                [[ "$QUIET" == "false" ]] && echo
+            fi
+        elif [[ -n "$umount_point" ]]; then
+            # Try to find UUID by mount point
+            umount_uuid=$(wsl_find_uuid_by_mountpoint "$umount_point")
+            if [[ -n "$umount_uuid" ]]; then
+                [[ "$QUIET" == "false" ]] && echo "Discovered UUID from mount point: $umount_uuid"
+                [[ "$QUIET" == "false" ]] && echo
+            fi
+        fi
+    fi
+    
+    # If UUID still not found, report error
+    if [[ -z "$umount_uuid" ]]; then
+        echo -e "${RED}[✗] Unable to identify VHD${NC}"
+        echo
+        echo "Could not discover UUID. Please provide one of:"
+        echo "  --uuid UUID           Explicit UUID"
+        echo "  --path PATH           VHD file path (will attempt discovery)"
+        echo "  --mount-point PATH    Mount point (will attempt discovery)"
+        echo
+        echo "To find UUID, run: $0 status --all"
+        [[ "$QUIET" == "true" ]] && echo "uuid not found"
+        return 1
+    fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
     [[ "$QUIET" == "false" ]] && echo "  VHD Disk Unmount Operation"

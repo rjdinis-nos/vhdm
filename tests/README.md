@@ -46,10 +46,12 @@ Tests use the `.env.test` configuration file located in the `tests/` directory. 
 ```bash
 WSL_DISKS_DIR="C:/aNOS/VMs/wsl_test/"
 VHD_PATH="${WSL_DISKS_DIR}disk.vhdx"
-VHD_UUID="3e76fe9e-c345-4097-b8e2-aa3936ab83bc"
+VHD_UUID="3e76fe9e-c345-4097-b8e2-aa3936ab83bc"  # Used for explicit test validation
 MOUNT_POINT="/home/$USER/disk"
 VHD_NAME="disk"
 ```
+
+**Note**: While the main scripts use automatic UUID discovery, tests explicitly use `VHD_UUID` for validation scenarios to ensure correct behavior.
 
 ---
 

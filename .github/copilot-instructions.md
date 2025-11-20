@@ -50,16 +50,27 @@ Located at top of `disk_management.sh`:
 ```bash
 WSL_DISKS_DIR="C:/aNOS/VMs/wsl_disks/"
 VHD_PATH="${WSL_DISKS_DIR}disk.vhdx"
-VHD_UUID="57fd0f3a-4077-44b8-91ba-5abdee575293"
 MOUNT_POINT="/home/rjdinis/disk"
 ```
 These are environment-specific and should be parameterized in new deployments.
+
+**Note**: VHD_UUID is no longer stored as a default. UUIDs are discovered automatically from path or mount point when needed.
 
 ### UUID vs Device Names
 VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 - Device names can change between boots
 - UUIDs persist across mount/unmount cycles
 - UUIDs change only when formatting, not when attaching/detaching
+
+### UUID Discovery
+The system automatically discovers UUIDs when not explicitly provided:
+- **From path**: `wsl_find_uuid_by_path()` validates file exists and finds attached non-system disk
+- **From mount point**: `wsl_find_uuid_by_mountpoint()` reverse-lookups UUID from mounted filesystem
+- **Dynamic VHD detection**: `wsl_find_dynamic_vhd_uuid()` finds non-system disks (sd[d-z])
+
+Commands that support UUID discovery:
+- `status --path` or `status --mount-point`
+- `umount --path` or `umount --mount-point`
 
 ### WSL Integration Commands
 - Attach: `wsl.exe --mount --vhd "$path" --bare --name "$name"`
@@ -141,8 +152,10 @@ run_test "Description" "command | grep -q 'pattern'" 0
 **Configuration:**
 Tests source `tests/.env.test` for VHD configuration. Ensure test environment matches:
 - VHD exists at `$VHD_PATH`
-- VHD has correct `$VHD_UUID`
+- VHD has correct `$VHD_UUID` (used explicitly in tests for validation)
 - Mount point `$MOUNT_POINT` is configured
+
+**Note**: While the main scripts no longer use VHD_UUID as a default, test files still use it for explicit validation scenarios.
 
 **Test Maintenance:**
 - Test expectations must match actual VHD state (mounted vs unmounted)

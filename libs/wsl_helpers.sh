@@ -292,6 +292,33 @@ wsl_find_dynamic_vhd_uuid() {
     return 1
 }
 
+# Find UUID of an attached VHD by verifying path exists and discovering attached UUID
+# Args: $1 - VHD path (Windows format)
+# Returns: UUID if VHD is attached and can be identified, empty if not found
+# Note: This attempts to find the UUID by checking if path exists and finding
+#       the most likely attached VHD (non-system disk)
+wsl_find_uuid_by_path() {
+    local vhd_path_win="$1"
+    
+    if [[ -z "$vhd_path_win" ]]; then
+        return 1
+    fi
+    
+    # Convert Windows path to WSL path to check if VHD file exists
+    local vhd_path_wsl=$(echo "$vhd_path_win" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    
+    # Check if VHD file exists
+    if [[ ! -e "$vhd_path_wsl" ]]; then
+        return 1
+    fi
+    
+    # Try to find the UUID by looking for dynamically attached VHDs
+    # Since WSL doesn't provide a direct path-to-UUID mapping, we use heuristics:
+    # 1. Look for non-system disks (sd[d-z])
+    # 2. Assume the most recent/only dynamically attached disk is our VHD
+    wsl_find_dynamic_vhd_uuid
+}
+
 # Create a new VHD file and format it
 # Args: $1 - VHD path (Windows path format, e.g., C:/path/to/disk.vhdx)
 #       $2 - Size (e.g., 1G, 500M, 10G)

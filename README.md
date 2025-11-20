@@ -90,20 +90,22 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 ```
 
 **Options:**
-- `--path PATH` - VHD file path (Windows format)
-- `--uuid UUID` - VHD UUID
-- `--mount-point PATH` - Mount point path
+- `--path PATH` - VHD file path (Windows format, UUID will be auto-discovered)
+- `--uuid UUID` - VHD UUID (optional if path or mount-point provided)
+- `--mount-point PATH` - Mount point path (UUID will be auto-discovered)
+
+**Note**: Provide at least one option. UUID will be automatically discovered when possible.
 
 **Examples:**
 ```bash
-# Unmount with default settings
-./disk_management.sh umount
+# Unmount by path (UUID discovered automatically)
+./disk_management.sh umount --path C:/VMs/disk.vhdx
 
-# Unmount by specifying path and UUID
-./disk_management.sh umount --path C:/VMs/disk.vhdx --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
-
-# Unmount by mount point
+# Unmount by mount point (UUID discovered automatically)
 ./disk_management.sh umount --mount-point /mnt/data
+
+# Unmount by explicit UUID
+./disk_management.sh umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
 ```
 
 ---
@@ -116,25 +118,24 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 ```
 
 **Options:**
-- `--path PATH` - Show status for specific VHD path
-- `--uuid UUID` - Show status for specific UUID
-- `--mount-point PATH` - Show status for specific mount point
+- `--path PATH` - Show status for specific VHD path (UUID auto-discovered)
+- `--uuid UUID` - Show status for specific UUID (optional if path or mount-point provided)
+- `--mount-point PATH` - Show status for specific mount point (UUID auto-discovered)
 - `--all` - Show all attached VHDs
-- (No options) - Show default VHD status
 
 **Examples:**
 ```bash
-# Show default VHD status
-./disk_management.sh status
-
 # Show all attached VHDs
 ./disk_management.sh status --all
 
+# Show status by path (UUID discovered automatically)
+./disk_management.sh status --path C:/VMs/disk.vhdx
+
+# Show status by mount point (UUID discovered automatically)
+./disk_management.sh status --mount-point /mnt/data
+
 # Show status for specific UUID
 ./disk_management.sh status --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
-
-# Show status for specific path
-./disk_management.sh status --path C:/VMs/disk.vhdx
 
 # Quiet mode - machine-readable output
 ./disk_management.sh -q status --all
@@ -199,6 +200,9 @@ The `libs/wsl_helpers.sh` file provides reusable functions that can be sourced i
 #### Utility Functions
 - `wsl_get_block_devices` - List all block devices
 - `wsl_get_disk_uuids` - List all disk UUIDs
+- `wsl_find_uuid_by_path PATH` - Find UUID of attached VHD by file path
+- `wsl_find_uuid_by_mountpoint MOUNT_POINT` - Find UUID by mount point
+- `wsl_find_dynamic_vhd_uuid` - Find first non-system disk UUID
 - `wsl_create_vhd PATH SIZE [FS_TYPE] [NAME]` - Create and format new VHD
 
 ### Usage Example
@@ -285,10 +289,14 @@ The `disk_management.sh` script has default configuration values that can be mod
 ```bash
 WSL_DISKS_DIR="C:/aNOS/VMs/wsl_disks/"  # Default VHD directory
 VHD_PATH="${WSL_DISKS_DIR}disk.vhdx"    # Default VHD path
-VHD_UUID="57fd0f3a-4077-44b8-91ba-5abdee575293"  # Default UUID
 MOUNT_POINT="/home/rjdinis/disk"        # Default mount point
 VHD_NAME="disk"                          # Default VHD name
 ```
+
+**UUID Discovery**: UUIDs are no longer stored as defaults. The system automatically discovers UUIDs from:
+- VHD file paths (when attached)
+- Mount points (when mounted)
+- Explicit `--uuid` parameter when needed
 
 ---
 
