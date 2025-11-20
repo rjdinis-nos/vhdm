@@ -173,11 +173,14 @@ fi
 
 # Create mount point if it doesn't exist
 if [[ ! -d "$MOUNT_POINT" ]]; then
-    debug_cmd mkdir -p "$MOUNT_POINT"
+    if ! create_mount_point "$MOUNT_POINT"; then
+        echo "Error: Failed to create mount point" >&2
+        exit 1
+    fi
 fi
 
 # Mount by UUID
-if ! debug_cmd sudo mount UUID="$UUID" "$MOUNT_POINT"; then
+if ! mount_filesystem "$UUID" "$MOUNT_POINT"; then
     echo "Error: Failed to mount disk" >&2
     exit 1
 fi

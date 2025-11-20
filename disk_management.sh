@@ -508,11 +508,14 @@ mount_vhd() {
         # Create mount point if it doesn't exist
         if [[ ! -d "$mount_point" ]]; then
             [[ "$QUIET" == "false" ]] && echo "Creating mount point: $mount_point"
-            debug_cmd mkdir -p "$mount_point"
+            if ! create_mount_point "$mount_point"; then
+                echo -e "${RED}[✗] Failed to create mount point${NC}"
+                exit 1
+            fi
         fi
         
         [[ "$QUIET" == "false" ]] && echo "Mounting VHD to $mount_point..."
-        if wsl_mount_vhd_by_uuid "$mount_uuid" "$mount_point"; then
+        if wsl_mount_vhd "$mount_uuid" "$mount_point"; then
             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD mounted successfully${NC}"
         else
             echo -e "${RED}[✗] Failed to mount VHD${NC}"
@@ -628,33 +631,36 @@ umount_vhd() {
     
     # First, unmount from filesystem if mounted
     if wsl_is_vhd_mounted "$umount_uuid"; then
+        # Discover mount point if not provided
+        if [[ -z "$umount_point" ]]; then
+            umount_point=$(wsl_get_vhd_mount_point "$umount_uuid")
+        fi
+        
         [[ "$QUIET" == "false" ]] && echo "Unmounting VHD from $umount_point..."
-        if wsl_unmount_vhd "$umount_point"; then
+        if wsl_umount_vhd "$umount_point"; then
             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD unmounted successfully${NC}"
         else
-            echo -e "${RED}[✗] Failed to unmount VHD${NC}"
-            echo "Tip: Make sure no processes are using the mount point"
-            echo
-            echo "Checking for processes using the mount point:"
-            if [[ "$DEBUG" == "true" ]]; then
-                echo -e "${BLUE}[DEBUG]${NC} sudo lsof +D $umount_point" >&2
-            fi
-            sudo lsof +D "$umount_point" 2>/dev/null || echo "  No processes found (or lsof not available)"
-            echo
-            echo "You can try to force unmount with: sudo umount -l $umount_point"
             exit 1
         fi
     else
         [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is not mounted to filesystem${NC}"
     fi
     
-    # Then, detach from WSL
-    [[ "$QUIET" == "false" ]] && echo "Detaching VHD from WSL..."
-    if wsl_detach_vhd "$umount_path" "$umount_uuid"; then
-        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
+    # Then, detach from WSL (only if path was provided)
+    if [[ -n "$umount_path" ]]; then
+        [[ "$QUIET" == "false" ]] && echo "Detaching VHD from WSL..."
+        if wsl_detach_vhd "$umount_path" "$umount_uuid"; then
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
+        else
+            echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
+            exit 1
+        fi
     else
-        echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
-        exit 1
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD was not detached from WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo "The VHD path is required to detach from WSL."
+        [[ "$QUIET" == "false" ]] && echo
+        [[ "$QUIET" == "false" ]] && echo "To fully detach the VHD, run:"
+        [[ "$QUIET" == "false" ]] && echo "  $0 detach --path <VHD_PATH>"
     fi
 
     [[ "$QUIET" == "false" ]] && echo
@@ -668,6 +674,8 @@ umount_vhd() {
     if [[ "$QUIET" == "true" ]]; then
         if ! wsl_is_vhd_attached "$umount_uuid"; then
             echo "$umount_path ($umount_uuid): detached"
+        elif [[ -z "$umount_path" ]]; then
+            echo "($umount_uuid): unmounted,attached"
         else
             echo "$umount_path ($umount_uuid): umount failed"
         fi
@@ -745,19 +753,9 @@ detach_vhd() {
         [[ "$QUIET" == "false" ]] && echo "VHD is mounted at: $mount_point"
         [[ "$QUIET" == "false" ]] && echo "Unmounting VHD first..."
         
-        if wsl_unmount_vhd "$mount_point"; then
+        if wsl_umount_vhd "$mount_point"; then
             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD unmounted successfully${NC}"
         else
-            echo -e "${RED}[✗] Failed to unmount VHD${NC}"
-            echo "Tip: Make sure no processes are using the mount point"
-            echo
-            echo "Checking for processes using the mount point:"
-            if [[ "$DEBUG" == "true" ]]; then
-                echo -e "${BLUE}[DEBUG]${NC} sudo lsof +D $mount_point" >&2
-            fi
-            sudo lsof +D "$mount_point" 2>/dev/null || echo "  No processes found (or lsof not available)"
-            echo
-            echo "You can try to force unmount with: sudo umount -l $mount_point"
             exit 1
         fi
         [[ "$QUIET" == "false" ]] && echo
@@ -1008,7 +1006,7 @@ create_vhd() {
                 if wsl_is_vhd_mounted "$existing_uuid"; then
                     local existing_mount_point=$(wsl_get_vhd_mount_point "$existing_uuid")
                     if [[ -n "$existing_mount_point" ]]; then
-                        if wsl_unmount_vhd "$existing_mount_point"; then
+                        if wsl_umount_vhd "$existing_mount_point"; then
                             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD unmounted from filesystem${NC}"
                         else
                             echo -e "${RED}[✗] Failed to unmount VHD from filesystem${NC}"
@@ -1284,10 +1282,15 @@ resize_vhd() {
     # Mount the new VHD
     [[ "$QUIET" == "false" ]] && echo "Mounting new VHD at $temp_mount_point..."
     if [[ ! -d "$temp_mount_point" ]]; then
-        debug_cmd mkdir -p "$temp_mount_point"
+        if ! create_mount_point "$temp_mount_point"; then
+            echo -e "${RED}[✗] Failed to create temporary mount point${NC}"
+            wsl_detach_vhd "$new_vhd_path" "$new_uuid"
+            wsl_delete_vhd "$new_vhd_path"
+            exit 1
+        fi
     fi
     
-    if wsl_mount_vhd_by_uuid "$new_uuid" "$temp_mount_point"; then
+    if wsl_mount_vhd "$new_uuid" "$temp_mount_point"; then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] New VHD mounted${NC}"
     else
         echo -e "${RED}[✗] Failed to mount new VHD${NC}"
@@ -1311,7 +1314,7 @@ resize_vhd() {
     else
         echo -e "${RED}[✗] Failed to copy files${NC}"
         # Cleanup
-        wsl_unmount_vhd "$temp_mount_point"
+        wsl_umount_vhd "$temp_mount_point"
         wsl_detach_vhd "$new_vhd_path" "$new_uuid"
         wsl_delete_vhd "$new_vhd_path"
         exit 1
@@ -1337,7 +1340,7 @@ resize_vhd() {
         echo "  Expected: $target_file_count, Got: $new_file_count"
         echo "  Aborting resize operation"
         # Cleanup
-        wsl_unmount_vhd "$temp_mount_point"
+        wsl_umount_vhd "$temp_mount_point"
         wsl_detach_vhd "$new_vhd_path" "$new_uuid"
         wsl_delete_vhd "$new_vhd_path"
         exit 1
@@ -1353,7 +1356,7 @@ resize_vhd() {
     
     # Unmount and detach target disk
     [[ "$QUIET" == "false" ]] && echo "Unmounting target disk..."
-    if ! wsl_unmount_vhd "$target_mount_point"; then
+    if ! wsl_umount_vhd "$target_mount_point"; then
         echo -e "${RED}[✗] Failed to unmount target disk${NC}"
         exit 1
     fi
@@ -1386,7 +1389,7 @@ resize_vhd() {
     
     # Unmount new disk temporarily
     [[ "$QUIET" == "false" ]] && echo "Unmounting new disk..."
-    if ! wsl_unmount_vhd "$temp_mount_point"; then
+    if ! wsl_umount_vhd "$temp_mount_point"; then
         echo -e "${RED}[✗] Failed to unmount new disk${NC}"
         exit 1
     fi
@@ -1448,7 +1451,7 @@ resize_vhd() {
     fi
     
     # Mount the resized VHD
-    if wsl_mount_vhd_by_uuid "$final_uuid" "$target_mount_point"; then
+    if wsl_mount_vhd "$final_uuid" "$target_mount_point"; then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Resized VHD mounted${NC}"
     else
         echo -e "${RED}[✗] Failed to mount resized VHD${NC}"

@@ -194,18 +194,40 @@ wsl_detach_vhd() {
 # Args: $1 - UUID of the VHD
 #       $2 - Mount point path
 # Returns: 0 on success, 1 on failure
-wsl_mount_vhd_by_uuid() {
+# Create a mount point directory (primitive operation)
+# Generic Linux operation - not WSL-specific
+# Args: $1 - Mount point path
+# Returns: 0 on success, 1 on failure
+create_mount_point() {
+    local mount_point="$1"
+    
+    if [[ -z "$mount_point" ]]; then
+        echo "Error: Mount point path is required" >&2
+        return 1
+    fi
+    
+    if [[ ! -d "$mount_point" ]]; then
+        if debug_cmd mkdir -p "$mount_point" 2>/dev/null; then
+            return 0
+        else
+            return 1
+        fi
+    fi
+    return 0  # Already exists
+}
+
+# Mount a filesystem by UUID (primitive operation)
+# Generic Linux operation - not WSL-specific
+# Args: $1 - UUID of the filesystem
+#       $2 - Mount point path
+# Returns: 0 on success, 1 on failure
+mount_filesystem() {
     local uuid="$1"
     local mount_point="$2"
     
     if [[ -z "$uuid" || -z "$mount_point" ]]; then
         echo "Error: UUID and mount point are required" >&2
         return 1
-    fi
-    
-    # Create mount point if it doesn't exist
-    if [[ ! -d "$mount_point" ]]; then
-        debug_cmd mkdir -p "$mount_point" 2>/dev/null
     fi
     
     if debug_cmd sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
@@ -215,10 +237,40 @@ wsl_mount_vhd_by_uuid() {
     fi
 }
 
-# Unmount a VHD from a mount point
+# Mount VHD with comprehensive error handling and setup
+# WSL-specific helper that creates mount point and mounts filesystem
+# Args: $1 - UUID of the VHD
+#       $2 - Mount point path
+# Returns: 0 on success, 1 on failure
+wsl_mount_vhd() {
+    local uuid="$1"
+    local mount_point="$2"
+    
+    if [[ -z "$uuid" || -z "$mount_point" ]]; then
+        echo "Error: UUID and mount point are required" >&2
+        return 1
+    fi
+    
+    # Create mount point if it doesn't exist
+    if ! create_mount_point "$mount_point"; then
+        echo "Error: Failed to create mount point: $mount_point" >&2
+        return 1
+    fi
+    
+    # Mount the filesystem
+    if ! mount_filesystem "$uuid" "$mount_point"; then
+        echo "Error: Failed to mount filesystem" >&2
+        return 1
+    fi
+    
+    return 0
+}
+
+# Unmount a filesystem from a mount point (primitive operation)
+# Generic Linux operation - not WSL-specific
 # Args: $1 - Mount point path
 # Returns: 0 on success, 1 on failure
-wsl_unmount_vhd() {
+umount_filesystem() {
     local mount_point="$1"
     
     if [[ -z "$mount_point" ]]; then
@@ -229,6 +281,38 @@ wsl_unmount_vhd() {
     if debug_cmd sudo umount "$mount_point" >/dev/null 2>&1; then
         return 0
     else
+        return 1
+    fi
+}
+
+# Unmount VHD with comprehensive error handling and diagnostics
+# WSL-specific helper that provides detailed error messages and diagnostics
+# if the unmount fails (e.g., processes using the mount point)
+# Args: $1 - Mount point path
+# Returns: 0 on success, 1 on failure
+wsl_umount_vhd() {
+    local mount_point="$1"
+    
+    if [[ -z "$mount_point" ]]; then
+        echo "Error: Mount point is required" >&2
+        return 1
+    fi
+    
+    # Attempt to unmount using primitive operation
+    if umount_filesystem "$mount_point"; then
+        return 0
+    else
+        # Unmount failed - provide diagnostics
+        echo -e "${RED}[✗] Failed to unmount VHD${NC}" >&2
+        echo "Tip: Make sure no processes are using the mount point" >&2
+        echo >&2
+        echo "Checking for processes using the mount point:" >&2
+        if [[ "$DEBUG" == "true" ]]; then
+            echo -e "${BLUE}[DEBUG]${NC} sudo lsof +D $mount_point" >&2
+        fi
+        sudo lsof +D "$mount_point" 2>/dev/null || echo "  No processes found (or lsof not available)" >&2
+        echo >&2
+        echo "You can try to force unmount with: sudo umount -l $mount_point" >&2
         return 1
     fi
 }
@@ -262,7 +346,7 @@ wsl_complete_mount() {
     # Check if already mounted
     if ! wsl_is_vhd_mounted "$uuid"; then
         # Mount VHD
-        if ! wsl_mount_vhd_by_uuid "$uuid" "$mount_point"; then
+        if ! wsl_mount_vhd "$uuid" "$mount_point"; then
             return 1
         fi
     fi
@@ -292,7 +376,7 @@ wsl_complete_unmount() {
     
     # Unmount from filesystem if mounted
     if wsl_is_vhd_mounted "$uuid"; then
-        if ! wsl_unmount_vhd "$mount_point"; then
+        if ! wsl_umount_vhd "$mount_point"; then
             return 1
         fi
     fi

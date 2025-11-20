@@ -1,6 +1,6 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-20 19:18:33
+Last Updated: 2025-11-20 20:28:25
 
 ## Test Suite Summary
 
@@ -8,11 +8,54 @@ Last Updated: 2025-11-20 19:18:33
 |------------|----------|--------|-----------|--------|--------|----------|
 | test_status.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 25s |
 | test_mount.sh | 2025-11-20 | ✗ FAILED | 10 | 7 | 3 | 7s |
-| test_umount.sh | 2025-11-20 | ✗ FAILED | 10 | 2 | 8 | 6s |
+| test_umount.sh | 2025-11-20 | ✗ FAILED | 10 | 0 | 1 | 8s |
 | test_create.sh | 2025-11-20 | ✗ FAILED | 10 | 9 | 1 | 5s |
 | test_delete.sh | 2025-11-20 | ✗ FAILED | 10 | 4 | 6 | 31s |
 
 ## Test History
+
+### 2025-11-20 20:28:25 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 1: Umount mounted VHD with default configuration
+
+
+### 2025-11-20 20:18:26 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 1: Umount mounted VHD with default configuration
+
+
+### 2025-11-20 20:18:11 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 8
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 1: Umount mounted VHD with default configuration
+- Test 2: Umount already-unmounted VHD (idempotency)
+- Test 3: Umount with UUID parameter
+- Test 4: Umount with path parameter
+- Test 5: Umount with mount point parameter
+- Test 6: Mount point not accessible after umount
+- Test 8: VHD is detached from WSL after umount
+- Test 9: Status shows VHD as not mounted after umount
+
 
 ### 2025-11-20 19:18:33 - test_mount.sh
 

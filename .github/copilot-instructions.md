@@ -65,7 +65,7 @@ if ! wsl_is_vhd_attached "$uuid"; then
     wsl_attach_vhd "$path" "$name"
 fi
 if ! wsl_is_vhd_mounted "$uuid"; then
-    wsl_mount_vhd_by_uuid "$uuid" "$mount_point"
+    wsl_mount_vhd "$uuid" "$mount_point"
 fi
 ```
 
@@ -318,20 +318,40 @@ This approach eliminates hardcoded UUIDs and ensures tests work with any VHD spe
 
 ### Adding Helper Functions
 
+**Function Naming Convention:**
+- **Primitives** (generic operations): Use simple descriptive names without prefixes (e.g., `umount_filesystem`, `mount_filesystem`, `create_mount_point`, `convert_size_to_bytes`)
+  - These are generic operations that could be used in any context
+  - No WSL-specific logic or extensive error handling
+  - Return 0 on success, 1 on failure
+  - Examples: `create_mount_point()`, `mount_filesystem()`, `umount_filesystem()`
+  
+- **WSL Helpers** (comprehensive operations): Use `wsl_` prefix (e.g., `wsl_umount_vhd`, `wsl_mount_vhd`, `wsl_attach_vhd`)
+  - WSL-specific operations with comprehensive error handling and diagnostics
+  - May call primitive functions internally
+  - Provide user-friendly error messages and suggestions
+  - Return 0 on success, 1 on failure
+  - Examples: `wsl_mount_vhd()`, `wsl_umount_vhd()`
+
 **WSL-specific helpers** (add to `libs/wsl_helpers.sh`):
 1. Add with clear doc comment
-2. Follow naming: `wsl_<action>_<target>` (e.g., `wsl_mount_vhd_by_uuid`)
+2. Follow naming: `wsl_<action>_<target>` (e.g., `wsl_mount_vhd`, `wsl_umount_vhd`)
 3. Return 0 on success, 1 on failure
 4. Print errors to stderr: `echo "Error: ..." >&2`
 5. Validate required arguments at function start
+6. Provide comprehensive error handling and user-friendly diagnostics
 
-**Utility helpers** (add to `libs/utils.sh`):
+**Primitive operations** (add to `libs/wsl_helpers.sh` or `libs/utils.sh`):
 1. Add with clear doc comment describing purpose and parameters
-2. Follow naming: descriptive function names (e.g., `get_directory_size_bytes`, `convert_size_to_bytes`)
+2. Follow naming: descriptive function names without prefixes (e.g., `umount_filesystem`, `mount_filesystem`, `create_mount_point`, `get_directory_size_bytes`)
 3. Return 0 on success, 1 on failure
-4. Echo result to stdout for capture by callers
+4. Echo result to stdout for capture by callers (or stderr for errors)
 5. Respect `DEBUG` flag for command visibility when applicable
-6. Use for size calculations, format conversions, and general utilities
+6. Minimal error handling - just perform the operation
+7. Can be used by higher-level functions or standalone
+
+**Examples of primitive vs WSL helper functions:**
+- Primitives: `mount_filesystem()`, `umount_filesystem()`, `create_mount_point()`
+- WSL Helpers: `wsl_mount_vhd()`, `wsl_umount_vhd()` (call primitives + add error diagnostics)
 
 ### Modifying Path Conversion
 Path conversion logic appears in multiple places. Consolidate into a helper function if adding more conversions:
@@ -377,6 +397,12 @@ wsl_convert_path() {
 
 Critical: Steps 4-5 have fallback logic for already-attached VHDs. Mount command does NOT auto-format disks - it will error if VHD is unformatted, directing user to use format command.
 
+**Mount Function Architecture:**
+- `create_mount_point()` - Primitive operation that creates a directory with `mkdir -p`
+- `mount_filesystem()` - Primitive operation that executes `sudo mount UUID=... mountpoint`
+- `wsl_mount_vhd()` - WSL helper that calls both primitives and provides error handling
+- `mount_vhd()` in main script uses these functions for consistent directory creation and mounting
+
 ### Create Operation Flow  
 1. Parse args → 2. Convert path → 3. Check doesn't exist → 4. Create dirs → 5. Verify qemu-img → 6. Create VHD file with qemu-img → 7. Return success
 
@@ -386,6 +412,11 @@ Note: Create command only creates the VHD file. User must use 'attach' or 'mount
 1. Parse args → 2. Check attached → 3. Unmount from filesystem → 4. Detach from WSL → 5. Verify detached
 
 Error handling: If unmount fails, suggest `lsof +D` to find blocking processes.
+
+**Unmount Function Architecture:**
+- `umount_filesystem()` - Primitive operation that executes `sudo umount` on a mount point
+- `wsl_umount_vhd()` - WSL helper that calls `umount_filesystem()` and provides comprehensive error diagnostics on failure (lsof output, force unmount suggestions)
+- Both `umount_vhd()` and `detach_vhd()` in main script use `wsl_umount_vhd()` for consistent error handling
 
 ### Attach Operation Flow
 1. Parse args (path, name) → 2. Validate VHD file exists → 3. Snapshot UUIDs/devices → 4. Attempt attach → 5. Detect new UUID → 6. Report device name → 7. Return success
