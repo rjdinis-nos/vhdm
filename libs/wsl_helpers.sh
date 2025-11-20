@@ -103,15 +103,19 @@ wsl_attach_vhd() {
 
 # Detach a VHD from WSL
 # Args: $1 - VHD path (Windows path format)
+#       $2 - UUID (optional, not used but kept for compatibility)
 # Returns: 0 on success, 1 on failure
+# Note: WSL unmounts VHDs by their original file path
 wsl_detach_vhd() {
     local vhd_path="$1"
+    local uuid="$2"  # Not used, but kept for API compatibility
     
     if [[ -z "$vhd_path" ]]; then
         echo "Error: VHD path is required" >&2
         return 1
     fi
     
+    # WSL unmounts by the VHD file path that was originally used to mount
     if wsl.exe --unmount "$vhd_path" >/dev/null 2>&1; then
         return 0
     else
@@ -227,7 +231,7 @@ wsl_complete_unmount() {
     fi
     
     # Detach from WSL
-    if ! wsl_detach_vhd "$vhd_path"; then
+    if ! wsl_detach_vhd "$vhd_path" "$uuid"; then
         return 1
     fi
     
@@ -319,6 +323,36 @@ wsl_find_uuid_by_path() {
     wsl_find_dynamic_vhd_uuid
 }
 
+# Delete a VHD file
+# Args: $1 - VHD path (Windows path format)
+# Returns: 0 on success, 1 on failure
+# Note: VHD must be detached before deletion. This function only deletes the file.
+wsl_delete_vhd() {
+    local vhd_path_win="$1"
+    
+    if [[ -z "$vhd_path_win" ]]; then
+        echo "Error: VHD path is required" >&2
+        return 1
+    fi
+    
+    # Convert Windows path to WSL path for file operations
+    local vhd_path_wsl=$(echo "$vhd_path_win" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    
+    # Check if VHD file exists
+    if [[ ! -e "$vhd_path_wsl" ]]; then
+        echo "Error: VHD file does not exist at $vhd_path_wsl" >&2
+        return 1
+    fi
+    
+    # Delete the VHD file
+    if rm -f "$vhd_path_wsl" 2>/dev/null; then
+        return 0
+    else
+        echo "Error: Failed to delete VHD file" >&2
+        return 1
+    fi
+}
+
 # Create a new VHD file and format it
 # Args: $1 - VHD path (Windows path format, e.g., C:/path/to/disk.vhdx)
 #       $2 - Size (e.g., 1G, 500M, 10G)
@@ -403,7 +437,7 @@ wsl_create_vhd() {
     
     if [[ -z "$new_dev" ]]; then
         echo "Error: Could not detect newly attached device" >&2
-        wsl_detach_vhd "$vhd_path_win"
+        wsl_detach_vhd "$vhd_path_win" ""
         rm -f "$vhd_path_wsl"
         return 1
     fi
@@ -411,7 +445,7 @@ wsl_create_vhd() {
     # Format the new device
     if ! sudo mkfs -t "$fs_type" "/dev/$new_dev" >/dev/null 2>&1; then
         echo "Error: Failed to format device /dev/$new_dev with $fs_type" >&2
-        wsl_detach_vhd "$vhd_path_win"
+        wsl_detach_vhd "$vhd_path_win" ""
         rm -f "$vhd_path_wsl"
         return 1
     fi
@@ -423,7 +457,7 @@ wsl_create_vhd() {
     
     if [[ -z "$new_uuid" ]]; then
         echo "Error: Could not retrieve UUID of newly formatted device" >&2
-        wsl_detach_vhd "$vhd_path_win"
+        wsl_detach_vhd "$vhd_path_win" ""
         rm -f "$vhd_path_wsl"
         return 1
     fi

@@ -32,6 +32,7 @@ show_usage() {
     echo "  umount [OPTIONS]         - Unmount and detach the VHD disk"
     echo "  status [OPTIONS]         - Show current VHD disk status"
     echo "  create [OPTIONS]         - Create a new VHD disk"
+    echo "  delete [OPTIONS]         - Delete a VHD disk file"
     echo
     echo "Mount Command Options:"
     echo "  --path PATH              - VHD file path (Windows format)"
@@ -57,6 +58,12 @@ show_usage() {
     echo "  --mount-point PATH       - Mount point path [default: /home/\$USER/share]"
     echo "  --filesystem TYPE        - Filesystem type (ext4, ext3, xfs, etc.) [default: ext4]"
     echo
+    echo "Delete Command Options:"
+    echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
+    echo "  --uuid UUID              - VHD UUID (optional if path provided)"
+    echo "  --force                  - Skip confirmation prompt"
+    echo "  Note: VHD must be unmounted and detached before deletion."
+    echo
     echo "Examples:"
     echo "  $0 mount --path C:/VMs/disk.vhdx --mount-point /mnt/data"
     echo "  $0 umount --path C:/VMs/disk.vhdx"
@@ -65,6 +72,8 @@ show_usage() {
     echo "  $0 status --path C:/VMs/disk.vhdx"
     echo "  $0 status --all"
     echo "  $0 create --path C:/VMs/disk.vhdx --size 5G --name mydisk"
+    echo "  $0 delete --path C:/VMs/disk.vhdx"
+    echo "  $0 delete --path C:/VMs/disk.vhdx --force"
     echo "  $0 -q status --all"
     echo
     exit 0
@@ -527,7 +536,7 @@ umount_vhd() {
     
     # Then, detach from WSL
     [[ "$QUIET" == "false" ]] && echo "Detaching VHD from WSL..."
-    if wsl_detach_vhd "$umount_path"; then
+    if wsl_detach_vhd "$umount_path" "$umount_uuid"; then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
     else
         echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
@@ -549,6 +558,111 @@ umount_vhd() {
             echo "$umount_path ($umount_uuid): umount failed"
         fi
     fi
+}
+
+# Function to delete VHD
+delete_vhd() {
+    # Parse delete command arguments
+    local delete_path=""
+    local delete_uuid=""
+    local force=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --path)
+                delete_path="$2"
+                shift 2
+                ;;
+            --uuid)
+                delete_uuid="$2"
+                shift 2
+                ;;
+            --force)
+                force=true
+                shift
+                ;;
+            *)
+                echo -e "${RED}Error: Unknown delete option '$1'${NC}"
+                echo
+                show_usage
+                ;;
+        esac
+    done
+    
+    # Validate that at least path is provided
+    if [[ -z "$delete_path" ]]; then
+        echo -e "${RED}Error: VHD path is required${NC}"
+        echo "Use --path to specify the VHD file path"
+        exit 1
+    fi
+    
+    # Convert Windows path to WSL path to check if VHD exists
+    local vhd_path_wsl=$(echo "$delete_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    if [[ ! -e "$vhd_path_wsl" ]]; then
+        echo -e "${RED}[✗] VHD file does not exist at $delete_path${NC}"
+        echo "  (WSL path: $vhd_path_wsl)"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Deletion"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Try to discover UUID if not provided
+    if [[ -z "$delete_uuid" ]]; then
+        delete_uuid=$(wsl_find_uuid_by_path "$delete_path")
+        if [[ -n "$delete_uuid" ]]; then
+            [[ "$QUIET" == "false" ]] && echo "Discovered UUID from path: $delete_uuid"
+            [[ "$QUIET" == "false" ]] && echo
+        fi
+    fi
+    
+    # Check if VHD is currently attached
+    if [[ -n "$delete_uuid" ]] && wsl_is_vhd_attached "$delete_uuid"; then
+        echo -e "${RED}[✗] VHD is currently attached to WSL${NC}"
+        echo
+        echo "The VHD must be unmounted and detached before deletion."
+        echo "To unmount and detach, run:"
+        echo "  $0 umount --path $delete_path"
+        echo
+        echo "Then try the delete command again."
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "VHD file: $delete_path"
+    [[ "$QUIET" == "false" ]] && echo "  (WSL path: $vhd_path_wsl)"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Confirmation prompt unless --force is used
+    if [[ "$force" == "false" ]] && [[ "$QUIET" == "false" ]]; then
+        echo -e "${YELLOW}[!] WARNING: This operation cannot be undone!${NC}"
+        echo -n "Are you sure you want to delete this VHD? (yes/no): "
+        read -r confirmation
+        
+        if [[ "$confirmation" != "yes" ]]; then
+            echo "Deletion cancelled."
+            exit 0
+        fi
+        echo
+    fi
+    
+    # Delete the VHD file
+    [[ "$QUIET" == "false" ]] && echo "Deleting VHD file..."
+    if wsl_delete_vhd "$delete_path"; then
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD deleted successfully${NC}"
+        [[ "$QUIET" == "true" ]] && echo "$delete_path: deleted"
+    else
+        echo -e "${RED}[✗] Failed to delete VHD${NC}"
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Deletion completed"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    
+    return 0
 }
 
 # Function to create VHD
@@ -628,8 +742,6 @@ create_vhd() {
     
     # Create the VHD and capture the UUID
     local new_uuid
-    echo "Running command: wsl_create_vhd $create_path $create_size $create_filesystem $create_name" 1>&2  # Debug line
-    [[ "$QUIET" == "false" ]] && echo "Running command: $create_cmd" 1>&2  # Debug line
     if new_uuid=$(wsl_create_vhd "$create_path" "$create_size" "$create_filesystem" "$create_name" 2>&1); then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD created successfully${NC}"
         [[ "$QUIET" == "false" ]] && echo "  New UUID: $new_uuid"
@@ -668,7 +780,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help|help)
             show_usage
             ;;
-        mount|umount|unmount|status|create)
+        mount|umount|unmount|status|create|delete)
             COMMAND="$1"
             shift
             break
@@ -694,6 +806,9 @@ case "$COMMAND" in
         ;;
     create)
         create_vhd "$@"  # Pass remaining arguments to create_vhd
+        ;;
+    delete)
+        delete_vhd "$@"  # Pass remaining arguments to delete_vhd
         ;;
     *)
         echo -e "${RED}Error: No command specified${NC}"
