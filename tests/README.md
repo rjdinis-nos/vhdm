@@ -7,25 +7,61 @@ This directory contains the test suite for validating the WSL VHD disk managemen
 ### `test_status.sh`
 A comprehensive test suite for validating the status command functionality, including UUID lookup, path validation, and error handling scenarios.
 
+**Coverage**: 10 tests covering status display, UUID/path/mount-point lookup, quiet mode, and error handling.
+
+### `test_mount.sh`
+Tests for the mount command, validating VHD attachment and filesystem mounting operations.
+
+**Coverage**: Tests mount by path, UUID, and mount point, including idempotency checks.
+
+### `test_umount.sh`
+Tests for the umount command, validating VHD detachment and filesystem unmounting operations.
+
+**Coverage**: Tests unmount by path, UUID, and mount point, including cleanup verification.
+
+### `test_create.sh`
+Tests for the create command, validating VHD creation with various parameters.
+
+**Coverage**: 10 tests covering default creation, custom sizes, filesystems, quiet mode, duplicate detection, and cleanup.
+
+### `test_delete.sh`
+Placeholder tests for the delete command (not yet implemented in disk_management.sh).
+
+**Coverage**: 10 placeholder tests ready for when delete functionality is added.
+
 ---
 
 ## Running Tests
 
 ```bash
-# Run all tests (concise output)
-./tests/test_status.sh
+# Run individual test suites
+./tests/test_status.sh        # Status command tests
+./tests/test_mount.sh         # Mount command tests
+./tests/test_umount.sh        # Umount command tests
+./tests/test_create.sh        # Create command tests
+./tests/test_delete.sh        # Delete command tests (placeholder)
 
-# Run tests with verbose output
+# Run with verbose output
 ./tests/test_status.sh -v
-./tests/test_status.sh --verbose
+./tests/test_create.sh --verbose
+
+# Run specific tests
+./tests/test_status.sh -t 1        # Run test 1 only
+./tests/test_create.sh -t 1 -t 3   # Run tests 1 and 3
+./tests/test_status.sh -v -t 2     # Run test 2 with verbose output
+
+# Run all test suites
+for test in ./tests/test_*.sh; do
+    echo "Running $test..."
+    $test || exit 1
+done
 ```
 
 ---
 
 ## Test Coverage
 
-The test suite includes 10 comprehensive tests:
-
+### test_status.sh (10 tests)
 1. **Default Status** - Validates status output with default configuration
 2. **Status by UUID** - Tests UUID-based status lookup
 3. **Status by Path** - Tests path-based status lookup
@@ -36,6 +72,27 @@ The test suite includes 10 comprehensive tests:
 8. **Non-existent Path** - Tests error handling for invalid VHD paths
 9. **Non-existent Mount Point** - Tests error handling for invalid mount points
 10. **Non-existent UUID** - Tests error handling for invalid UUIDs
+
+### test_create.sh (10 tests)
+1. **Create with defaults** - Creates VHD with default 1G size and ext4 filesystem
+2. **Verify file exists** - Confirms VHD file was created on disk
+3. **Verify attached** - Confirms VHD is attached to WSL after creation
+4. **Custom size** - Creates VHD with custom size (500M)
+5. **Custom filesystem** - Creates VHD with xfs filesystem
+6. **Quiet mode** - Tests machine-readable output format
+7. **Duplicate detection** - Attempts to create existing VHD (should fail)
+8. **All custom params** - Creates VHD with all parameters specified
+9. **Verify custom VHD** - Confirms custom VHD exists
+10. **Verify filesystem** - Confirms VHD has proper filesystem with UUID
+
+### test_mount.sh
+Tests mount operations including idempotency, path/UUID/mount-point variants, and error handling.
+
+### test_umount.sh
+Tests unmount operations including cleanup verification and multiple unmount methods.
+
+### test_delete.sh (10 placeholder tests)
+Tests prepared for future delete command implementation. Currently all tests are skipped with helpful implementation guidance.
 
 ---
 
@@ -218,11 +275,15 @@ fi
 
 Potential areas for test expansion:
 
-- [ ] Mount operation tests
-- [ ] Unmount operation tests  
-- [ ] Create operation tests
+- [x] Mount operation tests - `test_mount.sh`
+- [x] Unmount operation tests - `test_umount.sh`
+- [x] Create operation tests - `test_create.sh`
+- [ ] Delete operation tests - `test_delete.sh` (waiting for delete command implementation)
 - [ ] Error recovery tests
 - [ ] Performance benchmarks
 - [ ] Integration tests with multiple VHDs
 - [ ] Concurrent operation tests
 - [ ] Edge case validation (special characters in paths, etc.)
+- [ ] Automated test runner script
+- [ ] Test coverage reporting
+- [ ] CI/CD pipeline integration
