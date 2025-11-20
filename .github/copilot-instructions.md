@@ -70,18 +70,16 @@ fi
 
 ## Key Implementation Details
 
-### Configuration Defaults
-Located at top of `disk_management.sh`:
-```bash
-WSL_DISKS_DIR="C:/aNOS/VMs/wsl_disks/"
-VHD_PATH="${WSL_DISKS_DIR}disk.vhdx"
-MOUNT_POINT="/home/rjdinis/disk"
-QUIET=false
-DEBUG=false
-```
-These are environment-specific and should be parameterized in new deployments.
+### Configuration
+**Main Script (`disk_management.sh`):**
+- No default configuration values
+- All parameters must be provided via command-line options
+- Required parameters: `--path`, `--mount-point`, `--name` (depending on command)
 
-**Note**: VHD_UUID is no longer stored as a default. UUIDs are discovered automatically from path or mount point when needed.
+**Test Scripts:**
+- Tests source `tests/.env.test` for default VHD configuration
+- Test defaults: `WSL_DISKS_DIR`, `VHD_NAME`, `VHD_PATH`, `MOUNT_POINT`
+- UUIDs are discovered dynamically at test runtime
 
 **Flags are exported** for use in child scripts: `export QUIET` and `export DEBUG`
 

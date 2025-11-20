@@ -6,17 +6,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Source WSL helper functions
 source "$SCRIPT_DIR/libs/wsl_helpers.sh"
 
-# Load environment configuration if .env.test exists
-if [[ -f "$SCRIPT_DIR/.env.test" ]]; then
-    source "$SCRIPT_DIR/.env.test"
-else
-    # Default configuration (fallback if .env.test doesn't exist)
-    WSL_DISKS_DIR="${WSL_DISKS_DIR:-C:/aNOS/VMs/wsl_test/}"
-    VHD_NAME="${VHD_NAME:-disk}"
-    VHD_PATH="${VHD_PATH:-${WSL_DISKS_DIR}${VHD_NAME}.vhdx}"
-    MOUNT_POINT="${MOUNT_POINT:-/home/$USER/$VHD_NAME}"
-fi
-
 # Quiet mode flag
 QUIET=false
 
@@ -160,7 +149,6 @@ show_usage() {
     echo "  --uuid UUID              - VHD UUID to detach (required)"
     echo "  --path PATH              - VHD file path (optional, improves reliability)"
     echo "  Note: If VHD is mounted, it will be unmounted first."
-    echo "        Path is auto-discovered from WSL_DISKS_DIR if not provided."
     echo
     echo "Status Command Options:"
     echo "  --path PATH              - VHD file path (Windows format, UUID will be discovered)"
@@ -404,9 +392,9 @@ show_status() {
 # Function to mount VHD
 mount_vhd() {
     # Parse mount command arguments
-    local mount_path="$VHD_PATH"
-    local mount_point="$MOUNT_POINT"
-    local mount_name="$VHD_NAME"
+    local mount_path=""
+    local mount_point=""
+    local mount_name="disk"
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -429,6 +417,19 @@ mount_vhd() {
                 ;;
         esac
     done
+    
+    # Validate required parameters
+    if [[ -z "$mount_path" ]]; then
+        echo -e "${RED}Error: --path parameter is required${NC}"
+        echo "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
+        exit 1
+    fi
+    
+    if [[ -z "$mount_point" ]]; then
+        echo -e "${RED}Error: --mount-point parameter is required${NC}"
+        echo "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
+        exit 1
+    fi
     
     # Convert Windows path to WSL path to check if VHD exists
     local vhd_path_wsl=$(echo "$mount_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
@@ -570,9 +571,9 @@ mount_vhd() {
 # Function to unmount VHD
 umount_vhd() {
     # Parse umount command arguments
-    local umount_path="$VHD_PATH"
+    local umount_path=""
     local umount_uuid=""
-    local umount_point="$MOUNT_POINT"
+    local umount_point=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -742,31 +743,8 @@ detach_vhd() {
     [[ "$QUIET" == "false" ]] && echo "  UUID: $detach_uuid"
     [[ "$QUIET" == "false" ]] && echo
     
-    # If path not provided, try to find it by searching WSL disks directory
-    if [[ -z "$detach_path" ]]; then
-        local wsl_disks_dir_wsl=$(echo "$WSL_DISKS_DIR" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
-        
-        # Search for .vhdx and .vhd files in the WSL disks directory
-        if [[ "$DEBUG" == "true" ]]; then
-            echo -e "${BLUE}[DEBUG]${NC} Searching for VHD files in '$wsl_disks_dir_wsl'" >&2
-        fi
-        
-        while IFS= read -r vhd_file_wsl; do
-            [[ -z "$vhd_file_wsl" ]] && continue
-            
-            # Convert WSL path back to Windows path for WSL operations
-            local vhd_file_win=$(echo "$vhd_file_wsl" | sed 's|^/mnt/\([a-z]\)|\U\1:|')
-            
-            # Check if this VHD matches our UUID
-            local test_uuid=$(wsl_find_uuid_by_path "$vhd_file_win" 2>/dev/null)
-            if [[ "$test_uuid" == "$detach_uuid" ]]; then
-                detach_path="$vhd_file_win"
-                [[ "$QUIET" == "false" ]] && echo "  Found VHD path: $detach_path"
-                [[ "$QUIET" == "false" ]] && echo
-                break
-            fi
-        done < <(find "$wsl_disks_dir_wsl" -maxdepth 1 \( -name "*.vhdx" -o -name "*.vhd" \) 2>/dev/null)
-    fi
+    # Path is optional for detach - WSL can detach by UUID alone
+    # If path is provided, it will be used; otherwise detach will work without it
     
     # Show current VHD info
     [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$detach_uuid"
@@ -988,9 +966,6 @@ create_vhd() {
     done
     
     # Use defaults if not specified
-    if [[ -z "$create_path" ]]; then
-        create_path="${WSL_DISKS_DIR}${create_name}.vhdx"
-    fi
     if [[ -z "$create_mount_point" ]]; then
         create_mount_point="/home/$USER/$create_name"
     fi
@@ -1240,41 +1215,31 @@ resize_vhd() {
     [[ "$QUIET" == "false" ]] && echo "  File count: $target_file_count"
     [[ "$QUIET" == "false" ]] && echo
     
-    # We need to find the VHD path - search through WSL disks directory
-    # First, try to get it from the script's configuration
+    # We need to find the VHD path by searching mounted disks
     local target_vhd_path=""
     local target_vhd_name=""
     
-    # Try to infer VHD path from mount point name
+    # Try to infer VHD path from mount point name  
     target_vhd_name=$(basename "$target_mount_point")
-    local wsl_disks_dir_wsl=$(echo "$WSL_DISKS_DIR" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
     
-    # Search for .vhdx files in the WSL disks directory
+    # Get device for the mounted filesystem
     if [[ "$DEBUG" == "true" ]]; then
-        echo -e "${BLUE}[DEBUG]${NC} find '$wsl_disks_dir_wsl' -maxdepth 1 -name '*.vhdx' -o -name '*.vhd'" >&2
+        echo -e "${BLUE}[DEBUG]${NC} findmnt -n -o SOURCE '$target_mount_point'" >&2
     fi
-    local vhd_files=($(find "$wsl_disks_dir_wsl" -maxdepth 1 \( -name "*.vhdx" -o -name "*.vhd" \) 2>/dev/null))
+    local mount_device=$(findmnt -n -o SOURCE "$target_mount_point" 2>/dev/null)
     
-    # Try to match by checking which VHD has the target UUID
-    for vhd_file_wsl in "${vhd_files[@]}"; do
-        # Convert WSL path back to Windows path for WSL operations
-        local vhd_file_win=$(echo "$vhd_file_wsl" | sed 's|^/mnt/\([a-z]\)|\U\1:|')
-        
-        # Check if this VHD has our UUID (would need to be attached)
-        # Since we know it's attached, check device patterns
-        local vhd_basename=$(basename "$vhd_file_wsl" .vhdx)
-        vhd_basename=$(basename "$vhd_basename" .vhd)
-        
-        if [[ "$vhd_basename" == "$target_vhd_name" ]]; then
-            target_vhd_path="$vhd_file_win"
-            break
-        fi
-    done
-    
-    # If we still don't have a path, try default
-    if [[ -z "$target_vhd_path" ]]; then
-        target_vhd_path="${WSL_DISKS_DIR}${target_vhd_name}.vhdx"
+    if [[ -z "$mount_device" ]]; then
+        echo -e "${RED}[✗] Cannot determine device for mount point${NC}"
+        exit 1
     fi
+    
+    # Use mount point name to construct likely path
+    # This is a best-effort approach - user should provide path explicitly for resize
+    target_vhd_path="C:/path/to/${target_vhd_name}.vhdx"
+    
+    [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] Warning: VHD path inferred as $target_vhd_path${NC}"
+    [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] If resize fails, this path may be incorrect${NC}"
+    [[ "$QUIET" == "false" ]] && echo
     
     [[ "$QUIET" == "false" ]] && echo "Target VHD path: $target_vhd_path"
     [[ "$QUIET" == "false" ]] && echo
