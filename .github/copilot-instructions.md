@@ -2,7 +2,12 @@
 
 ## Project Overview
 
-Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Two-script architecture: `disk_management.sh` (CLI) sources `libs/wsl_helpers.sh` (function library).
+Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Three-script architecture:
+- `disk_management.sh` - Comprehensive CLI for VHD operations
+- `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
+- `libs/wsl_helpers.sh` - Shared function library
+
+Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` for core functionality.
 
 ## Architecture & Core Patterns
 

@@ -7,11 +7,14 @@ This repository contains a collection of bash scripts for managing Virtual Hard 
 ### 1. `disk_management.sh`
 The main script providing a comprehensive CLI for VHD disk operations including mount, unmount, status checking, and creation.
 
-### 2. `libs/`
+### 2. `mount_disk.sh`
+A utility script that ensures a VHD is attached and mounted at a specified location. This script is idempotent and safe to run multiple times - if the disk is already mounted (either at the target location or elsewhere), it exits successfully without making changes. Useful for startup scripts or automation where you need to guarantee a disk is available.
+
+### 3. `libs/`
 A directory containing library functions and helper scripts:
 - `wsl_helpers.sh` - Reusable bash functions for VHD operations, providing the core functionality used by other scripts.
 
-### 3. `tests/`
+### 4. `tests/`
 A directory containing test scripts for validating functionality. See [tests/README.md](tests/README.md) for details.
 
 ---
@@ -174,6 +177,55 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 # Note: After creation, the VHD is attached but not mounted
 # To mount: sudo mkdir -p /mnt/test && sudo mount UUID=<reported-uuid> /mnt/test
 ```
+
+---
+
+### Utility Script: `mount_disk.sh`
+
+A convenience script for ensuring a VHD is attached and mounted, ideal for automation and startup scripts.
+
+#### Command Format
+```bash
+./mount_disk.sh --mount-point <path> --disk-path <path> [OPTIONS]
+```
+
+#### Options
+- `--mount-point PATH` - Target mount point (e.g., /home/user/disk) [**required**]
+- `--disk-path PATH` - Path to VHD file (Windows format: C:/path/to/disk.vhdx) [**required**]
+- `-q, --quiet` - Suppress verbose output
+- `-d, --debug` - Show all commands before execution
+- `-h, --help` - Show help message
+
+#### Behavior
+- **Idempotent**: Safe to run multiple times - no changes if already mounted
+- **Automatic attachment**: Attaches VHD if not already attached
+- **Already-mounted detection**: If disk is already mounted anywhere, exits successfully without changes
+- **UUID-based**: Uses robust UUID identification for reliable operations
+
+#### Examples
+```bash
+# Ensure disk is mounted at specific location
+./mount_disk.sh --mount-point /home/user/disk --disk-path C:/VMs/disk.vhdx
+
+# Quiet mode for automation/scripts
+./mount_disk.sh -q --mount-point /mnt/data --disk-path C:/aNOS/VMs/data.vhdx
+
+# Debug mode to see all commands
+./mount_disk.sh -d --mount-point /home/user/share --disk-path C:/VMs/share.vhdx
+
+# Use in startup scripts (safe to run multiple times)
+./mount_disk.sh --mount-point /home/$USER/share --disk-path C:/aNOS/VMs/wsl_disks/share.vhdx
+```
+
+#### Exit Codes
+- **0** - Success (disk is mounted or already mounted elsewhere)
+- **1** - Error occurred (file not found, mount failed, etc.)
+
+#### Use Cases
+- **Startup scripts**: Add to `.bashrc` or systemd service to ensure disk availability
+- **Automation**: Use in deployment scripts where disk must be ready
+- **CI/CD**: Prepare environments with required disks before tests
+- **Cronjobs**: Ensure disk is available before scheduled tasks
 
 ---
 
