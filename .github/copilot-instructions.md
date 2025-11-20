@@ -3,7 +3,7 @@
 ## Project Overview
 
 Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Three-script architecture:
-- `disk_management.sh` - Comprehensive CLI for VHD operations (mount, umount, status, create, delete, resize)
+- `disk_management.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
 - `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
 - `libs/wsl_helpers.sh` - Shared function library
 
@@ -236,6 +236,23 @@ Comprehensive test suites validating all command functionality:
 9. Error handling: non-existent mount point
 10. Error handling: non-existent UUID
 
+**test_attach.sh (15 tests):**
+1. Attach VHD with --path option
+2. Idempotency (attach already-attached VHD)
+3. Attach with custom --name parameter
+4. Verify attached VHD appears in status
+5. Verify VHD not mounted after attach
+6. Quiet mode machine-readable output
+7. Debug mode shows commands
+8. Error handling: non-existent path
+9. Error handling: missing --path parameter
+10. Detach and re-attach successfully
+11. UUID detection after attach
+12. Device name reported after attach
+13. Completion message display
+14. Combined quiet + debug mode
+15. Windows path with backslashes
+
 **test_mount.sh (10 tests):** Mount operations, idempotency, custom mount points
 
 **test_umount.sh (10 tests):** Unmount operations, cleanup verification, multiple unmount methods
@@ -349,6 +366,11 @@ Note: VHD is left in attached-but-not-mounted state; user must mount separately.
 1. Parse args → 2. Check attached → 3. Unmount from filesystem → 4. Detach from WSL → 5. Verify detached
 
 Error handling: If unmount fails, suggest `lsof +D` to find blocking processes.
+
+### Attach Operation Flow
+1. Parse args (path, name) → 2. Validate VHD file exists → 3. Snapshot UUIDs/devices → 4. Attempt attach → 5. Detect new UUID → 6. Report device name → 7. Return success
+
+Critical: Attach does NOT mount to filesystem - VHD is only available as block device. Has fallback logic for already-attached VHDs (idempotency). UUID detection uses snapshot-based device comparison.
 
 ### Resize Operation Flow
 1. Parse args (mount-point, size) → 2. Validate mount point exists and is mounted → 3. Calculate directory size → 4. Determine target size (max of requested size or data+30%) → 5. Create new VHD with target size → 6. Mount new VHD to temporary location → 7. Copy all data with rsync → 8. Verify file counts match → 9. Unmount both disks → 10. Backup original VHD (rename with _bkp suffix) → 11. Rename new VHD to original name → 12. Remount at original location → 13. Verify integrity → 14. Return new UUID

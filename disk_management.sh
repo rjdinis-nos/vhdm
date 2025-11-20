@@ -130,6 +130,7 @@ show_usage() {
     echo "  --use-bc     - Use bc for precise decimal calculations (requires bc installed)"
     echo
     echo "Commands:"
+    echo "  attach [OPTIONS]         - Attach a VHD to WSL (without mounting to filesystem)"
     echo "  mount [OPTIONS]          - Attach and mount the VHD disk"
     echo "  umount [OPTIONS]         - Unmount and detach the VHD disk"
     echo "  detach [OPTIONS]         - Detach a VHD disk (unmounts first if needed)"
@@ -137,6 +138,12 @@ show_usage() {
     echo "  create [OPTIONS]         - Create a new VHD disk"
     echo "  delete [OPTIONS]         - Delete a VHD disk file"
     echo "  resize [OPTIONS]         - Resize a VHD disk by creating new disk and migrating data"
+    echo
+    echo "Attach Command Options:"
+    echo "  --path PATH              - VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
+    echo "  --name NAME              - VHD name for WSL attachment [default: disk]"
+    echo "  Note: Attaches VHD to WSL without mounting to filesystem."
+    echo "        VHD will be accessible as a block device (/dev/sdX) after attachment."
     echo
     echo "Mount Command Options:"
     echo "  --path PATH              - VHD file path (Windows format)"
@@ -181,6 +188,7 @@ show_usage() {
     echo "  Note: Creates new disk, migrates data, and replaces original with backup."
     echo
     echo "Examples:"
+    echo "  $0 attach --path C:/VMs/disk.vhdx --name mydisk"
     echo "  $0 mount --path C:/VMs/disk.vhdx --mount-point /mnt/data"
     echo "  $0 umount --path C:/VMs/disk.vhdx"
     echo "  $0 umount --mount-point /mnt/data"
@@ -1493,7 +1501,144 @@ resize_vhd() {
     fi
 }
 
-# Main script logic
+# Function to attach VHD
+attach_vhd() {
+    # Parse attach command arguments
+    local attach_path=""
+    local attach_name="$VHD_NAME"
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --path)
+                attach_path="$2"
+                shift 2
+                ;;
+            --name)
+                attach_name="$2"
+                shift 2
+                ;;
+            *)
+                echo "Error: Unknown option: $1" >&2
+                echo "Use --help to see available options" >&2
+                exit 1
+                ;;
+        esac
+    done
+    
+    # Validate required parameters
+    if [[ -z "$attach_path" ]]; then
+        echo "Error: VHD path is required. Use --path option." >&2
+        exit 1
+    fi
+    
+    # Convert Windows path to WSL path to check if VHD exists
+    local vhd_path_wsl=$(echo "$attach_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    if [[ ! -e "$vhd_path_wsl" ]]; then
+        echo "Error: VHD file does not exist: $attach_path" >&2
+        echo "  (WSL path: $vhd_path_wsl)" >&2
+        exit 1
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  VHD Disk Attach Operation"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo
+    
+    # Take snapshot of current UUIDs and block devices before attaching
+    local old_uuids=($(wsl_get_disk_uuids))
+    local old_devs=($(wsl_get_block_devices))
+    
+    # Try to attach the VHD (will succeed if not attached, fail silently if already attached)
+    local attach_uuid=""
+    local newly_attached=false
+    
+    if wsl_attach_vhd "$attach_path" "$attach_name" 2>/dev/null; then
+        newly_attached=true
+        [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo "  Path: $attach_path"
+        [[ "$QUIET" == "false" ]] && echo "  Name: $attach_name"
+        [[ "$QUIET" == "false" ]] && echo
+        
+        # Give the system time to recognize the new device
+        sleep 2
+        
+        # Take new snapshot to detect the new device
+        local new_uuids=($(wsl_get_disk_uuids))
+        local new_devs=($(wsl_get_block_devices))
+        
+        # Build lookup table for old UUIDs
+        declare -A seen_uuid
+        for uuid in "${old_uuids[@]}"; do
+            seen_uuid["$uuid"]=1
+        done
+        
+        # Find the new UUID
+        for uuid in "${new_uuids[@]}"; do
+            if [[ -z "${seen_uuid[$uuid]}" ]]; then
+                attach_uuid="$uuid"
+                break
+            fi
+        done
+        
+        if [[ -z "$attach_uuid" ]]; then
+            [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] Warning: Could not automatically detect UUID${NC}"
+            [[ "$QUIET" == "false" ]] && echo "  The VHD was attached successfully but UUID detection failed."
+            [[ "$QUIET" == "false" ]] && echo "  You can find the UUID using: ./disk_management.sh status --all"
+        else
+            # Find the device name
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$attach_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+            fi
+            local new_dev=$(lsblk -f -J | jq -r --arg UUID "$attach_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+            
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Device detected${NC}"
+            [[ "$QUIET" == "false" ]] && echo "  UUID: $attach_uuid"
+            [[ "$QUIET" == "false" ]] && [[ -n "$new_dev" ]] && echo "  Device: /dev/$new_dev"
+        fi
+    else
+        # Attachment failed - VHD might already be attached
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD attachment failed - checking if already attached...${NC}"
+        [[ "$QUIET" == "false" ]] && echo
+        
+        # Try to find the UUID by looking for dynamically attached VHDs
+        attach_uuid=$(wsl_find_uuid_by_path "$attach_path")
+        
+        if [[ -n "$attach_uuid" ]] && wsl_is_vhd_attached "$attach_uuid"; then
+            [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD is already attached to WSL${NC}"
+            [[ "$QUIET" == "false" ]] && echo "  UUID: $attach_uuid"
+            
+            # Get device name
+            if [[ "$DEBUG" == "true" ]]; then
+                echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$attach_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+            fi
+            local dev_name=$(lsblk -f -J | jq -r --arg UUID "$attach_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+            [[ "$QUIET" == "false" ]] && [[ -n "$dev_name" ]] && echo "  Device: /dev/$dev_name"
+        else
+            echo -e "${RED}[✗] Failed to attach VHD${NC}" >&2
+            echo "  The VHD might already be attached with a different name or path." >&2
+            echo "  Try running: ./disk_management.sh status --all" >&2
+            exit 1
+        fi
+    fi
+    
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && [[ -n "$attach_uuid" ]] && wsl_get_vhd_info "$attach_uuid"
+    
+    [[ "$QUIET" == "false" ]] && echo
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    [[ "$QUIET" == "false" ]] && echo "  Attach operation completed"
+    [[ "$QUIET" == "false" ]] && echo "========================================"
+    
+    if [[ "$QUIET" == "true" ]]; then
+        if [[ -n "$attach_uuid" ]]; then
+            echo "$attach_path ($attach_uuid): attached"
+        else
+            echo "$attach_path: attached (UUID unknown)"
+        fi
+    fi
+}
+
+# Function to mount VHD
 if [[ $# -eq 0 ]]; then
     show_usage
 fi
@@ -1516,7 +1661,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help|help)
             show_usage
             ;;
-        mount|umount|unmount|detach|status|create|delete|resize)
+        attach|mount|umount|unmount|detach|status|create|delete|resize)
             COMMAND="$1"
             shift
             break
@@ -1531,6 +1676,9 @@ done
 
 # Execute command
 case "$COMMAND" in
+    attach)
+        attach_vhd "$@"  # Pass remaining arguments to attach_vhd
+        ;;
     mount)
         mount_vhd "$@"  # Pass remaining arguments to mount_vhd
         ;;

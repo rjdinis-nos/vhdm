@@ -53,6 +53,28 @@ A comprehensive test suite for validating the status command functionality, incl
 
 **Coverage**: 10 tests covering status display, UUID/path/mount-point lookup, quiet mode, and error handling.
 
+### `test_attach.sh`
+Tests for the attach command, validating VHD attachment to WSL without filesystem mounting.
+
+**Coverage**: 15 tests covering basic attach, idempotency, custom names, UUID detection, device reporting, quiet/debug modes, error handling, and various path formats.
+
+**Features tested:**
+- Basic attach with --path option
+- Idempotency (attaching already-attached VHDs)
+- Custom --name parameter
+- Status verification after attach
+- VHD not mounted after attach (block device only)
+- Quiet mode machine-readable output
+- Debug mode command visibility
+- Error handling for non-existent paths
+- Error handling for missing required parameters
+- Detach and re-attach workflows
+- UUID automatic detection and reporting
+- Device name identification (/dev/sdX)
+- Completion message display
+- Combined quiet + debug mode
+- Windows path with backslashes
+
 ### `test_mount.sh`
 Tests for the mount command, validating VHD attachment and filesystem mounting operations.
 
@@ -100,6 +122,7 @@ Tests for the resize command, validating VHD resizing through data migration inc
 
 # Run individual test suites
 ./tests/test_status.sh        # Status command tests
+./tests/test_attach.sh        # Attach command tests
 ./tests/test_mount.sh         # Mount command tests
 ./tests/test_umount.sh        # Umount command tests
 ./tests/test_create.sh        # Create command tests
@@ -136,6 +159,23 @@ cat ./tests/test_report.md   # View the automatically generated test report
 8. **Non-existent Path** - Tests error handling for invalid VHD paths
 9. **Non-existent Mount Point** - Tests error handling for invalid mount points
 10. **Non-existent UUID** - Tests error handling for invalid UUIDs
+
+### test_attach.sh (15 tests)
+1. **Attach with --path** - Tests basic attach operation with path parameter
+2. **Attach idempotency** - Verifies attaching already-attached VHD succeeds gracefully
+3. **Attach with custom --name** - Tests custom VHD name parameter
+4. **Verify in status** - Confirms attached VHD appears in status output
+5. **Not mounted after attach** - Verifies VHD is NOT mounted to filesystem (block device only)
+6. **Quiet mode** - Tests machine-readable output format
+7. **Debug mode** - Verifies debug mode shows all commands before execution
+8. **Non-existent path** - Tests error handling for invalid VHD file paths
+9. **Missing --path parameter** - Verifies error when required parameter is missing
+10. **Detach and re-attach** - Tests full detach/attach cycle
+11. **UUID detection** - Confirms UUID is automatically detected and reported
+12. **Device name reported** - Verifies device name (/dev/sdX) is identified and displayed
+13. **Completion message** - Tests completion message display
+14. **Combined quiet + debug** - Tests both flags working together
+15. **Windows backslash paths** - Tests Windows path format with backslashes
 
 ### test_create.sh (10 tests)
 1. **Create with defaults** - Creates VHD with default 1G size and ext4 filesystem

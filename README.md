@@ -64,7 +64,54 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 
 #### Available Commands
 
-##### 1. **mount** - Attach and mount a VHD disk
+##### 1. **attach** - Attach a VHD to WSL (without mounting)
+
+**Format:**
+```bash
+./disk_management.sh attach [OPTIONS]
+```
+
+**Options:**
+- `--path PATH` - VHD file path (Windows format, **required**)
+- `--name NAME` - VHD name for WSL attachment [default: disk]
+
+**Description:**
+Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) without mounting it to the filesystem. This is useful when you need the VHD attached for operations but don't need filesystem access yet.
+
+**Key Features:**
+- Idempotent - safe to run multiple times (detects already-attached VHDs)
+- Automatic UUID detection and reporting
+- Device name identification
+- Supports quiet and debug modes
+
+**Examples:**
+```bash
+# Basic attach
+./disk_management.sh attach --path C:/VMs/disk.vhdx
+
+# Attach with custom name
+./disk_management.sh attach --path C:/VMs/mydisk.vhdx --name datastore
+
+# Quiet mode for scripts
+./disk_management.sh -q attach --path C:/VMs/disk.vhdx
+
+# Debug mode to see commands
+./disk_management.sh -d attach --path C:/VMs/disk.vhdx
+
+# Idempotent - safe to run multiple times
+./disk_management.sh attach --path C:/VMs/disk.vhdx
+# Output: "VHD is already attached to WSL"
+```
+
+**After Attach:**
+- VHD is accessible as a block device (e.g., `/dev/sdd`)
+- UUID is reported for future operations
+- VHD is NOT mounted to filesystem yet
+- Use `mount` command or manual `sudo mount UUID=<uuid> <mount-point>` to mount
+
+---
+
+##### 2. **mount** - Attach and mount a VHD disk
 
 **Format:**
 ```bash
@@ -90,7 +137,7 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 
 ---
 
-##### 2. **umount/unmount** - Unmount and detach a VHD disk
+##### 3. **umount/unmount** - Unmount and detach a VHD disk
 
 **Format:**
 ```bash
@@ -118,7 +165,7 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 
 ---
 
-##### 3. **status** - Show VHD disk status
+##### 4. **status** - Show VHD disk status
 
 **Format:**
 ```bash
@@ -151,7 +198,7 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 
 ---
 
-##### 4. **create** - Create a new VHD disk
+##### 5. **create** - Create a new VHD disk
 
 **Format:**
 ```bash
@@ -184,7 +231,7 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 
 ---
 
-##### 5. **delete** - Delete a VHD disk file
+##### 6. **delete** - Delete a VHD disk file
 
 **Format:**
 ```bash
@@ -213,7 +260,7 @@ source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 
 ---
 
-##### 6. **resize** - Resize a VHD disk
+##### 7. **resize** - Resize a VHD disk
 
 **Format:**
 ```bash
@@ -369,6 +416,21 @@ sudo mount UUID=<reported-uuid> /mnt/mydisk
 ./disk_management.sh status --all
 ```
 
+### Using Attach Command
+```bash
+# Attach VHD without mounting (makes it available as block device)
+./disk_management.sh attach --path C:/VMs/mydisk.vhdx
+
+# Check status to see UUID and device name
+./disk_management.sh status --path C:/VMs/mydisk.vhdx
+
+# Later, mount it manually or with mount command
+sudo mount UUID=<uuid> /mnt/mydisk
+
+# Or use mount command for full attach+mount workflow
+./disk_management.sh mount --path C:/VMs/mydisk.vhdx --mount-point /mnt/mydisk
+```
+
 ### Daily Usage
 ```bash
 # Mount your VHD
@@ -387,6 +449,10 @@ sudo mount UUID=<reported-uuid> /mnt/mydisk
 
 # Check specific VHD status
 ./disk_management.sh status --path C:/VMs/mydisk.vhdx
+
+# Attach VHD separately from mounting (useful for debugging)
+./disk_management.sh attach --path C:/VMs/mydisk.vhdx
+./disk_management.sh status --uuid <uuid>  # Verify attachment
 
 # Enable debug mode to see all commands being executed
 ./disk_management.sh -d status --all
@@ -445,6 +511,7 @@ The repository includes a comprehensive test suite for validating functionality.
 
 # Run individual test suites
 ./tests/test_status.sh
+./tests/test_attach.sh
 ./tests/test_create.sh
 ./tests/test_delete.sh
 ./tests/test_mount.sh

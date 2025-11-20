@@ -37,6 +37,7 @@ while [[ $# -gt 0 ]]; do
             echo
             echo "This script runs all test suites in sequence:"
             echo "  - test_status.sh"
+            echo "  - test_attach.sh"
             echo "  - test_mount.sh"
             echo "  - test_umount.sh"
             echo "  - test_create.sh"
@@ -55,6 +56,7 @@ done
 # Test suites to run (in order)
 TEST_SUITES=(
     "test_status.sh"
+    "test_attach.sh"
     "test_mount.sh"
     "test_umount.sh"
     "test_create.sh"
