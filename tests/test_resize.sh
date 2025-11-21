@@ -52,6 +52,9 @@ else
     exit 1
 fi
 
+# Override DISK_TRACKING_FILE for tests
+export DISK_TRACKING_FILE="$TEST_DISK_TRACKING_FILE"
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -422,6 +425,11 @@ else
 fi
 echo "Duration:     ${DURATION}s"
 echo -e "${BLUE}========================================${NC}"
+
+# Cleanup: Remove test-specific tracking file
+if [[ -f "$DISK_TRACKING_FILE" ]]; then
+    rm -f "$DISK_TRACKING_FILE" 2>/dev/null
+fi
 
 # List failed tests if any
 if [[ $TESTS_FAILED -gt 0 ]]; then

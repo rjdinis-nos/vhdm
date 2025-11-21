@@ -1,18 +1,63 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-21 01:05:05
+Last Updated: 2025-11-21 01:16:57
 
 ## Test Suite Summary
 
 | Test Suite | Last Run | Status | Tests Run | Passed | Failed | Duration |
 |------------|----------|--------|-----------|--------|--------|----------|
-| test_status.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 13s |
-| test_mount.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 17s |
+| test_status.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 12s |
+| test_mount.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 16s |
 | test_umount.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 39s |
 | test_create.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 7s |
 | test_delete.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 3s |
 
 ## Test History
+
+### 2025-11-21 01:16:57 - test_delete.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 3s
+
+
+### 2025-11-21 01:16:54 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 7s
+
+
+### 2025-11-21 01:16:47 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 39s
+
+
+### 2025-11-21 01:16:08 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 16s
+
+
+### 2025-11-21 01:15:36 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 12s
+
 
 ### 2025-11-21 01:05:05 - test_delete.sh
 

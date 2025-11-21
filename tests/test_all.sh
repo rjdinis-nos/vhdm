@@ -75,6 +75,23 @@ TESTS_FAILED=0
 # Array to track failed suites
 FAILED_SUITES=()
 
+# Load environment configuration
+if [[ -f "$SCRIPT_DIR/.env.test" ]]; then
+    source "$SCRIPT_DIR/.env.test"
+else
+    echo "Error: .env.test file not found in tests directory"
+    exit 1
+fi
+
+# Override DISK_TRACKING_FILE for tests (before any test runs)
+export DISK_TRACKING_FILE="$TEST_DISK_TRACKING_FILE"
+
+# Ensure test tracking directory exists
+mkdir -p "$(dirname "$DISK_TRACKING_FILE")" 2>/dev/null
+
+# Clean up any stale test tracking file from previous run
+rm -f "$DISK_TRACKING_FILE" 2>/dev/null
+
 # Header
 echo -e "${BLUE}========================================"
 echo -e "  WSL VHD Disk Management"
@@ -151,6 +168,12 @@ if [[ ${#FAILED_SUITES[@]} -gt 0 ]]; then
 fi
 
 echo
+
+# Cleanup: Remove test-specific tracking file
+if [[ -f "$DISK_TRACKING_FILE" ]]; then
+    rm -f "$DISK_TRACKING_FILE" 2>/dev/null
+    [[ "$VERBOSE" == "true" ]] && echo -e "${BLUE}[Cleanup] Removed test tracking file: $DISK_TRACKING_FILE${NC}"
+fi
 
 if [[ $SUITES_FAILED -eq 0 ]]; then
     echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"

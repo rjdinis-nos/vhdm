@@ -52,6 +52,9 @@ else
     exit 1
 fi
 
+# Override DISK_TRACKING_FILE for tests
+export DISK_TRACKING_FILE="$TEST_DISK_TRACKING_FILE"
+
 # Test-specific VHD configuration (dynamic)
 TEST_VHD_NAME="test_attach_disk"
 TEST_VHD_PATH="${WSL_DISKS_DIR}${TEST_VHD_NAME}.vhdx"
@@ -287,6 +290,11 @@ echo -e "Tests passed: ${GREEN}$TESTS_PASSED${NC}"
 echo -e "Tests failed: ${RED}$TESTS_FAILED${NC}"
 echo "Duration:     ${DURATION}s"
 echo
+
+# Cleanup: Remove test-specific tracking file
+if [[ -f "$DISK_TRACKING_FILE" ]]; then
+    rm -f "$DISK_TRACKING_FILE" 2>/dev/null
+fi
 
 if [[ $TESTS_FAILED -gt 0 ]]; then
     echo -e "${RED}Failed tests:${NC}"
