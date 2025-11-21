@@ -69,9 +69,9 @@ FAILED_TESTS=()
 START_TIME=$(date +%s)
 
 # Test-specific configuration
-TEST_VHD_NAME="resize_test"
+TEST_VHD_NAME="test_resize_disk"
 TEST_VHD_PATH="${WSL_DISKS_DIR}${TEST_VHD_NAME}.vhdx"
-TEST_MOUNT_POINT="/home/$USER/${TEST_VHD_NAME}"
+TEST_MOUNT_POINT="${MOUNT_DIR}${TEST_VHD_NAME}"
 TEST_VHD_SIZE="100M"  # Small size for fast tests
 
 # Function to run a test

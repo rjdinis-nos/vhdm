@@ -52,6 +52,11 @@ else
     exit 1
 fi
 
+# Test-specific VHD configuration (dynamic)
+TEST_VHD_NAME="test_create_disk"
+TEST_VHD_PATH="${WSL_DISKS_DIR}${TEST_VHD_NAME}.vhdx"
+TEST_MOUNT_POINT="${MOUNT_DIR}${TEST_VHD_NAME}"
+
 # Colors for output
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -68,8 +73,8 @@ FAILED_TESTS=()
 # Track start time for duration calculation
 START_TIME=$(date +%s)
 
-# Test VHD paths (separate from production VHDs)
-TEST_VHD_DIR="C:/aNOS/VMs/wsl_test/"
+# Test VHD paths (separate from production VHDs, uses WSL_DISKS_DIR from .env.test)
+TEST_VHD_DIR="${WSL_DISKS_DIR}"
 TEST_VHD_BASE="${TEST_VHD_DIR}test_create"
 
 # Cleanup function to remove test VHDs
@@ -159,7 +164,10 @@ echo -e "  Disk Management Create Tests"
 echo -e "========================================${NC}"
 
 if [[ "$VERBOSE" == "true" ]]; then
-    echo "Testing VHD creation in: $TEST_VHD_DIR"
+    echo "Testing with configuration from .env.test:"
+    echo "  WSL_DISKS_DIR: $WSL_DISKS_DIR"
+    echo "  TEST_VHD_DIR: $TEST_VHD_DIR"
+    echo "  TEST_VHD_BASE: $TEST_VHD_BASE"
     echo
     echo
 else
@@ -181,15 +189,16 @@ run_test "Create VHD with default settings" \
     0
 
 # Test 2: Verify created VHD file exists
+TEST_VHD_DIR_WSL=$(echo "$TEST_VHD_DIR" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
 run_test "Verify created VHD file exists" \
-    "test -f /mnt/c/aNOS/VMs/wsl_test/test_create_1.vhdx" \
+    "test -f ${TEST_VHD_DIR_WSL}test_create_1.vhdx" \
     0
 
 # Test 3: Verify created VHD is just a file (can be attached later)
 # The status command will return exit 1 when path provided but VHD not attached
 # OR it might find an old attached VHD - either way, check file exists
 run_test "Verify created VHD file can be found" \
-    "test -f /mnt/c/aNOS/VMs/wsl_test/test_create_1.vhdx" \
+    "test -f ${TEST_VHD_DIR_WSL}test_create_1.vhdx" \
     0
 
 # Test 4: Create VHD with custom size (500M)
@@ -199,7 +208,7 @@ run_test "Create VHD with custom size (500M)" \
 
 # Test 5: Verify custom size VHD file exists
 run_test "Verify custom size VHD exists" \
-    "test -f /mnt/c/aNOS/VMs/wsl_test/test_create_2.vhdx" \
+    "test -f ${TEST_VHD_DIR_WSL}test_create_2.vhdx" \
     0
 
 # Test 6: Create VHD in quiet mode
@@ -219,7 +228,7 @@ run_test "Create VHD with 2G size" \
 
 # Test 9: Verify custom VHD exists
 run_test "Verify custom VHD file exists" \
-    "test -f /mnt/c/aNOS/VMs/wsl_test/test_create_custom.vhdx" \
+    "test -f ${TEST_VHD_DIR_WSL}test_create_custom.vhdx" \
     0
 
 # Test 10: Attach and verify VHD can be attached and formatted

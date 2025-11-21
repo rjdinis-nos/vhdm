@@ -52,12 +52,20 @@ else
     exit 1
 fi
 
+# Test-specific VHD configuration (dynamic)
+TEST_VHD_NAME="test_attach_disk"
+TEST_VHD_PATH="${WSL_DISKS_DIR}${TEST_VHD_NAME}.vhdx"
+TEST_MOUNT_POINT="${MOUNT_DIR}${TEST_VHD_NAME}"
+
 # Helper function to get UUID from VHD path (attach first to ensure it exists)
 get_vhd_uuid() {
+    local vhd_path="$1"
+    local vhd_name="$2"
+    
     # Attach the VHD first to ensure it's available
-    bash "$PARENT_DIR/disk_management.sh" attach --path "$VHD_PATH" --name "$VHD_NAME" >/dev/null 2>&1
+    bash "$PARENT_DIR/disk_management.sh" attach --path "$vhd_path" --name "$vhd_name" >/dev/null 2>&1
     # Get UUID from path
-    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$VHD_PATH" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" 2>&1 | grep -oP '(?<=\().*(?=\):)')
     echo "$uuid"
 }
 
@@ -156,8 +164,8 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  VHD Attach Command Test Suite${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo
-echo "Test VHD: $VHD_PATH"
-echo "Mount Point: $MOUNT_POINT"
+echo "Test VHD: $TEST_VHD_PATH"
+echo "Mount Point: $TEST_MOUNT_POINT"
 echo
 echo -e "${BLUE}========================================${NC}"
 echo
@@ -165,7 +173,7 @@ echo
 # Ensure VHD is detached before starting tests
 echo "Preparing test environment..."
 # Discover UUID dynamically
-VHD_UUID=$(get_vhd_uuid)
+VHD_UUID=$(get_vhd_uuid "$TEST_VHD_PATH" "$TEST_VHD_NAME")
 echo "Discovered VHD UUID: $VHD_UUID"
 "$PARENT_DIR/disk_management.sh" umount --uuid "$VHD_UUID" >/dev/null 2>&1
 sleep 1
@@ -174,17 +182,17 @@ echo
 
 # Test 1: Basic attach with path
 run_test "Attach VHD with --path option" \
-    "$PARENT_DIR/disk_management.sh attach --path \"$VHD_PATH\" 2>&1 | grep -q 'attached'" \
+    "$PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'attached'" \
     0
 
 # Test 2: Idempotency - attach already-attached VHD
 run_test "Attach already-attached VHD (idempotency)" \
-    "$PARENT_DIR/disk_management.sh attach --path \"$VHD_PATH\" 2>&1 | grep -q 'already attached'" \
+    "$PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'already attached'" \
     0
 
 # Test 3: Attach with custom name
 run_test "Attach VHD with custom --name" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$VHD_PATH\" --name testdisk 2>&1 | grep -q 'attached'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" --name testdisk 2>&1 | grep -q 'attached'" \
     0
 
 # Test 4: Verify VHD appears in status after attach
@@ -199,12 +207,12 @@ run_test "Verify VHD is not mounted after attach" \
 
 # Test 6: Quiet mode output
 run_test "Attach in quiet mode produces machine-readable output" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh -q attach --path \"$VHD_PATH\" 2>&1 | grep -q 'attached'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh -q attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'attached'" \
     0
 
 # Test 7: Debug mode output
 run_test "Attach in debug mode shows commands" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh -d attach --path \"$VHD_PATH\" 2>&1 | grep -q '\\[DEBUG\\]'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh -d attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q '\\[DEBUG\\]'" \
     0
 
 # Test 8: Error handling - non-existent path
@@ -219,32 +227,32 @@ run_test "Error handling: missing --path parameter" \
 
 # Test 10: Attach detaches and re-attaches successfully
 run_test "Detach and re-attach VHD successfully" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$VHD_PATH\" 2>&1 | grep -q 'attached'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'attached'" \
     0
 
 # Test 11: UUID detection after attach
 run_test "UUID is detected and reported after attach" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$VHD_PATH\" 2>&1 | grep -q 'UUID:'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'UUID:'" \
     0
 
 # Test 12: Device name reported after attach
 run_test "Device name is reported after attach" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$VHD_PATH\" 2>&1 | grep -q 'Device: /dev/sd'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'Device: /dev/sd'" \
     0
 
 # Test 13: Attach shows completion message
 run_test "Attach shows completion message" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$VHD_PATH\" 2>&1 | grep -q 'Attach operation completed'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'Attach operation completed'" \
     0
 
 # Test 14: Combined quiet and debug mode
 run_test "Combined quiet and debug mode works" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh -q -d attach --path \"$VHD_PATH\" 2>&1 | grep -q 'attached'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh -q -d attach --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'attached'" \
     0
 
 # Test 15: Attach with Windows path using backslashes
 run_test "Attach with Windows path (backslash format)" \
-    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$(echo $VHD_PATH | sed 's|/|\\\\|g')\" 2>&1 | grep -q 'attached'" \
+    "$PARENT_DIR/disk_management.sh umount --uuid \"$VHD_UUID\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$(echo $TEST_VHD_PATH | sed 's|/|\\\\|g')\" 2>&1 | grep -q 'attached'" \
     0
 
 # Calculate duration

@@ -143,7 +143,17 @@ if [[ -z "$UUID" ]]; then
     
     # Fallback: search for dynamic VHD if UUID not found
     if [[ -z "$UUID" ]]; then
-        UUID=$(wsl_find_dynamic_vhd_uuid 2>/dev/null || true)
+        # Safe fallback: check how many VHDs are attached
+        local vhd_count=$(wsl_count_dynamic_vhds)
+        
+        if [[ $vhd_count -gt 1 ]]; then
+            echo "Error: Multiple VHDs attached ($vhd_count found). Cannot determine which one to mount." >&2
+            echo "Please detach other VHDs first or use disk_management.sh with explicit --uuid." >&2
+            exit 1
+        elif [[ $vhd_count -eq 1 ]]; then
+            # Safe: exactly one VHD attached
+            UUID=$(wsl_find_dynamic_vhd_uuid 2>/dev/null || true)
+        fi
     fi
     
     if [[ -z "$UUID" ]]; then

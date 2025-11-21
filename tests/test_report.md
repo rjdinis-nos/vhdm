@@ -1,18 +1,365 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-20 20:28:25
+Last Updated: 2025-11-20 23:34:44
 
 ## Test Suite Summary
 
 | Test Suite | Last Run | Status | Tests Run | Passed | Failed | Duration |
 |------------|----------|--------|-----------|--------|--------|----------|
-| test_status.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 25s |
+| test_status.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 11s |
 | test_mount.sh | 2025-11-20 | ✗ FAILED | 10 | 7 | 3 | 7s |
 | test_umount.sh | 2025-11-20 | ✗ FAILED | 10 | 0 | 1 | 8s |
-| test_create.sh | 2025-11-20 | ✗ FAILED | 10 | 9 | 1 | 5s |
-| test_delete.sh | 2025-11-20 | ✗ FAILED | 10 | 4 | 6 | 31s |
+| test_create.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 6s |
+| test_delete.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 5s |
 
 ## Test History
+
+### 2025-11-20 23:34:44 - test_delete.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 5s
+
+
+### 2025-11-20 23:34:31 - test_delete.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 0
+- **Duration:** 4s
+
+
+### 2025-11-20 23:34:06 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 8
+- **Tests Failed:** 2
+- **Duration:** 5s
+
+**Failed Tests:**
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-20 23:33:30 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 2s
+
+**Failed Tests:**
+- Test 8: Create, detach, and delete a VHD
+
+
+### 2025-11-20 23:33:13 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 2s
+
+**Failed Tests:**
+- Test 1: Attempt to delete attached VHD (should fail)
+
+
+### 2025-11-20 23:33:02 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 2s
+
+**Failed Tests:**
+- Test 1: Attempt to delete attached VHD (should fail)
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-20 23:31:49 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 0s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-20 23:31:40 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 6
+- **Tests Failed:** 4
+- **Duration:** 0s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+
+
+### 2025-11-20 23:31:04 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 6
+- **Tests Failed:** 4
+- **Duration:** 1s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+
+
+### 2025-11-20 23:30:40 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 6s
+
+
+### 2025-11-20 23:24:56 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 11s
+
+
+### 2025-11-20 23:24:07 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 11s
+
+
+### 2025-11-20 23:22:15 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-20 23:21:38 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 7s
+
+
+### 2025-11-20 23:16:17 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+
+
+### 2025-11-20 23:14:49 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 3s
+
+
+### 2025-11-20 23:09:47 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 3s
+
+
+### 2025-11-20 23:09:40 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 3s
+
+
+### 2025-11-20 23:09:32 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 3s
+
+
+### 2025-11-20 23:07:55 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 3s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+- Test 5: Status shows attached but not mounted
+
+
+### 2025-11-20 23:07:42 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 4s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+- Test 5: Status shows attached but not mounted
+
+
+### 2025-11-20 23:02:09 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 5s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+- Test 5: Status shows attached but not mounted
+
+
+### 2025-11-20 22:59:53 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 4s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+- Test 5: Status shows attached but not mounted
+
+
+### 2025-11-20 22:59:33 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 4s
+
+**Failed Tests:**
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+- Test 5: Status shows attached but not mounted
+
+
+### 2025-11-20 22:22:39 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 10s
+
+**Failed Tests:**
+- Test 4: Status with specific mount point
+
+
+### 2025-11-20 22:22:15 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 11s
+
+
+### 2025-11-20 22:20:16 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 2
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+- Test 4: Status with specific mount point
+
+
+### 2025-11-20 22:19:58 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 8
+- **Tests Failed:** 2
+- **Duration:** 9s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+- Test 4: Status with specific mount point
+
+
+### 2025-11-20 22:18:32 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 8
+- **Tests Failed:** 2
+- **Duration:** 7s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+- Test 4: Status with specific mount point
+
+
+### 2025-11-20 22:17:29 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 8
+- **Tests Failed:** 2
+- **Duration:** 7s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+- Test 4: Status with specific mount point
+
 
 ### 2025-11-20 20:28:25 - test_umount.sh
 

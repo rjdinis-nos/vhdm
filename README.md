@@ -20,6 +20,43 @@ A directory containing test scripts for validating functionality. See [tests/REA
 
 ---
 
+## Key Features
+
+### Persistent VHD Tracking
+
+The system automatically tracks VHD path→UUID associations in a persistent JSON file, enabling seamless multi-VHD operations:
+
+- **Location**: `~/.config/wsl-disk-management/vhd_mapping.json`
+- **Automatic**: No manual configuration needed - tracking happens in the background
+- **Fast**: Priority lookup from tracking file before device scanning
+- **Multi-VHD support**: Works with multiple VHDs attached simultaneously
+- **Mount point tracking**: Supports VHDs mounted at multiple locations
+- **Name-based lookup**: Query VHDs by WSL mount name in addition to path
+- **Persistent**: Survives reboots and detach/reattach cycles
+
+**Benefits:**
+- No need to remember or specify UUIDs for most operations
+- Use path-based or name-based commands even with multiple VHDs attached
+- Faster UUID discovery (no device scanning required)
+- Automatic cleanup when VHDs are deleted
+
+**Usage:**
+Simply use path-based or name-based commands as normal - tracking works automatically:
+```bash
+# Path-based operations
+./disk_management.sh mount --path C:/VMs/disk2.vhdx --mount-point /mnt/disk2
+./disk_management.sh status --path C:/VMs/disk2.vhdx
+
+# Name-based operations (using WSL mount name)
+./disk_management.sh attach --path C:/VMs/disk.vhdx --name mydisk
+./disk_management.sh status --name mydisk
+
+# Unmount works with either
+./disk_management.sh umount --path C:/VMs/disk2.vhdx
+```
+
+---
+
 ## Installation & Requirements
 
 ### Prerequisites
@@ -175,7 +212,8 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Options:**
 - `--path PATH` - Show status for specific VHD path (UUID auto-discovered)
-- `--uuid UUID` - Show status for specific UUID (optional if path or mount-point provided)
+- `--uuid UUID` - Show status for specific UUID (optional if path, name, or mount-point provided)
+- `--name NAME` - Show status for specific VHD name (UUID auto-discovered from tracking file)
 - `--mount-point PATH` - Show status for specific mount point (UUID auto-discovered)
 - `--all` - Show all attached VHDs
 
@@ -186,6 +224,9 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 # Show status by path (UUID discovered automatically)
 ./disk_management.sh status --path C:/VMs/disk.vhdx
+
+# Show status by name (UUID discovered from tracking file)
+./disk_management.sh status --name mydisk
 
 # Show status by mount point (UUID discovered automatically)
 ./disk_management.sh status --mount-point /mnt/data
@@ -574,10 +615,25 @@ MOUNT_POINT="/home/rjdinis/disk"        # Default mount point
 VHD_NAME="disk"                          # Default VHD name
 ```
 
-**UUID Discovery**: UUIDs are no longer stored as defaults. The system automatically discovers UUIDs from:
-- VHD file paths (when attached)
-- Mount points (when mounted)
-- Explicit `--uuid` parameter when needed
+### Persistent VHD Tracking
+
+VHD path→UUID associations are automatically tracked in:
+- **Location**: `~/.config/wsl-disk-management/vhd_mapping.json`
+- **Created automatically** on first use
+- **No manual configuration needed**
+
+The tracking file maintains mappings across sessions, enabling:
+- Fast UUID lookup without device scanning
+- Multi-VHD support (no confusion between multiple attached VHDs)
+- Mount point tracking (VHDs can have multiple mount points)
+
+**UUID Discovery Priority:**
+1. **Tracking file** - Fastest, checked first
+2. **Mount point** - For mounted filesystems
+3. **Snapshot detection** - During attach/create operations
+4. **Explicit parameter** - User-provided `--uuid`
+
+The system automatically saves mappings when VHDs are attached/created and updates them when mounted/unmounted.
 
 ---
 

@@ -10,6 +10,340 @@ export RED='\033[0;31m'
 export BLUE='\033[0;34m'
 export NC='\033[0m' # No Color
 
+# Persistent disk tracking file location
+DISK_TRACKING_FILE="$HOME/.config/wsl-disk-management/vhd_mapping.json"
+
+# Initialize the disk tracking file if it doesn't exist
+# Creates directory and empty JSON structure
+init_disk_tracking_file() {
+    local dir=$(dirname "$DISK_TRACKING_FILE")
+    
+    if [[ ! -d "$dir" ]]; then
+        if debug_cmd mkdir -p "$dir" 2>/dev/null; then
+            [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Created tracking directory: $dir" >&2
+        else
+            echo "Warning: Failed to create tracking directory: $dir" >&2
+            return 1
+        fi
+    fi
+    
+    if [[ ! -f "$DISK_TRACKING_FILE" ]]; then
+        echo '{"version":"1.0","mappings":{},"detach_history":[]}' > "$DISK_TRACKING_FILE"
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Initialized tracking file: $DISK_TRACKING_FILE" >&2
+    fi
+    
+    return 0
+}
+
+# Normalize Windows path for consistent tracking
+# Converts to forward slashes and lowercase for case-insensitive matching
+# Args: $1 - Windows path (e.g., C:\VMs\disk.vhdx or C:/VMs/disk.vhdx)
+# Returns: Normalized path (e.g., c:/vms/disk.vhdx)
+normalize_vhd_path() {
+    local path="$1"
+    # Convert backslashes to forward slashes, then lowercase
+    echo "$path" | tr '\\' '/' | tr '[:upper:]' '[:lower:]'
+}
+
+# Save path→UUID mapping to tracking file
+# Args: $1 - VHD path (Windows format)
+#       $2 - UUID
+#       $3 - Mount point (optional, can be empty or comma-separated list)
+#       $4 - VHD name (optional, WSL mount name)
+# Returns: 0 on success, 1 on failure
+save_vhd_mapping() {
+    local path="$1"
+    local uuid="$2"
+    local mount_points="$3"
+    local vhd_name="${4:-}"
+    
+    if [[ -z "$path" || -z "$uuid" ]]; then
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} save_vhd_mapping: path or uuid is empty" >&2
+        return 1
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    local normalized=$(normalize_vhd_path "$path")
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    # Ensure jq is available
+    if ! command -v jq &> /dev/null; then
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} jq not available, skipping mapping save" >&2
+        return 1
+    fi
+    
+    # Update JSON with new mapping
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} jq --arg path '$normalized' --arg uuid '$uuid' --arg mp '$mount_points' --arg name '$vhd_name' --arg ts '$timestamp' ..." >&2
+    fi
+    
+    if jq --arg path "$normalized" \
+          --arg uuid "$uuid" \
+          --arg mp "$mount_points" \
+          --arg name "$vhd_name" \
+          --arg ts "$timestamp" \
+          '.mappings[$path] = {uuid: $uuid, last_attached: $ts, mount_points: $mp, name: $name}' \
+          "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+        mv "$temp_file" "$DISK_TRACKING_FILE"
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Saved mapping: $normalized → $uuid (name: $vhd_name)" >&2
+        return 0
+    else
+        rm -f "$temp_file"
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Failed to save mapping" >&2
+        return 1
+    fi
+}
+
+# Lookup UUID by VHD path from tracking file
+# Args: $1 - VHD path (Windows format)
+# Returns: UUID if found, empty string if not found
+# Exit code: 0 if found, 1 if not found
+lookup_vhd_uuid() {
+    local path="$1"
+    
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    local normalized=$(normalize_vhd_path "$path")
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} jq -r --arg path '$normalized' '.mappings[\$path].uuid // empty' $DISK_TRACKING_FILE" >&2
+    fi
+    
+    local uuid=$(jq -r --arg path "$normalized" '.mappings[$path].uuid // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    
+    if [[ -n "$uuid" && "$uuid" != "null" ]]; then
+        echo "$uuid"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Lookup UUID by VHD name from tracking file
+# Args: $1 - VHD name (WSL mount name)
+# Returns: UUID if found, empty string if not found
+# Exit code: 0 if found, 1 if not found
+lookup_vhd_uuid_by_name() {
+    local vhd_name="$1"
+    
+    if [[ -z "$vhd_name" ]]; then
+        return 1
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} jq -r --arg name '$vhd_name' '.mappings[] | select(.name == \$name) | .uuid' $DISK_TRACKING_FILE" >&2
+    fi
+    
+    local uuid=$(jq -r --arg name "$vhd_name" '.mappings[] | select(.name == $name) | .uuid' "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+    
+    if [[ -n "$uuid" && "$uuid" != "null" && "$uuid" != "" ]]; then
+        echo "$uuid"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Update mount points for a VHD in tracking file
+# Args: $1 - VHD path (Windows format)
+#       $2 - Mount points (comma-separated list, empty to clear)
+# Returns: 0 on success, 1 on failure
+update_vhd_mount_points() {
+    local path="$1"
+    local mount_points="$2"
+    
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    local normalized=$(normalize_vhd_path "$path")
+    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    # Check if mapping exists
+    local exists=$(jq -r --arg path "$normalized" '.mappings[$path] // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    if [[ -z "$exists" || "$exists" == "null" ]]; then
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} No mapping found for $normalized to update" >&2
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} Updating mount_points for $normalized to: $mount_points" >&2
+    fi
+    
+    if jq --arg path "$normalized" \
+          --arg mp "$mount_points" \
+          '.mappings[$path].mount_points = $mp' \
+          "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+        mv "$temp_file" "$DISK_TRACKING_FILE"
+        return 0
+    else
+        rm -f "$temp_file"
+        return 1
+    fi
+}
+
+# Remove VHD mapping from tracking file
+# Args: $1 - VHD path (Windows format)
+# Returns: 0 on success, 1 on failure
+remove_vhd_mapping() {
+    local path="$1"
+    
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    local normalized=$(normalize_vhd_path "$path")
+    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} Removing mapping for $normalized" >&2
+    fi
+    
+    if jq --arg path "$normalized" 'del(.mappings[$path])' \
+          "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+        mv "$temp_file" "$DISK_TRACKING_FILE"
+        return 0
+    else
+        rm -f "$temp_file"
+        return 1
+    fi
+}
+
+# Save detach event to detach history
+# Args: $1 - VHD path (Windows format)
+#       $2 - UUID
+#       $3 - VHD name (optional, WSL mount name)
+# Returns: 0 on success, 1 on failure
+save_detach_history() {
+    local path="$1"
+    local uuid="$2"
+    local vhd_name="${3:-}"
+    
+    if [[ -z "$path" || -z "$uuid" ]]; then
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} save_detach_history: path or uuid is empty" >&2
+        return 1
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    local normalized=$(normalize_vhd_path "$path")
+    local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    # Ensure jq is available
+    if ! command -v jq &> /dev/null; then
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} jq not available, skipping detach history save" >&2
+        return 1
+    fi
+    
+    # Add detach event to history (keep last 50 entries)
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} Adding detach event to history: $normalized (uuid: $uuid, name: $vhd_name)" >&2
+    fi
+    
+    if jq --arg path "$normalized" \
+          --arg uuid "$uuid" \
+          --arg name "$vhd_name" \
+          --arg ts "$timestamp" \
+          '.detach_history = ([{path: $path, uuid: $uuid, name: $name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]' \
+          "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+        mv "$temp_file" "$DISK_TRACKING_FILE"
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Saved detach event: $normalized → $uuid at $timestamp" >&2
+        return 0
+    else
+        rm -f "$temp_file"
+        [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Failed to save detach event" >&2
+        return 1
+    fi
+}
+
+# Get detach history from tracking file
+# Args: $1 - Number of entries to retrieve (optional, default: 10, max: 50)
+# Returns: JSON array of detach events, most recent first
+get_detach_history() {
+    local limit="${1:-10}"
+    
+    # Limit to max 50 entries
+    if [[ $limit -gt 50 ]]; then
+        limit=50
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    if ! command -v jq &> /dev/null; then
+        echo "[]"  # Return empty array if jq not available
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} jq -r '.detach_history // [] | .[0:$limit]' $DISK_TRACKING_FILE" >&2
+    fi
+    
+    jq -r ".detach_history // [] | .[0:$limit]" "$DISK_TRACKING_FILE" 2>/dev/null || echo "[]"
+}
+
+# Find most recent detach event for a VHD path
+# Args: $1 - VHD path (Windows format)
+# Returns: JSON object with detach event details if found, empty string otherwise
+get_last_detach_for_path() {
+    local path="$1"
+    
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
+    
+    init_disk_tracking_file || return 1
+    
+    local normalized=$(normalize_vhd_path "$path")
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        echo -e "${BLUE}[DEBUG]${NC} Looking for last detach event for: $normalized" >&2
+    fi
+    
+    local result=$(jq -r --arg path "$normalized" \
+        '.detach_history // [] | map(select(.path == $path)) | .[0] // empty' \
+        "$DISK_TRACKING_FILE" 2>/dev/null)
+    
+    if [[ -n "$result" && "$result" != "null" ]]; then
+        echo "$result"
+        return 0
+    fi
+    
+    return 1
+}
+
 # Debug command wrapper - prints command before execution if DEBUG=true
 # Usage: debug_cmd command [args...]
 # Returns: exit code of the command
@@ -150,11 +484,17 @@ wsl_attach_vhd() {
 # Note: WSL unmounts VHDs by their original file path
 wsl_detach_vhd() {
     local vhd_path="$1"
-    local uuid="$2"  # Not used, but kept for API compatibility
+    local uuid="$2"  # UUID for history tracking
+    local vhd_name="$3"  # Optional VHD name for history tracking
     
     if [[ -z "$vhd_path" ]]; then
         echo "Error: VHD path is required" >&2
         return 1
+    fi
+    
+    # Save detach event to history before detaching (if UUID provided)
+    if [[ -n "$uuid" ]]; then
+        save_detach_history "$vhd_path" "$uuid" "$vhd_name"
     fi
     
     # WSL unmounts by the VHD file path that was originally used to mount
@@ -381,8 +721,16 @@ wsl_complete_unmount() {
         fi
     fi
     
+    # Get VHD name from tracking file for history
+    local vhd_name=""
+    if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+        local normalized_path=$(normalize_vhd_path "$vhd_path")
+        vhd_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    fi
+    
     # Detach from WSL
-    if ! wsl_detach_vhd "$vhd_path" "$uuid"; then
+    if ! wsl_detach_vhd "$vhd_path" "$uuid" "$vhd_name"; then
+        echo "Warning: Failed to detach VHD before deletion. It may still be attached." >&2
         return 1
     fi
     
@@ -431,9 +779,40 @@ wsl_find_uuid_by_mountpoint() {
     return 1
 }
 
+# Count the number of dynamically attached VHDs (non-system disks)
+# Returns: Count of non-system disks (sd[d-z])
+# Note: This is used for safety checks before UUID discovery
+wsl_count_dynamic_vhds() {
+    local all_uuids
+    all_uuids=$(wsl_get_disk_uuids)
+    local count=0
+    
+    while IFS= read -r uuid; do
+        [[ -z "$uuid" ]] && continue
+        
+        if [[ "$DEBUG" == "true" ]]; then
+            echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
+        fi
+        local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+        
+        if [[ -n "$dev_name" ]]; then
+            # Count dynamically attached disks (usually sd[d-z])
+            # Skip system disks (sda, sdb, sdc)
+            if [[ "$dev_name" =~ ^sd[d-z]$ ]]; then
+                ((count++))
+            fi
+        fi
+    done <<< "$all_uuids"
+    
+    echo "$count"
+    return 0
+}
+
 # Find UUID by checking all attached VHDs for one matching pattern
+# ⚠️ UNSAFE: Only use when wsl_count_dynamic_vhds() returns exactly 1
 # This looks for dynamically attached VHDs (typically sd[d-z])
 # Returns: First non-system disk UUID found, empty if none
+# WARNING: With multiple VHDs attached, this returns arbitrary result
 wsl_find_dynamic_vhd_uuid() {
     local all_uuids
     all_uuids=$(wsl_get_disk_uuids)
@@ -459,16 +838,43 @@ wsl_find_dynamic_vhd_uuid() {
     return 1
 }
 
-# Find UUID of an attached VHD by verifying path exists and discovering attached UUID
+# Find UUID of an attached VHD by verifying path exists with multi-VHD safety
 # Args: $1 - VHD path (Windows format)
-# Returns: UUID if VHD is attached and can be identified, empty if not found
-# Note: This attempts to find the UUID by checking if path exists and finding
-#       the most likely attached VHD (non-system disk)
+# Returns: 0 with UUID if single VHD attached, 1 if not found, 2 if multiple VHDs (ambiguous)
+# Note: SAFE implementation - checks tracking file first (by path and name), fails explicitly with multiple VHDs instead of guessing
 wsl_find_uuid_by_path() {
     local vhd_path_win="$1"
     
     if [[ -z "$vhd_path_win" ]]; then
         return 1
+    fi
+    
+    # First, try to lookup UUID from tracking file by path
+    local tracked_uuid=$(lookup_vhd_uuid "$vhd_path_win")
+    if [[ -n "$tracked_uuid" ]]; then
+        # Verify the UUID is actually attached
+        if wsl_is_vhd_attached "$tracked_uuid"; then
+            echo "$tracked_uuid"
+            return 0
+        else
+            # UUID in tracking file but not attached - tracking file is stale
+            [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Tracked UUID not attached, falling back to discovery" >&2
+        fi
+    fi
+    
+    # Second, try to lookup UUID by name (extract name from tracking file first)
+    local normalized_path=$(normalize_vhd_path "$vhd_path_win")
+    local tracked_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    if [[ -n "$tracked_name" ]]; then
+        local uuid_by_name=$(lookup_vhd_uuid_by_name "$tracked_name")
+        if [[ -n "$uuid_by_name" ]]; then
+            # Verify the UUID is actually attached
+            if wsl_is_vhd_attached "$uuid_by_name"; then
+                [[ "$DEBUG" == "true" ]] && echo -e "${BLUE}[DEBUG]${NC} Found UUID by name '$tracked_name': $uuid_by_name" >&2
+                echo "$uuid_by_name"
+                return 0
+            fi
+        fi
     fi
     
     # Convert Windows path to WSL path to check if VHD file exists
@@ -479,11 +885,23 @@ wsl_find_uuid_by_path() {
         return 1
     fi
     
-    # Try to find the UUID by looking for dynamically attached VHDs
-    # Since WSL doesn't provide a direct path-to-UUID mapping, we use heuristics:
-    # 1. Look for non-system disks (sd[d-z])
-    # 2. Assume the most recent/only dynamically attached disk is our VHD
-    wsl_find_dynamic_vhd_uuid
+    # Count non-system disks for safety check
+    local count=$(wsl_count_dynamic_vhds)
+    
+    if [[ $count -gt 1 ]]; then
+        # Multiple VHDs attached - cannot safely determine which one
+        if [[ "$QUIET" == "false" ]]; then
+            echo "Error: Multiple VHDs attached ($count found). Cannot determine UUID from path alone." >&2
+            echo "Please specify --uuid explicitly or use 'status --all' to see all UUIDs." >&2
+        fi
+        return 2
+    elif [[ $count -eq 0 ]]; then
+        # No VHDs attached
+        return 1
+    else
+        # Safe: exactly one dynamic VHD attached
+        wsl_find_dynamic_vhd_uuid
+    fi
 }
 
 # Format an attached VHD with a filesystem
@@ -649,7 +1067,7 @@ wsl_create_vhd() {
     
     if [[ -z "$new_dev" ]]; then
         echo "Error: Could not detect newly attached device" >&2
-        wsl_detach_vhd "$vhd_path_win" ""
+        wsl_detach_vhd "$vhd_path_win" "" ""
         rm -f "$vhd_path_wsl"
         return 1
     fi
@@ -658,10 +1076,13 @@ wsl_create_vhd() {
     local new_uuid=$(format_vhd "$new_dev" "$fs_type")
     if [[ $? -ne 0 || -z "$new_uuid" ]]; then
         echo "Error: Failed to format device /dev/$new_dev with $fs_type" >&2
-        wsl_detach_vhd "$vhd_path_win" ""
+        wsl_detach_vhd "$vhd_path_win" "" ""
         rm -f "$vhd_path_wsl"
         return 1
     fi
+    
+    # Save mapping to tracking file with VHD name
+    save_vhd_mapping "$vhd_path_win" "$new_uuid" "" "$vhd_name"
     
     # Output the UUID
     echo "$new_uuid"

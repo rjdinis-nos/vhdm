@@ -255,23 +255,37 @@ Comprehensive tests for the resize command, validating VHD resizing through data
 
 ## Test Configuration
 
-Tests use the `.env.test` configuration file located in the `tests/` directory. Ensure this file exists with valid settings:
+Tests use the `.env.test` configuration file located in the `tests/` directory. This file defines the base directories for test operations:
 
 ```bash
-WSL_DISKS_DIR="C:/aNOS/VMs/wsl_test/"
-VHD_PATH="${WSL_DISKS_DIR}disk.vhdx"
-MOUNT_POINT="/home/$USER/disk"
-VHD_NAME="disk"
+# Directory where test VHD files are stored (Windows path format)
+WSL_DISKS_DIR="C:/aNOS/VMs/wsl_tests/"
+
+# Directory where test VHDs are mounted (Linux path)
+MOUNT_DIR="/home/$USER/wsl_tests/"
 ```
 
-**UUID Discovery**: Tests automatically discover VHD UUIDs dynamically using the `status --path` or `status --mount-point` commands. Each test suite includes a `get_vhd_uuid()` helper function that:
+**Dynamic VHD Creation:**
+Each test suite automatically creates its own unique VHD file to avoid conflicts:
+- `test_status.sh` → `test_status_disk.vhdx` mounted at `${MOUNT_DIR}test_status_disk`
+- `test_attach.sh` → `test_attach_disk.vhdx` mounted at `${MOUNT_DIR}test_attach_disk`
+- `test_mount.sh` → `test_mount_disk.vhdx` mounted at `${MOUNT_DIR}test_mount_disk`
+- `test_umount.sh` → `test_umount_disk.vhdx` mounted at `${MOUNT_DIR}test_umount_disk`
+- `test_detach.sh` → `test_detach_disk.vhdx` mounted at `${MOUNT_DIR}test_detach_disk`
+- `test_create.sh` → Multiple test VHDs: `test_create_1.vhdx`, `test_create_2.vhdx`, etc.
+- `test_delete.sh` → Multiple test VHDs: `test_delete_1.vhdx`, `test_delete_2.vhdx`, etc.
+- `test_resize.sh` → `test_resize_disk.vhdx` mounted at `${MOUNT_DIR}test_resize_disk`
+
+**UUID Discovery:**
+Tests automatically discover VHD UUIDs dynamically using the `status --path` or `status --mount-point` commands. Each test suite includes a `get_vhd_uuid()` helper function that:
 1. Ensures the VHD is attached (via `attach` or `mount`)
 2. Queries the UUID using `status` command with quiet mode
 3. Parses the UUID from the machine-readable output
 
-This approach eliminates the need for hardcoded UUIDs in test configuration and ensures tests work with any VHD file specified in `.env.test`.
+This approach eliminates the need for hardcoded UUIDs in test configuration and ensures tests work with dynamically created VHDs.
 
-**Resize Tests**: The resize test suite creates its own temporary VHD (`resize_test.vhdx`) to avoid interfering with the main test VHD. This temporary VHD is automatically cleaned up after tests complete.
+**Resize Tests:**
+The resize test suite creates its own temporary VHD (`test_resize_disk.vhdx`) to avoid interfering with other test suites. This temporary VHD is automatically cleaned up after tests complete.
 
 ---
 
@@ -393,27 +407,29 @@ fi
 ## Test Maintenance
 
 ### Before Running Tests
-- Ensure `.env.test` is properly configured
-- Verify VHD file exists at the specified path
-- Confirm VHD UUID matches the configuration
-- Check mount point is correctly set
+- Ensure `.env.test` is properly configured with `WSL_DISKS_DIR` and `MOUNT_DIR`
+- Verify directories exist and have write permissions
+- No manual VHD setup needed - tests create their own VHDs automatically
 
 ### Test State Management
-Some tests require specific VHD states:
-- **Attached but not mounted**: Test 5 in test_status.sh mounts then unmounts filesystem (keeping VHD attached)
+Each test suite uses its own unique VHD to avoid conflicts:
+- **Attached but not mounted**: Some tests mount then unmount filesystem (keeping VHD attached)
 - **Detached state**: Tests ensure cleanup by fully detaching VHDs after testing
 - **Setup/teardown**: Tests use setup functions to establish required states before assertions
+- **Isolation**: Each suite's VHD is independent and won't interfere with others
 
 ### When Tests Fail
 1. Run in verbose mode to see detailed output: `./tests/test_status.sh -v`
 2. Check VHD state (attached vs mounted vs detached)
-3. Verify `.env.test` configuration matches actual VHD
+3. Verify `.env.test` directories exist and are writable
 4. Review test expectations match current implementation
 5. Check if test setup properly establishes required state
+6. Look for conflicts in `WSL_DISKS_DIR` or `MOUNT_DIR`
 
 ### Updating Tests
 - Test expectations must match actual VHD state (mounted vs unmounted)
-- Update `.env.test` if creating new test VHDs
+- Update `.env.test` to change test VHD directory or mount directory
+- Each test suite creates its own VHDs automatically
 - Verbose mode aids debugging without modifying test logic
 - Ensure color codes work in your terminal environment
 
@@ -453,23 +469,26 @@ fi
 ## Troubleshooting
 
 ### Test fails with "VHD file not found"
-- Check that VHD path in `.env.test` is correct
-- Verify VHD file exists: `ls -la $(wslpath "C:/aNOS/VMs/wsl_test/disk.vhdx")`
+- Check that `WSL_DISKS_DIR` path in `.env.test` is correct and directory exists
+- Verify you have write permissions to the directory
+- Tests will automatically create VHD files as needed
 
 ### Test fails with "UUID not found"
 - VHD may not be attached to WSL
-- UUID in `.env.test` may be outdated (changes when reformatted)
+- UUID changes when VHD is reformatted
 - Run: `sudo blkid` to see all UUIDs
+- Tests discover UUIDs automatically, so this usually indicates a VHD creation issue
 
 ### Test fails with "Mount point not found"
 - VHD may be attached but not mounted
-- Check: `df -h | grep disk` or `mount | grep disk`
-- Mount manually: `sudo mount UUID=<uuid> /home/$USER/disk`
+- Check: `df -h | grep wsl_tests` or `mount | grep wsl_tests`
+- Verify `MOUNT_DIR` in `.env.test` is correct
 
 ### All tests fail
-- Ensure scripts are executable: `chmod +x ../disk_management.sh tests/test_status.sh`
-- Check that `wsl_helpers.sh` is in the parent libs directory
+- Ensure scripts are executable: `chmod +x ../disk_management.sh tests/test_*.sh`
+- Check that `wsl_helpers.sh` and `utils.sh` are in the parent `libs/` directory
 - Verify `.env.test` exists in the tests directory
+- Ensure `WSL_DISKS_DIR` and `MOUNT_DIR` are properly set
 
 ---
 

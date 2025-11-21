@@ -10,7 +10,49 @@ Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). 
 
 Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
 
+**📖 For comprehensive architecture details, function flows, and responsibility matrix, see [copilot-code-architecture.md](copilot-code-architecture.md)**
+
 ## Architecture & Core Patterns
+
+### Persistent Disk Tracking
+The system maintains a persistent mapping file to track VHD path→UUID associations across sessions:
+- **Location**: `~/.config/wsl-disk-management/vhd_mapping.json`
+- **Format**: JSON with version and mappings object
+- **Normalization**: Windows paths normalized to lowercase with forward slashes for case-insensitive matching
+- **Usage**: Automatically saves mappings on attach/create, updates mount points on mount/unmount, removes on delete
+- **Priority**: Tracking file checked first before falling back to device discovery
+- **Safety**: Validates tracked UUIDs are still attached (handles stale entries gracefully)
+
+Tracking file structure:
+```json
+{
+  "version": "1.0",
+  "mappings": {
+    "c:/vms/disk1.vhdx": {
+      "uuid": "uuid-1234",
+      "last_attached": "2025-11-21T10:30:00Z",
+      "mount_points": "/mnt/disk1"
+    }
+  }
+}
+```
+
+**Key Functions:**
+- `init_disk_tracking_file()` - Creates directory and initial JSON structure
+- `normalize_vhd_path()` - Normalizes Windows paths for consistent tracking
+- `save_vhd_mapping()` - Saves/updates path→UUID→mount_points association
+- `lookup_vhd_uuid()` - Retrieves UUID from tracking file by path
+- `update_vhd_mount_points()` - Updates mount point list for existing mapping
+- `remove_vhd_mapping()` - Removes mapping when VHD is deleted
+
+**Integration Points:**
+- `attach_vhd()` - Saves mapping after successful attach
+- `mount_vhd()` - Updates mount points after mount
+- `umount_vhd()` - Clears mount points after unmount
+- `detach_vhd()` - Clears mount points when detaching
+- `delete_vhd()` - Removes mapping when VHD file is deleted
+- `wsl_create_vhd()` - Saves mapping after VHD creation and formatting
+- `wsl_find_uuid_by_path()` - Checks tracking file first, then falls back to device discovery
 
 ### Snapshot-Based Device Detection
 When attaching VHDs, the scripts capture before/after snapshots of block devices and UUIDs to identify newly attached disks:
@@ -69,6 +111,28 @@ if ! wsl_is_vhd_mounted "$uuid"; then
 fi
 ```
 
+### Critical Rule: No Heuristic Disk Discovery
+
+**NEVER use non-deterministic heuristics to identify which VHD/disk to operate on.**
+
+WSL does not provide a direct path→UUID mapping after attachment. Avoid using guessing patterns like:
+- ❌ "Find the first non-system disk (sd[d-z])" - arbitrary with multiple VHDs
+- ❌ "Assume the most recent disk is the target" - breaks with multiple disks
+- ❌ "Pick any disk that matches a pattern" - random selection
+
+**Safe UUID Discovery Methods:**
+1. ✅ **Snapshot-based detection during attach/create** - Compare before/after immediately after operation
+2. ✅ **UUID from mount point** - `findmnt` or `lsblk` lookup of mounted filesystem
+3. ✅ **Explicit user-provided UUID** - User specifies `--uuid` parameter
+
+**When UUID is unknown:**
+1. Count attached dynamic VHDs using `wsl_count_dynamic_vhds()`
+2. If count > 1: Require explicit `--uuid` or fail with clear error
+3. If count == 1: Only then use `wsl_find_dynamic_vhd_uuid()` safely
+4. If count == 0: Report "no VHDs attached"
+
+See [copilot-code-architecture.md](copilot-code-architecture.md) for detailed implementation requirements.
+
 ## Key Implementation Details
 
 ### Configuration
@@ -77,9 +141,17 @@ fi
 - All parameters must be provided via command-line options
 - Required parameters: `--path`, `--mount-point`, `--name` (depending on command)
 
+**Persistent Disk Tracking:**
+- Location: `~/.config/wsl-disk-management/vhd_mapping.json`
+- Automatically created on first use
+- Tracks VHD path→UUID→mount_points associations
+- No manual configuration needed
+
 **Test Scripts:**
-- Tests source `tests/.env.test` for default VHD configuration
-- Test defaults: `WSL_DISKS_DIR`, `VHD_NAME`, `VHD_PATH`, `MOUNT_POINT`
+- Tests source `tests/.env.test` for test environment configuration
+- Test configuration: `WSL_DISKS_DIR` (Windows directory for VHD storage), `MOUNT_DIR` (Linux directory for mount points)
+- Each test suite dynamically creates unique VHD names: `test_[suite]_disk` (e.g., `test_status_disk`, `test_attach_disk`)
+- Mount points are dynamically generated: `${MOUNT_DIR}test_[suite]_disk`
 - UUIDs are discovered dynamically at test runtime
 
 **Flags are exported** for use in child scripts: `export QUIET` and `export DEBUG`
@@ -91,10 +163,15 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 - UUIDs change only when formatting, not when attaching/detaching
 
 ### UUID Discovery
-The system automatically discovers UUIDs when not explicitly provided:
-- **From path**: `wsl_find_uuid_by_path()` validates file exists and finds attached non-system disk
-- **From mount point**: `wsl_find_uuid_by_mountpoint()` reverse-lookups UUID from mounted filesystem
-- **Dynamic VHD detection**: `wsl_find_dynamic_vhd_uuid()` finds non-system disks (sd[d-z])
+The system uses deterministic UUID discovery methods with persistent tracking:
+- **From tracking file**: `lookup_vhd_uuid()` checks persistent mapping file first (✅ SAFE, FASTEST)
+- **From mount point**: `wsl_find_uuid_by_mountpoint()` reverse-lookups UUID from mounted filesystem (✅ SAFE)
+- **Snapshot-based**: Compare before/after disk lists during attach/create operations (✅ SAFE)
+- **From path with safety check**: `wsl_find_uuid_by_path()` checks tracking file, validates file exists, counts attached VHDs before discovery
+- **Dynamic VHD detection**: `wsl_find_dynamic_vhd_uuid()` finds non-system disks - ⚠️ ONLY safe when exactly one VHD is attached
+
+**Tracking File Priority:**
+`wsl_find_uuid_by_path()` always checks the tracking file first. If UUID is found in tracking, it validates the UUID is still attached. This enables safe multi-VHD operations without requiring explicit UUIDs.
 
 Commands that support UUID discovery:
 - `status --path` or `status --mount-point`
@@ -228,7 +305,7 @@ Comprehensive test suites validating all command functionality:
 **test_status.sh (10 tests):**
 1. Default status output validation (shows usage)
 2. Status lookup by UUID
-3. Status lookup by path (expects exit code 1 when not attached)
+3. Status lookup by path (VHD must be attached/mounted for successful lookup)
 4. Status lookup by mount point
 5. Attached-but-not-mounted state detection (sets up state first with mount + filesystem unmount)
 6. Show all VHDs (--all flag)
@@ -285,21 +362,31 @@ run_test "Description" "command | grep -q 'pattern'" 0
 
 **Configuration:**
 Tests source `tests/.env.test` for VHD configuration:
-- VHD must exist at `$VHD_PATH`
-- Mount point `$MOUNT_POINT` must be configured
-- VHD_NAME specifies the name for WSL attachment
+- `WSL_DISKS_DIR` - Windows directory where test VHD files are stored (e.g., `C:/aNOS/VMs/wsl_tests/`)
+- `MOUNT_DIR` - Linux directory where test VHDs are mounted (e.g., `/home/$USER/wsl_tests/`)
+- Each test suite creates unique VHDs: `test_status_disk.vhdx`, `test_attach_disk.vhdx`, etc.
+- Mount points are dynamically generated per suite
 
 **UUID Discovery in Tests:**
 Tests automatically discover UUIDs dynamically using `get_vhd_uuid()` helper functions:
-- Mount or attach the VHD to ensure it's available
-- Query UUID using `status --path` or `status --mount-point` in quiet mode
-- Parse UUID from machine-readable output using grep
+- Create VHD if it doesn't exist (using `create` command)
+- Attach VHD if newly created (using `attach` command)
+- Format VHD if newly created to generate UUID (using `format` command)
+- Mount VHD to ensure it's available (using `mount` command)
+- Query UUID using `status --path` in quiet mode
+- Parse UUID using specific regex pattern: `grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'`
 
-This approach eliminates hardcoded UUIDs and ensures tests work with any VHD specified in `.env.test`.
+**Critical Implementation Note:**
+- Use specific UUID regex pattern (not generic parenthesis matching) to avoid extracting error messages
+- VHDs must be formatted before they have UUIDs; unformatted VHDs cannot be queried by UUID
+- The helper creates/formats VHDs automatically on first test run
+
+This approach eliminates hardcoded UUIDs and ensures tests work with dynamically created VHDs.
 
 **Test Maintenance:**
 - Test expectations must match actual VHD state (mounted vs unmounted)
-- Update `tests/.env.test` if creating new test VHDs (path, mount point, name)
+- Update `tests/.env.test` to change test VHD directory or mount directory
+- Each test suite automatically creates its own unique VHD file (no manual VHD setup needed)
 - UUIDs are discovered dynamically - no manual UUID configuration needed
 - Verbose mode aids debugging without modifying test logic
 - Tests requiring specific states must set up that state before assertions
@@ -318,40 +405,33 @@ This approach eliminates hardcoded UUIDs and ensures tests work with any VHD spe
 
 ### Adding Helper Functions
 
-**Function Naming Convention:**
-- **Primitives** (generic operations): Use simple descriptive names without prefixes (e.g., `umount_filesystem`, `mount_filesystem`, `create_mount_point`, `convert_size_to_bytes`)
-  - These are generic operations that could be used in any context
-  - No WSL-specific logic or extensive error handling
+**Function Naming Convention** (see [Architecture Document](copilot-code-architecture.md) for full hierarchy):
+
+- **Primitives** (generic operations): Simple names without prefixes
+  - Examples: `mount_filesystem()`, `umount_filesystem()`, `create_mount_point()`, `convert_size_to_bytes()`
+  - Generic Linux operations, no WSL-specific logic
   - Return 0 on success, 1 on failure
-  - Examples: `create_mount_point()`, `mount_filesystem()`, `umount_filesystem()`
+  - Minimal error handling
   
-- **WSL Helpers** (comprehensive operations): Use `wsl_` prefix (e.g., `wsl_umount_vhd`, `wsl_mount_vhd`, `wsl_attach_vhd`)
+- **WSL Helpers** (comprehensive operations): Use `wsl_` prefix
+  - Examples: `wsl_mount_vhd()`, `wsl_umount_vhd()`, `wsl_attach_vhd()`, `wsl_detach_vhd()`
   - WSL-specific operations with comprehensive error handling and diagnostics
   - May call primitive functions internally
-  - Provide user-friendly error messages and suggestions
   - Return 0 on success, 1 on failure
-  - Examples: `wsl_mount_vhd()`, `wsl_umount_vhd()`
 
-**WSL-specific helpers** (add to `libs/wsl_helpers.sh`):
-1. Add with clear doc comment
-2. Follow naming: `wsl_<action>_<target>` (e.g., `wsl_mount_vhd`, `wsl_umount_vhd`)
-3. Return 0 on success, 1 on failure
-4. Print errors to stderr: `echo "Error: ..." >&2`
-5. Validate required arguments at function start
-6. Provide comprehensive error handling and user-friendly diagnostics
+- **Command Functions** (user-facing): Simple verb names
+  - Examples: `attach_vhd()`, `mount_vhd()`, `detach_vhd()`, `umount_vhd()`
+  - May orchestrate multiple operations (e.g., `mount_vhd()` = attach + mount)
+  - Exit on errors (exit 1)
+  - Comprehensive user-facing error messages
 
-**Primitive operations** (add to `libs/wsl_helpers.sh` or `libs/utils.sh`):
-1. Add with clear doc comment describing purpose and parameters
-2. Follow naming: descriptive function names without prefixes (e.g., `umount_filesystem`, `mount_filesystem`, `create_mount_point`, `get_directory_size_bytes`)
-3. Return 0 on success, 1 on failure
-4. Echo result to stdout for capture by callers (or stderr for errors)
-5. Respect `DEBUG` flag for command visibility when applicable
-6. Minimal error handling - just perform the operation
-7. Can be used by higher-level functions or standalone
-
-**Examples of primitive vs WSL helper functions:**
-- Primitives: `mount_filesystem()`, `umount_filesystem()`, `create_mount_point()`
-- WSL Helpers: `wsl_mount_vhd()`, `wsl_umount_vhd()` (call primitives + add error diagnostics)
+**Guidelines for new functions:**
+1. Add clear doc comment describing purpose, parameters, return values
+2. Follow naming convention for appropriate layer
+3. Primitives: Minimal error handling, single operation
+4. WSL Helpers: Comprehensive error handling, may call primitives
+5. Commands: May orchestrate multiple operations, user-friendly output
+6. Respect `DEBUG` and `QUIET` flags
 
 ### Modifying Path Conversion
 Path conversion logic appears in multiple places. Consolidate into a helper function if adding more conversions:
@@ -382,9 +462,12 @@ wsl_convert_path() {
 7. **Already-attached detection**: Mount command has complex fallback logic for detecting already-attached VHDs; maintain this when refactoring
 16. **Mount does not format**: Mount command will error if VHD is unformatted, directing user to use format command first
 8. **Test exit codes**: Status queries return 1 when VHD not found/not attached; tests must expect actual behavior (0 for success, 1 for not found)
-9. **Test environment state**: Test expectations must match actual VHD state (attached/mounted/unmounted); verify state before creating assertions
-10. **Test state setup**: Some tests need specific states (e.g., attached-but-not-mounted); set up state explicitly before testing
-11. **Grep test patterns**: Use `grep -q` for silent pattern matching in tests; return codes are 0 (match) or 1 (no match)
+16. **Test environment state**: Test expectations must match actual VHD state (attached/mounted/unmounted); verify state before creating assertions
+17. **Test state setup**: Some tests need specific states (e.g., attached-but-not-mounted); set up state explicitly before testing
+18. **Grep test patterns**: Use `grep -q` for silent pattern matching in tests; return codes are 0 (match) or 1 (no match)
+19. **UUID extraction in tests**: Use specific UUID regex `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` instead of generic patterns like `(?<=\().*(?=\))` to avoid extracting error messages from parentheses
+20. **VHD formatting requirement**: VHDs must be formatted before they have UUIDs; test helpers should create + attach + format new VHDs automatically
+21. **Create command parameters**: The `create` command does NOT accept `--name` parameter (only `--path`, `--size`, `--force`); it only creates the VHD file and does not auto-attach; tests must explicitly call `attach` after `create` if VHD attachment is needed
 12. **Test output suppression**: All disk_management.sh calls in tests must suppress non-test output using `2>&1` for commands or `>/dev/null 2>&1` for setup/cleanup operations
 13. **Optional test dependencies**: Tests requiring optional tools (xfs, etc.) should check availability and gracefully skip or adjust the test
 14. **Filesystem unmount vs detach**: To test "attached but not mounted" state, use `sudo umount` (not the script's umount command which fully detaches)
@@ -392,43 +475,48 @@ wsl_convert_path() {
 
 ## Workflow-Specific Notes
 
-### Mount Operation Flow
-1. Parse args → 2. Check VHD file exists (WSL path) → 3. Snapshot → 4. Attach (or detect existing) → 5. Detect UUID → 6. Verify VHD is formatted (error if not) → 7. Check mount status → 8. Mount if needed
+**📖 For detailed command flow diagrams and function invocation hierarchies, see [copilot-code-architecture.md](copilot-code-architecture.md)**
 
-Critical: Steps 4-5 have fallback logic for already-attached VHDs. Mount command does NOT auto-format disks - it will error if VHD is unformatted, directing user to use format command.
+### Key Command Behaviors
 
-**Mount Function Architecture:**
-- `create_mount_point()` - Primitive operation that creates a directory with `mkdir -p`
-- `mount_filesystem()` - Primitive operation that executes `sudo mount UUID=... mountpoint`
-- `wsl_mount_vhd()` - WSL helper that calls both primitives and provides error handling
-- `mount_vhd()` in main script uses these functions for consistent directory creation and mounting
+**Attach** - Single operation: Only attaches VHD to WSL as block device. Does NOT mount to filesystem.
+- Uses snapshot-based UUID detection
+- Idempotent (detects already-attached VHDs)
+- VHD available as `/dev/sdX` after attach
 
-### Create Operation Flow  
-1. Parse args → 2. Convert path → 3. Check doesn't exist → 4. Create dirs → 5. Verify qemu-img → 6. Create VHD file with qemu-img → 7. Return success
+**Mount** - Orchestration: Attach + mount workflow for user convenience
+- Attaches VHD if not already attached
+- Verifies VHD is formatted (errors if not)
+- Creates mount point if needed
+- Mounts to filesystem
+- Does NOT auto-format (directs user to format command)
 
-Note: Create command only creates the VHD file. User must use 'attach' or 'mount' commands to attach and format the disk. This follows separation of responsibilities principle.
+**Format** - Single operation: Only formats device with filesystem
+- Requires explicit `--uuid` or `--name` (no path discovery)
+- Warns if already formatted (generates new UUID)
+- Requires confirmation in non-quiet mode
 
-### Unmount Operation Flow
-1. Parse args → 2. Check attached → 3. Unmount from filesystem → 4. Detach from WSL → 5. Verify detached
+**Unmount** - Orchestration: Unmount + optional detach
+- Unmounts from filesystem
+- Detaches from WSL if `--path` provided
+- Shows `lsof` diagnostics on failure
 
-Error handling: If unmount fails, suggest `lsof +D` to find blocking processes.
+**Detach** - Orchestration: Unmount if needed + detach
+- Checks if mounted, unmounts first if necessary
+- Detaches from WSL
+- Requires `--path` for WSL detach operation
 
-**Unmount Function Architecture:**
-- `umount_filesystem()` - Primitive operation that executes `sudo umount` on a mount point
-- `wsl_umount_vhd()` - WSL helper that calls `umount_filesystem()` and provides comprehensive error diagnostics on failure (lsof output, force unmount suggestions)
-- Both `umount_vhd()` and `detach_vhd()` in main script use `wsl_umount_vhd()` for consistent error handling
+**Create** - Single operation: Only creates VHD file
+- Does NOT auto-attach or format (separation of concerns)
+- Does NOT accept `--name` parameter (only `--path`, `--size`, `--force`)
+- Supports `--force` to overwrite existing (with confirmation)
+- Tests must explicitly call `attach` after `create` if attachment is needed
 
-### Attach Operation Flow
-1. Parse args (path, name) → 2. Validate VHD file exists → 3. Snapshot UUIDs/devices → 4. Attempt attach → 5. Detect new UUID → 6. Report device name → 7. Return success
+**Delete** - Single operation: Only deletes VHD file
+- Requires VHD to be detached first (safety check)
+- Requires confirmation unless `--force`
 
-Critical: Attach does NOT mount to filesystem - VHD is only available as block device. Has fallback logic for already-attached VHDs (idempotency). UUID detection uses snapshot-based device comparison.
-
-### Format Operation Flow
-1. Parse args (name or uuid, type) → 2. Validate at least one of --name or --uuid provided → 3. Determine device name from UUID or use provided name → 4. Validate device exists → 5. Check if already formatted and warn user → 6. Prompt for confirmation in non-quiet mode → 7. Format device → 8. Return new UUID
-
-Critical: Format does NOT support UUID discovery from path. Either `--uuid` or `--name` must be explicitly provided. When `--uuid` is provided for an already-formatted disk, user is warned that formatting will generate a new UUID and destroy data. Format command requires explicit device identification to prevent accidental formatting.
-
-### Resize Operation Flow
-1. Parse args (mount-point, size) → 2. Validate mount point exists and is mounted → 3. Calculate directory size → 4. Determine target size (max of requested size or data+30%) → 5. Create new VHD with target size → 6. Mount new VHD to temporary location → 7. Copy all data with rsync → 8. Verify file counts match → 9. Unmount both disks → 10. Backup original VHD (rename with _bkp suffix) → 11. Rename new VHD to original name → 12. Remount at original location → 13. Verify integrity → 14. Return new UUID
-
-Critical: Original VHD is preserved as backup. Data migration uses rsync with progress reporting. Size calculation ensures disk is large enough for data plus 30% overhead. File count verification ensures data integrity.
+**Resize** - Complex orchestration: 10+ step workflow
+- Creates new VHD, migrates data, preserves original as backup
+- Verifies integrity via file count comparison
+- Auto-calculates minimum size (data + 30%)

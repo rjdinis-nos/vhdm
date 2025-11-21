@@ -52,12 +52,37 @@ else
     exit 1
 fi
 
+# Test-specific VHD configuration (dynamic)
+TEST_VHD_NAME="test_status_disk"
+TEST_VHD_PATH="${WSL_DISKS_DIR}${TEST_VHD_NAME}.vhdx"
+TEST_MOUNT_POINT="${MOUNT_DIR}${TEST_VHD_NAME}"
+
 # Helper function to get UUID from VHD path
 get_vhd_uuid() {
-    # Mount the VHD first to ensure it's attached
-    bash "$PARENT_DIR/disk_management.sh" mount --path "$VHD_PATH" --mount-point "$MOUNT_POINT" --name "$VHD_NAME" >/dev/null 2>&1
-    # Get UUID from mount point
-    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$MOUNT_POINT" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+    local vhd_path="$1"
+    local mount_point="$2"
+    local vhd_name="$3"
+    
+    # Create VHD if it doesn't exist
+    if ! bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" >/dev/null 2>&1; then
+        bash "$PARENT_DIR/disk_management.sh" create --path "$vhd_path" --size 100M >/dev/null 2>&1
+        # Attach the newly created VHD
+        bash "$PARENT_DIR/disk_management.sh" attach --path "$vhd_path" --name "$vhd_name" >/dev/null 2>&1
+        sleep 1
+        # Format the VHD (find device name first)
+        local device=$(lsblk -J | jq -r '.blockdevices[] | select(.name | test("sd[d-z]")) | .name' | head -1)
+        if [[ -n "$device" ]]; then
+            echo "yes" | bash "$PARENT_DIR/disk_management.sh" format --name "$device" --type ext4 >/dev/null 2>&1
+        fi
+    fi
+    
+    # Ensure VHD is attached and mounted
+    bash "$PARENT_DIR/disk_management.sh" mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
+    # Give system time to update
+    sleep 1
+    # Get UUID using quiet mode status by path (more reliable)
+    # Extract only the UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
     echo "$uuid"
 }
 
@@ -151,13 +176,13 @@ echo -e "  Disk Management Status Tests"
 echo -e "========================================${NC}"
 
 # Get VHD UUID dynamically
-VHD_UUID=$(get_vhd_uuid)
+VHD_UUID=$(get_vhd_uuid "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME")
 
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Testing with configuration from .env.test:"
-    echo "  VHD_PATH: $VHD_PATH"
+    echo "  VHD_PATH: $TEST_VHD_PATH"
     echo "  VHD_UUID (discovered): $VHD_UUID"
-    echo "  MOUNT_POINT: $MOUNT_POINT"
+    echo "  MOUNT_POINT: $TEST_MOUNT_POINT"
     echo
     echo
 else
@@ -177,20 +202,24 @@ run_test "Status with specific UUID" \
 
 # Test 3: Status with specific path (VHD should be attached and mounted from test 2)
 run_test "Status with specific path" \
-    "bash $PARENT_DIR/disk_management.sh status --path $VHD_PATH 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh status --path $TEST_VHD_PATH 2>&1" \
     0
 
 # Test 4: Status with specific mount point (VHD should be attached and mounted)
+# Ensure VHD is mounted for this test
+bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME >/dev/null 2>&1
+sleep 1
+
 run_test "Status with specific mount point" \
-    "bash $PARENT_DIR/disk_management.sh status --mount-point $MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh status --mount-point $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 5: Status shows attached but not mounted
 # First ensure VHD is attached but not mounted
-bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME >/dev/null 2>&1
+bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME >/dev/null 2>&1
 # Unmount filesystem only (not detach from WSL)
-if mountpoint -q $MOUNT_POINT 2>/dev/null; then
-    sudo umount $MOUNT_POINT >/dev/null 2>&1
+if mountpoint -q $TEST_MOUNT_POINT 2>/dev/null; then
+    sudo umount $TEST_MOUNT_POINT >/dev/null 2>&1
 fi
 sleep 1  # Give system time to update state
 
@@ -199,7 +228,7 @@ run_test "Status shows attached but not mounted" \
     0
 
 # Cleanup - detach the VHD
-bash $PARENT_DIR/disk_management.sh -q umount --path $VHD_PATH >/dev/null 2>&1
+bash $PARENT_DIR/disk_management.sh -q umount --path $TEST_VHD_PATH >/dev/null 2>&1
 
 # Test 6: Status with --all flag
 run_test "Status with --all flag" \

@@ -1,0 +1,704 @@
+# WSL VHD Disk Management - Code Architecture
+
+## High-Level Architecture
+
+### System Components
+
+The system is organized into three architectural layers:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    USER COMMANDS LAYER                      │
+│  disk_management.sh: CLI commands (attach, mount, format,  │
+│                      umount, detach, status, create,        │
+│                      delete, resize)                        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   WSL HELPERS LAYER                         │
+│  libs/wsl_helpers.sh: WSL-specific operations with          │
+│                       comprehensive error handling           │
+│  - wsl_attach_vhd(), wsl_detach_vhd()                      │
+│  - wsl_mount_vhd(), wsl_umount_vhd()                       │
+│  - wsl_is_vhd_attached(), wsl_is_vhd_mounted()             │
+│  - wsl_get_vhd_info(), wsl_find_uuid_*()                   │
+│  - format_vhd(), wsl_create_vhd(), wsl_delete_vhd()        │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   PRIMITIVES LAYER                          │
+│  libs/wsl_helpers.sh & libs/utils.sh:                      │
+│  - create_mount_point(), mount_filesystem()                │
+│  - umount_filesystem()                                      │
+│  - convert_size_to_bytes(), bytes_to_human()               │
+│  - get_directory_size_bytes()                              │
+│  - wsl_get_block_devices(), wsl_get_disk_uuids()          │
+└─────────────────────────────────────────────────────────────┘
+                            │
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│                   SYSTEM LAYER                              │
+│  - wsl.exe (Windows Subsystem for Linux)                   │
+│  - Linux kernel (mount, umount, lsblk, blkid)             │
+│  - qemu-img (VHD file operations)                          │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Design Principles
+
+1. **Layered Architecture**: Each layer has specific responsibilities and can only call functions from its own layer or layers below
+2. **Single Responsibility at Primitive Level**: Primitives do one thing only
+3. **Orchestration at Command Level**: User commands may combine multiple operations for complete workflows
+4. **Consistent Error Handling**: WSL helpers provide comprehensive diagnostics; primitives just execute
+5. **State-Check-Then-Operate**: Always verify current state before attempting operations
+6. **Deterministic UUID Resolution**: Never use heuristics or guessing to identify disks (see Critical Rule below)
+7. **Persistent State Tracking**: Path→UUID mappings persist across sessions for fast, deterministic lookup
+
+## Critical Rule: No Heuristic Disk Discovery
+
+**NEVER use non-deterministic heuristics to identify which VHD/disk to operate on.**
+
+### The Problem
+WSL does not provide a direct path→UUID mapping after attachment. This creates temptation to "guess" which disk is the target by using patterns like:
+- "Find the first non-system disk (sd[d-z])"
+- "Assume the most recent disk is the target"
+- "Pick any disk that matches a pattern"
+
+**These approaches FAIL when multiple VHDs are attached**, causing operations on the wrong disk.
+
+### Allowed UUID Discovery Methods
+
+✅ **SAFE - Deterministic Methods (in priority order):**
+1. **Persistent tracking file by path**: `lookup_vhd_uuid()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
+2. **Persistent tracking file by name**: `lookup_vhd_uuid_by_name()` queries by WSL mount name
+3. **UUID from mount point**: `findmnt` or `lsblk` lookup of mounted filesystem
+4. **Snapshot-based detection during attach/create**: Compare before/after disk lists immediately after WSL attach operation
+5. **Explicit user-provided UUID**: User specifies `--uuid` parameter
+
+❌ **FORBIDDEN - Non-Deterministic Methods:**
+1. ~~Find first `sd[d-z]` device~~ (arbitrary selection with multiple VHDs)
+2. ~~Assume path validation + any dynamic disk = target~~ (no verification)
+3. ~~Loop through all UUIDs and pick first non-system one~~ (random selection)
+4. ~~"Most recent" or "only" dynamic VHD assumptions~~ (breaks with multiple disks)
+
+### Implementation Requirements
+
+**When UUID is unknown and cannot be determined safely:**
+1. **Count attached dynamic VHDs** using `wsl_count_dynamic_vhds()`
+2. **If count > 1**: Require explicit `--uuid` parameter or fail with clear error
+3. **If count == 0**: Report "no VHDs attached"
+4. **If count == 1**: ONLY THEN use `wsl_find_dynamic_vhd_uuid()` safely
+
+**Example safe implementation:**
+```bash
+# Safe UUID discovery with multi-VHD detection
+wsl_find_uuid_safely_by_path() {
+    local path="$1"
+    
+    # Validate path exists
+    [[ ! -e "$path" ]] && return 1
+    
+    # Count non-system disks
+    local count=$(wsl_count_dynamic_vhds)
+    
+    if [[ $count -gt 1 ]]; then
+        echo "Error: Multiple VHDs attached. Specify --uuid explicitly." >&2
+        echo "Run './disk_management.sh status --all' to see all UUIDs." >&2
+        return 2
+    elif [[ $count -eq 0 ]]; then
+        return 1  # Not attached
+    else
+        # Safe: exactly one dynamic VHD
+        wsl_find_dynamic_vhd_uuid
+    fi
+}
+```
+
+**Functions affected (must be updated):**
+- `wsl_find_uuid_by_path()` - Currently blindly calls `wsl_find_dynamic_vhd_uuid()`
+- `mount_vhd()` fallback logic - Currently loops through all UUIDs
+- `mount_disk.sh` fallback - Currently uses unsafe heuristic
+
+### Test Requirements
+All tests involving UUID discovery must:
+1. Verify behavior with 0, 1, and 2+ attached VHDs
+2. Ensure operations fail safely with multiple VHDs (not wrong disk)
+3. Validate explicit UUID parameter works with multiple VHDs
+
+## Function Responsibility Matrix
+
+### User Command Functions (disk_management.sh)
+
+| Function | Arguments | Responsibility | Orchestrates | Single Operation? |
+|----------|-----------|---------------|--------------|-------------------|
+| `attach_vhd()` | `--path`, `--name` (optional) | Attach VHD to WSL as block device | No | ✅ Yes - only attaches |
+| `format_vhd_command()` | `--name` OR `--uuid`, `--type` (optional) | Format attached VHD with filesystem | No | ✅ Yes - only formats |
+| `mount_vhd()` | `--path`, `--mount-point`, `--name` (optional) | Complete mount workflow: attach + mount | Yes | ❌ No - orchestration |
+| `umount_vhd()` | `--path` OR `--uuid` OR `--mount-point` | Complete unmount workflow: unmount + detach | Yes | ❌ No - orchestration |
+| `detach_vhd()` | `--uuid`, `--path` (optional) | Complete detach workflow: unmount if needed + detach | Yes | ❌ No - orchestration |
+| `status_vhd()` | `--path` OR `--uuid` OR `--mount-point` OR `--all` | Display VHD status information | No | ✅ Yes - query only |
+| `create_vhd()` | `--path`, `--size` (optional), `--force` (optional) | Create new VHD file | No | ✅ Yes - file creation only |
+| `delete_vhd()` | `--path`, `--uuid` (optional), `--force` (optional) | Delete VHD file | No | ✅ Yes - file deletion only |
+| `resize_vhd()` | `--mount-point`, `--size` | Complete resize workflow with data migration | Yes | ❌ No - complex orchestration |
+
+### WSL Helper Functions (libs/wsl_helpers.sh)
+
+| Function | Arguments | Responsibility | Calls Primitives | Error Handling |
+|----------|-----------|---------------|------------------|----------------|
+| `wsl_attach_vhd()` | `$1: path`, `$2: name` (default: "disk") | Call wsl.exe to attach VHD | No | Minimal |
+| `wsl_detach_vhd()` | `$1: path`, `$2: uuid` (optional) | Call wsl.exe to detach VHD | No | Timeout handling |
+| `wsl_mount_vhd()` | `$1: uuid`, `$2: mount_point` | Mount VHD by UUID | Yes: `create_mount_point()`, `mount_filesystem()` | Comprehensive |
+| `wsl_umount_vhd()` | `$1: mount_point` | Unmount VHD with diagnostics | Yes: `umount_filesystem()` | Comprehensive (lsof) |
+| `wsl_is_vhd_attached()` | `$1: uuid` | Check if VHD is attached | No | None (query only) |
+| `wsl_is_vhd_mounted()` | `$1: uuid` | Check if VHD is mounted | No | None (query only) |
+| `wsl_get_vhd_info()` | `$1: uuid` | Get VHD device information | No | None (query only) |
+| `wsl_get_vhd_mount_point()` | `$1: uuid` | Get mount point for UUID | No | None (query only) |
+| `wsl_find_uuid_by_path()` | `$1: path` (Windows format) | **SAFE** Discover UUID from VHD path with multi-VHD detection | No | Multi-VHD aware |
+| `wsl_find_uuid_by_mountpoint()` | `$1: mount_point` | Discover UUID from mount point | No | None (query only) |
+| `wsl_count_dynamic_vhds()` | None | Count non-system disks attached | No | None (query only) |
+| `wsl_find_dynamic_vhd_uuid()` | None | **UNSAFE** Find first non-system disk UUID - only use when count==1 | No | None (query only) |
+| `format_vhd()` | `$1: device`, `$2: fs_type` (default: "ext4") | Format device with filesystem | No | Minimal |
+| `wsl_create_vhd()` | `$1: path`, `$2: size`, `$3: fs_type` (default: "ext4"), `$4: name` (default: "disk") | Create, attach, and format VHD | Yes: `wsl_attach_vhd()`, `format_vhd()` | Comprehensive |
+| `wsl_delete_vhd()` | `$1: path` (Windows format) | Delete VHD file | No | Minimal |
+| `wsl_get_block_devices()` | None | List all block devices | No | None (query only) |
+| `wsl_get_disk_uuids()` | None | List all disk UUIDs | No | None (query only) |
+| `init_disk_tracking_file()` | None | Initialize tracking file structure | No | None (setup only) |
+| `normalize_vhd_path()` | `$1: path` (Windows format) | Normalize path for consistent tracking | No | None (transform only) |
+| `save_vhd_mapping()` | `$1: path`, `$2: uuid`, `$3: mount_points` (optional) | Save/update path→UUID mapping | No | Minimal |
+| `lookup_vhd_uuid()` | `$1: path` (Windows format) | Retrieve UUID from tracking file | No | None (query only) |
+| `update_vhd_mount_points()` | `$1: path`, `$2: mount_points` (comma-separated) | Update mount points for existing mapping | No | Minimal |
+| `remove_vhd_mapping()` | `$1: path` (Windows format) | Remove mapping from tracking file | No | Minimal |
+
+### Primitive Functions (libs/wsl_helpers.sh & libs/utils.sh)
+
+| Function | Arguments | Responsibility | Library | Purpose |
+|----------|-----------|---------------|---------|---------|
+| `create_mount_point()` | `$1: mount_point` | Create directory with mkdir -p | wsl_helpers.sh | Directory creation |
+| `mount_filesystem()` | `$1: uuid`, `$2: mount_point` | Execute sudo mount UUID=... | wsl_helpers.sh | Filesystem mount |
+| `umount_filesystem()` | `$1: mount_point` | Execute sudo umount | wsl_helpers.sh | Filesystem unmount |
+| `convert_size_to_bytes()` | `$1: size_string` (e.g., "1G", "500M") | Convert size string to bytes | utils.sh | Size calculation |
+| `bytes_to_human()` | `$1: bytes` | Convert bytes to human readable | utils.sh | Size formatting |
+| `get_directory_size_bytes()` | `$1: directory_path` | Calculate directory size | utils.sh | Size query |
+| `debug_cmd()` | `$@: command and args` | Wrapper to print commands in debug mode | wsl_helpers.sh | Debug support |
+
+## Function Flow Diagrams
+
+### Attach Command Flow
+
+```
+attach_vhd()
+├─→ Parse arguments (--path, --name)
+├─→ Validate VHD file exists
+├─→ Take snapshot: wsl_get_disk_uuids(), wsl_get_block_devices()
+├─→ wsl_attach_vhd(path, name)
+│   └─→ wsl.exe --mount --vhd --bare
+├─→ sleep 2 (kernel recognition)
+├─→ Take new snapshot
+├─→ Compare snapshots to detect new UUID
+├─→ Detect device name (via lsblk + jq)
+└─→ Report status (UUID, device name)
+```
+
+**Key Point**: Attach is a **single operation** - it only attaches VHD to WSL as a block device. UUID detection is reporting, not a separate operation.
+
+### Mount Command Flow
+
+```
+mount_vhd()
+├─→ Parse arguments (--path, --mount-point, --name)
+├─→ Validate VHD file exists
+├─→ Take snapshot: wsl_get_disk_uuids(), wsl_get_block_devices()
+├─→ wsl_attach_vhd(path, name)  [may fail if already attached]
+│   └─→ wsl.exe --mount --vhd --bare
+├─→ Detect UUID (snapshot comparison or fallback search)
+├─→ Check if UUID found
+│   ├─→ Yes: Verify filesystem exists
+│   └─→ No: Error - VHD is unformatted
+├─→ wsl_is_vhd_mounted(uuid)
+│   ├─→ Already mounted: Skip mount step
+│   └─→ Not mounted: Continue
+├─→ wsl_mount_vhd(uuid, mount_point)
+│   ├─→ create_mount_point(mount_point)
+│   │   └─→ mkdir -p
+│   └─→ mount_filesystem(uuid, mount_point)
+│       └─→ sudo mount UUID=...
+└─→ Report status
+```
+
+**Key Point**: Mount is an **orchestration function** combining attach + mount operations for user convenience.
+
+### Format Command Flow
+
+```
+format_vhd_command()
+├─→ Parse arguments (--name OR --uuid, --type)
+├─→ Validate at least one identifier provided
+├─→ If UUID provided:
+│   ├─→ Find device name from UUID (lsblk + jq)
+│   └─→ Warn if already formatted
+├─→ If name provided:
+│   ├─→ Validate device exists
+│   └─→ Check if already has UUID (formatted)
+├─→ Confirmation prompt (non-quiet mode)
+├─→ format_vhd(device, fs_type)
+│   ├─→ sudo mkfs -t $fs_type /dev/$device
+│   └─→ Return new UUID (blkid)
+└─→ Report new UUID and status
+```
+
+**Key Point**: Format is a **single operation** - only formats the device. Does NOT support UUID discovery from path (explicit device identification required).
+
+### Unmount Command Flow
+
+```
+umount_vhd()
+├─→ Parse arguments (--path, --uuid, --mount-point)
+├─→ Discover UUID if not provided
+│   ├─→ From path: wsl_find_uuid_by_path()
+│   └─→ From mount point: wsl_find_uuid_by_mountpoint()
+├─→ wsl_is_vhd_attached(uuid)
+│   └─→ Not attached: Return (nothing to do)
+├─→ wsl_is_vhd_mounted(uuid)
+│   ├─→ Mounted: Continue to unmount
+│   └─→ Not mounted: Skip unmount step
+├─→ wsl_umount_vhd(mount_point)
+│   ├─→ umount_filesystem(mount_point)
+│   │   └─→ sudo umount
+│   └─→ On failure: Show lsof diagnostics
+├─→ If path provided:
+│   └─→ wsl_detach_vhd(path, uuid)
+│       └─→ wsl.exe --unmount
+└─→ Report status
+```
+
+**Key Point**: Unmount is an **orchestration function** - unmounts from filesystem AND optionally detaches from WSL if path is provided.
+
+### Detach Command Flow
+
+```
+detach_vhd()
+├─→ Parse arguments (--uuid, --path)
+├─→ Validate UUID is provided
+├─→ wsl_is_vhd_attached(uuid)
+│   └─→ Not attached: Return (nothing to do)
+├─→ wsl_is_vhd_mounted(uuid)
+│   ├─→ Mounted: Must unmount first
+│   │   ├─→ Get mount point: wsl_get_vhd_mount_point()
+│   │   └─→ wsl_umount_vhd(mount_point)
+│   │       ├─→ umount_filesystem(mount_point)
+│   │       └─→ On failure: Show lsof diagnostics
+│   └─→ Not mounted: Continue
+├─→ wsl_detach_vhd(path, uuid)
+│   └─→ wsl.exe --unmount
+└─→ Report status
+```
+
+**Key Point**: Detach is an **orchestration function** - unmounts if mounted, then detaches from WSL. Requires path for WSL detach operation.
+
+### Create Command Flow
+
+```
+create_vhd()
+├─→ Parse arguments (--path, --size, --force)
+├─→ Check if VHD exists
+│   ├─→ Exists + --force: Handle overwrite
+│   │   ├─→ Find UUID if attached
+│   │   ├─→ Unmount if mounted
+│   │   ├─→ Detach if attached
+│   │   ├─→ Confirmation prompt
+│   │   └─→ Delete existing file
+│   └─→ Exists + no --force: Error
+├─→ Verify qemu-img installed
+├─→ Create parent directory (mkdir -p)
+├─→ qemu-img create -f vhdx
+└─→ Report success (file created, not attached)
+```
+
+**Key Point**: Create is a **single operation** - only creates VHD file. Does NOT auto-attach or format (separation of concerns).
+
+### Delete Command Flow
+
+```
+delete_vhd()
+├─→ Parse arguments (--path, --uuid, --force)
+├─→ Validate VHD file exists
+├─→ Discover UUID from path if not provided
+├─→ Check if VHD is attached
+│   └─→ Attached: Error (must unmount/detach first)
+├─→ Confirmation prompt (unless --force)
+├─→ wsl_delete_vhd(path)
+│   └─→ rm -f
+└─→ Report success
+```
+
+**Key Point**: Delete is a **single operation** - only deletes file. Requires VHD to be detached first (safety check).
+
+### Resize Command Flow
+
+```
+resize_vhd()
+├─→ Parse arguments (--mount-point, --size)
+├─→ Validate mount point exists and is mounted
+├─→ Find UUID: wsl_find_uuid_by_mountpoint()
+├─→ Calculate directory size: get_directory_size_bytes()
+├─→ Determine target size (max of requested or data+30%)
+├─→ Count files in source disk
+├─→ wsl_create_vhd(new_path, size, fs_type, temp_name)
+│   ├─→ qemu-img create
+│   ├─→ wsl_attach_vhd()
+│   ├─→ format_vhd()
+│   └─→ Return new UUID
+├─→ wsl_mount_vhd(new_uuid, temp_mount_point)
+├─→ Copy data: rsync -a source/ dest/
+├─→ Verify: Count files in new disk
+├─→ Compare file counts (integrity check)
+├─→ wsl_umount_vhd(target_mount_point) - unmount source
+├─→ wsl_detach_vhd(target_path) - detach source
+├─→ Rename source VHD to _bkp
+├─→ wsl_umount_vhd(temp_mount_point) - unmount new
+├─→ wsl_detach_vhd(new_path) - detach new
+├─→ Rename new VHD to target name
+├─→ Attach and mount at original location
+└─→ Report new UUID and status
+```
+
+**Key Point**: Resize is a **complex orchestration** performing 10+ operations. Original VHD preserved as backup. Data integrity verified via file count comparison.
+
+## Function Invocation Hierarchy
+
+### Level 1: User Commands (Entry Points)
+- `attach_vhd()` → `wsl_attach_vhd()`
+- `format_vhd_command()` → `format_vhd()`
+- `mount_vhd()` → `wsl_attach_vhd()` → `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()`
+- `umount_vhd()` → `wsl_umount_vhd()` → `umount_filesystem()` + `wsl_detach_vhd()`
+- `detach_vhd()` → `wsl_umount_vhd()` + `wsl_detach_vhd()`
+- `create_vhd()` → `qemu-img` (direct)
+- `delete_vhd()` → `wsl_delete_vhd()` → `rm`
+- `resize_vhd()` → orchestrates multiple operations
+
+### Level 2: WSL Helpers (Business Logic)
+- `wsl_attach_vhd()` → `wsl.exe --mount`
+- `wsl_detach_vhd()` → `wsl.exe --unmount`
+- `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()`
+- `wsl_umount_vhd()` → `umount_filesystem()` + diagnostics
+- `wsl_create_vhd()` → `qemu-img` + `wsl_attach_vhd()` + `format_vhd()`
+- `format_vhd()` → `sudo mkfs` + `blkid`
+
+### Level 3: Primitives (Direct Operations)
+- `create_mount_point()` → `mkdir -p`
+- `mount_filesystem()` → `sudo mount`
+- `umount_filesystem()` → `sudo umount`
+- `convert_size_to_bytes()` → arithmetic
+- `bytes_to_human()` → arithmetic + formatting
+- `get_directory_size_bytes()` → `du -sb`
+
+### Level 4: Query Functions (State Inspection)
+- `wsl_is_vhd_attached()` → `lsblk -f -J` + `jq`
+- `wsl_is_vhd_mounted()` → `lsblk -f -J` + `jq`
+- `wsl_get_vhd_info()` → `lsblk -f -J` + `jq`
+- `wsl_get_vhd_mount_point()` → `lsblk -f -J` + `jq`
+- `wsl_find_uuid_by_path()` → `wsl_find_dynamic_vhd_uuid()`
+- `wsl_find_uuid_by_mountpoint()` → `lsblk -f -J` + `jq`
+- `wsl_get_block_devices()` → `lsblk -J` + `jq`
+- `wsl_get_disk_uuids()` → `sudo blkid`
+
+## Key Architectural Patterns
+
+### 1. Persistent Tracking Pattern
+
+Used in: All operations that work with VHD paths
+
+```bash
+# Check tracking file first
+local uuid=$(lookup_vhd_uuid "$vhd_path")
+if [[ -n "$uuid" ]]; then
+    # Verify UUID is still attached
+    if wsl_is_vhd_attached "$uuid"; then
+        # Use tracked UUID
+        echo "$uuid"
+        return 0
+    fi
+fi
+
+# Second, try lookup by name (extract name from tracking file first)
+local tracked_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+if [[ -n "$tracked_name" ]]; then
+    local uuid_by_name=$(lookup_vhd_uuid_by_name "$tracked_name")
+    if [[ -n "$uuid_by_name" ]] && wsl_is_vhd_attached "$uuid_by_name"; then
+        echo "$uuid_by_name"
+        return 0
+    fi
+fi
+
+# Fall back to device discovery if needed
+```
+
+**Purpose**: Fast, deterministic UUID lookup without device scanning. Automatically handles multi-VHD scenarios with path and name-based discovery.
+
+**Operations that save/update tracking:**
+- `attach_vhd()` - Saves path→UUID + name after successful attach
+- `mount_vhd()` - Updates mount_points after mount
+- `umount_vhd()` - Clears mount_points after unmount
+- `detach_vhd()` - Clears mount_points when detaching
+- `delete_vhd()` - Removes mapping completely
+- `wsl_create_vhd()` - Saves mapping after creation and formatting
+
+### 2. Snapshot-Based Detection Pattern
+
+Used in: `attach_vhd()`, `mount_vhd()`, `wsl_create_vhd()` (as fallback)
+
+```bash
+# Before operation
+old_uuids=($(wsl_get_disk_uuids))
+old_devs=($(wsl_get_block_devices))
+
+# Perform operation (attach/create)
+wsl_attach_vhd "$path" "$name"
+
+# After operation
+new_uuids=($(wsl_get_disk_uuids))
+
+# Compare to find new UUID
+for uuid in "${new_uuids[@]}"; do
+    if [[ -z "${seen_uuid[$uuid]}" ]]; then
+        detected_uuid="$uuid"
+        break
+    fi
+done
+```
+
+**Purpose**: Identify newly attached/created disks when UUID is not in tracking file. Used as fallback when tracking lookup fails.
+
+### 3. State-Check-Then-Operate Pattern
+
+Used in: All operation functions
+
+```bash
+if ! wsl_is_vhd_attached "$uuid"; then
+    wsl_attach_vhd "$path" "$name"
+fi
+
+if ! wsl_is_vhd_mounted "$uuid"; then
+    wsl_mount_vhd "$uuid" "$mount_point"
+fi
+```
+
+**Purpose**: Idempotent operations - don't fail if already in desired state.
+
+### 4. Path Format Conversion Pattern
+
+Used in: All commands handling paths
+
+```bash
+# User provides: C:/VMs/disk.vhdx
+# For WSL calls: Use as-is
+wsl.exe --mount --vhd "C:/VMs/disk.vhdx"
+
+# For filesystem operations: Convert to /mnt/c/VMs/disk.vhdx
+local vhd_path_wsl=$(echo "$path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+```
+
+**Purpose**: Handle different path requirements for WSL vs Linux operations.
+
+**Note**: Persistent tracking uses normalized paths (lowercase, forward slashes) for case-insensitive matching.
+
+### 5. Dual Output Mode Pattern
+
+Used in: All user commands
+
+```bash
+[[ "$QUIET" == "false" ]] && echo "User-friendly message"
+[[ "$QUIET" == "true" ]] && echo "machine-readable: status"
+```
+
+**Purpose**: Support both human-readable and script-parseable output.
+
+### 6. Debug Command Wrapper Pattern
+
+Used in: All system command invocations
+
+```bash
+debug_cmd sudo mount UUID="$uuid" "$mount_point"
+
+# Or for pipelines:
+if [[ "$DEBUG" == "true" ]]; then
+    echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq ..." >&2
+fi
+lsblk -f -J | jq ...
+```
+
+**Purpose**: Show all commands before execution when debugging.
+
+## State Machine: VHD Lifecycle
+
+```
+┌─────────────┐
+│   CREATED   │ (File exists, not attached)
+│  (on disk)  │
+└──────┬──────┘
+       │ attach
+       ↓
+┌─────────────┐
+│  ATTACHED   │ (Block device available)
+│ (unformatted)│
+└──────┬──────┘
+       │ format
+       ↓
+┌─────────────┐
+│  ATTACHED   │ (Block device + filesystem)
+│ (formatted) │
+└──────┬──────┘
+       │ mount
+       ↓
+┌─────────────┐
+│   MOUNTED   │ (Accessible in filesystem)
+│   (in use)  │
+└──────┬──────┘
+       │ umount
+       ↓
+┌─────────────┐
+│  ATTACHED   │
+│ (formatted) │
+└──────┬──────┘
+       │ detach
+       ↓
+┌─────────────┐
+│   CREATED   │
+│  (on disk)  │
+└──────┬──────┘
+       │ delete
+       ↓
+┌─────────────┐
+│  DELETED    │
+└─────────────┘
+```
+
+### Valid State Transitions
+
+| From State | To State | Command(s) |
+|------------|----------|------------|
+| Created | Attached | `attach` |
+| Created | Mounted | `mount` (attach+mount) |
+| Attached (unformatted) | Attached (formatted) | `format` |
+| Attached (formatted) | Mounted | `mount` (just mount) |
+| Mounted | Attached | `umount` (just unmount) |
+| Mounted | Created | `umount` (unmount+detach) |
+| Attached | Created | `detach` |
+| Created | Deleted | `delete` |
+
+## Error Handling Strategy
+
+### Primitive Functions
+- Return 0 on success, 1 on failure
+- Minimal error messages to stderr
+- No diagnostics or suggestions
+
+### WSL Helper Functions
+- Return 0 on success, 1 on failure
+- Comprehensive error messages with context
+- Diagnostic output (e.g., lsof for unmount failures)
+- Suggestions for resolution
+
+### Command Functions
+- Exit on errors (exit 1)
+- User-friendly error messages
+- Detailed suggestions for fixes
+- State validation before operations
+
+### Example: Unmount Error Handling
+
+```bash
+# Primitive: umount_filesystem()
+umount_filesystem() {
+    if sudo umount "$mount_point" >/dev/null 2>&1; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# WSL Helper: wsl_umount_vhd()
+wsl_umount_vhd() {
+    if umount_filesystem "$mount_point"; then
+        return 0
+    else
+        echo -e "${RED}[✗] Failed to unmount VHD${NC}" >&2
+        echo "Tip: Make sure no processes are using the mount point" >&2
+        echo "Checking for processes using the mount point:" >&2
+        sudo lsof +D "$mount_point" 2>/dev/null
+        return 1
+    fi
+}
+```
+
+## Dependencies Between Functions
+
+### Direct Dependencies (A calls B)
+
+```
+mount_vhd()
+  ├─→ wsl_attach_vhd()
+  └─→ wsl_mount_vhd()
+        ├─→ create_mount_point()
+        └─→ mount_filesystem()
+
+umount_vhd()
+  ├─→ wsl_umount_vhd()
+  │     └─→ umount_filesystem()
+  └─→ wsl_detach_vhd()
+
+detach_vhd()
+  ├─→ wsl_umount_vhd()
+  │     └─→ umount_filesystem()
+  └─→ wsl_detach_vhd()
+
+resize_vhd()
+  ├─→ wsl_create_vhd()
+  │     ├─→ wsl_attach_vhd()
+  │     └─→ format_vhd()
+  ├─→ wsl_mount_vhd()
+  ├─→ wsl_umount_vhd()
+  ├─→ wsl_detach_vhd()
+  └─→ get_directory_size_bytes()
+```
+
+### Query Dependencies (Used for State Checks)
+
+All operation functions depend on:
+- `wsl_is_vhd_attached()` - Check attachment state
+- `wsl_is_vhd_mounted()` - Check mount state
+- `wsl_get_vhd_info()` - Display information
+- `wsl_get_vhd_mount_point()` - Find mount location
+- `wsl_count_dynamic_vhds()` - Count attached non-system VHDs (safety check)
+- `wsl_find_uuid_by_mountpoint()` - Safe UUID discovery from mount point
+- `wsl_find_uuid_by_path()` - Multi-VHD aware UUID discovery (requires implementation update)
+- `wsl_find_dynamic_vhd_uuid()` - **UNSAFE** - Only use when `wsl_count_dynamic_vhds()` returns 1
+
+## Testing Architecture
+
+### Test Layer Organization
+
+```
+tests/test_all.sh (orchestrator)
+├─→ test_status.sh (10 tests) - Query operations
+├─→ test_attach.sh (15 tests) - Attach operations + idempotency
+├─→ test_detach.sh - Detach operations
+├─→ test_mount.sh (10 tests) - Mount operations
+├─→ test_umount.sh (10 tests) - Unmount operations
+├─→ test_format.sh - Format operations
+├─→ test_create.sh (10 tests) - VHD creation
+├─→ test_delete.sh (10 tests) - VHD deletion
+└─→ test_resize.sh (21 tests) - Resize workflow
+```
+
+Each test suite validates:
+1. Parameter validation
+2. Success paths
+3. Error handling
+4. Idempotency
+5. State verification
+6. Output modes (quiet, debug)
+
+See `.github/copilot-instructions.md` for detailed test coverage information.

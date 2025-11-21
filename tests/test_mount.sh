@@ -52,12 +52,20 @@ else
     exit 1
 fi
 
+# Test-specific VHD configuration (dynamic)
+TEST_VHD_NAME="test_mount_disk"
+TEST_VHD_PATH="${WSL_DISKS_DIR}${TEST_VHD_NAME}.vhdx"
+TEST_MOUNT_POINT="${MOUNT_DIR}${TEST_VHD_NAME}"
+
 # Helper function to get UUID from VHD path
 get_vhd_uuid() {
+    local vhd_path="$1"
+    local mount_point="$2"
+    local vhd_name="$3"
     # Mount the VHD first to ensure it's attached
-    bash "$PARENT_DIR/disk_management.sh" mount --path "$VHD_PATH" --mount-point "$MOUNT_POINT" --name "$VHD_NAME" >/dev/null 2>&1
+    bash "$PARENT_DIR/disk_management.sh" mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
     # Get UUID from mount point
-    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$MOUNT_POINT" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$mount_point" 2>&1 | grep -oP '(?<=\().*(?=\):)')
     echo "$uuid"
 }
 
@@ -148,15 +156,18 @@ run_test() {
 
 # Helper function to check if VHD is mounted
 is_mounted() {
-    mount | grep -q "$MOUNT_POINT"
+    local mount_point="$1"
+    mount | grep -q "$mount_point"
 }
 
 # Helper function to unmount VHD (cleanup)
 cleanup_mount() {
-    if is_mounted; then
+    local vhd_path="$1"
+    local mount_point="$2"
+    if is_mounted "$mount_point"; then
         # Get UUID dynamically for cleanup
-        local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$MOUNT_POINT" 2>&1 | grep -oP '(?<=\().*(?=\):)')
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$VHD_PATH" --uuid "$uuid" --mount-point "$MOUNT_POINT" >/dev/null 2>&1
+        local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$mount_point" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" --uuid "$uuid" --mount-point "$mount_point" >/dev/null 2>&1
     fi
 }
 
@@ -166,14 +177,14 @@ echo -e "  Disk Management Mount Tests"
 echo -e "========================================${NC}"
 
 # Get VHD UUID dynamically
-VHD_UUID=$(get_vhd_uuid)
+VHD_UUID=$(get_vhd_uuid "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME")
 
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Testing with configuration from .env.test:"
-    echo "  VHD_PATH: $VHD_PATH"
+    echo "  VHD_PATH: $TEST_VHD_PATH"
     echo "  VHD_UUID (discovered): $VHD_UUID"
-    echo "  MOUNT_POINT: $MOUNT_POINT"
-    echo "  VHD_NAME: $VHD_NAME"
+    echo "  MOUNT_POINT: $TEST_MOUNT_POINT"
+    echo "  VHD_NAME: $TEST_VHD_NAME"
     echo
     echo
 else
@@ -182,32 +193,32 @@ else
 fi
 
 # Ensure VHD is unmounted before tests
-cleanup_mount
+cleanup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT"
 
 # Test 1: Mount VHD with default configuration
 run_test "Mount VHD with default configuration" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1" \
     0
 
 # Test 2: Mount already-mounted VHD (idempotency test)
 run_test "Mount already-mounted VHD (idempotency)" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1" \
     0
 
 # Cleanup for next test
-cleanup_mount
+cleanup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT"
 
 # Test 3: Mount with explicit path parameter
 run_test "Mount with explicit path parameter" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1" \
     0
 
 # Cleanup for next test
-cleanup_mount
+cleanup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT"
 
 # Test 4: Mount with custom mount point
 run_test "Mount with custom mount point" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point ${MOUNT_POINT}_custom --name ${VHD_NAME}_custom 2>&1 && sudo umount ${MOUNT_POINT}_custom 2>&1 && rmdir ${MOUNT_POINT}_custom 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point ${TEST_MOUNT_POINT}_custom --name ${TEST_VHD_NAME}_custom 2>&1 && sudo umount ${TEST_MOUNT_POINT}_custom 2>&1 && rmdir ${TEST_MOUNT_POINT}_custom 2>&1" \
     0
 
 # Test 5: Mount verifies VHD file exists
@@ -217,40 +228,40 @@ run_test "Mount fails with non-existent VHD path" \
 
 # Test 6: Mount creates mount point if it doesn't exist
 run_test "Mount creates mount point directory" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point ${MOUNT_POINT}_newdir --name ${VHD_NAME}_new 2>&1 && mountpoint -q ${MOUNT_POINT}_newdir 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point ${TEST_MOUNT_POINT}_newdir --name ${TEST_VHD_NAME}_new 2>&1 && mountpoint -q ${TEST_MOUNT_POINT}_newdir 2>&1" \
     0
 
 # Cleanup
-if mountpoint -q "${MOUNT_POINT}_newdir" 2>/dev/null; then
-    bash "$PARENT_DIR/disk_management.sh" -q umount --path "$VHD_PATH" --mount-point "${MOUNT_POINT}_newdir" >/dev/null 2>&1
-    rmdir "${MOUNT_POINT}_newdir" 2>/dev/null
+if mountpoint -q "${TEST_MOUNT_POINT}_newdir" 2>/dev/null; then
+    bash "$PARENT_DIR/disk_management.sh" -q umount --path "$TEST_VHD_PATH" --mount-point "${TEST_MOUNT_POINT}_newdir" >/dev/null 2>&1
+    rmdir "${TEST_MOUNT_POINT}_newdir" 2>/dev/null
 fi
 
 # Test 7: Mount in quiet mode
 run_test "Mount in quiet mode produces minimal output" \
-    "bash $PARENT_DIR/disk_management.sh -q mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 | wc -l | grep -q '^[0-2]$'" \
+    "bash $PARENT_DIR/disk_management.sh -q mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1 | wc -l | grep -q '^[0-2]$'" \
     0
 
 # Cleanup for next test
-cleanup_mount
+cleanup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT"
 
 # Test 8: Verify mount point is accessible after mount
 run_test "Mount point is accessible after mounting" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 && test -d $MOUNT_POINT && mountpoint -q $MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1 && test -d $TEST_MOUNT_POINT && mountpoint -q $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 9: Mount preserves filesystem permissions
 run_test "Mounted filesystem has correct permissions" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 && test -d $MOUNT_POINT && mountpoint -q $MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1 && test -d $TEST_MOUNT_POINT && mountpoint -q $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 10: Verify VHD status shows mounted after mount
 run_test "Status shows VHD as mounted after mount" \
-    "bash $PARENT_DIR/disk_management.sh mount --path $VHD_PATH --mount-point $MOUNT_POINT --name $VHD_NAME 2>&1 && bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID 2>&1 | grep -iq 'mounted'" \
+    "bash $PARENT_DIR/disk_management.sh mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1 && bash $PARENT_DIR/disk_management.sh status --uuid $VHD_UUID 2>&1 | grep -iq 'mounted'" \
     0
 
 # Final cleanup
-cleanup_mount
+cleanup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT"
 
 # Calculate duration
 END_TIME=$(date +%s)
