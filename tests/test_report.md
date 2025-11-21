@@ -1,18 +1,558 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-20 23:34:44
+Last Updated: 2025-11-21 01:05:05
 
 ## Test Suite Summary
 
 | Test Suite | Last Run | Status | Tests Run | Passed | Failed | Duration |
 |------------|----------|--------|-----------|--------|--------|----------|
-| test_status.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 11s |
-| test_mount.sh | 2025-11-20 | ✗ FAILED | 10 | 7 | 3 | 7s |
-| test_umount.sh | 2025-11-20 | ✗ FAILED | 10 | 0 | 1 | 8s |
-| test_create.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 6s |
-| test_delete.sh | 2025-11-20 | ✓ PASSED | 10 | 10 | 0 | 5s |
+| test_status.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 13s |
+| test_mount.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 17s |
+| test_umount.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 39s |
+| test_create.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 7s |
+| test_delete.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 3s |
 
 ## Test History
+
+### 2025-11-21 01:05:05 - test_delete.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 3s
+
+
+### 2025-11-21 01:05:02 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 7s
+
+
+### 2025-11-21 01:04:55 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 39s
+
+
+### 2025-11-21 01:04:15 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 17s
+
+
+### 2025-11-21 01:03:36 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-21 01:02:32 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 38s
+
+
+### 2025-11-21 01:01:31 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 1
+- **Duration:** 19s
+
+**Failed Tests:**
+- Test 2: Umount already-unmounted VHD (idempotency)
+
+
+### 2025-11-21 01:00:47 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 40s
+
+**Failed Tests:**
+- Test 2: Umount already-unmounted VHD (idempotency)
+
+
+### 2025-11-21 00:59:34 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 6s
+
+**Failed Tests:**
+- Test 9: Status shows VHD as not mounted after umount
+
+
+### 2025-11-21 00:59:14 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 9s
+
+**Failed Tests:**
+- Test 8: VHD is detached from WSL after umount
+
+
+### 2025-11-21 00:59:02 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-21 00:58:33 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 34s
+
+**Failed Tests:**
+- Test 2: Umount already-unmounted VHD (idempotency)
+- Test 8: VHD is detached from WSL after umount
+- Test 9: Status shows VHD as not mounted after umount
+
+
+### 2025-11-21 00:57:37 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 8
+- **Duration:** 1s
+
+**Failed Tests:**
+- Test 1: Umount mounted VHD with default configuration
+- Test 2: Umount already-unmounted VHD (idempotency)
+- Test 3: Umount with UUID parameter
+- Test 4: Umount with path parameter
+- Test 5: Umount with mount point parameter
+- Test 6: Mount point not accessible after umount
+- Test 8: VHD is detached from WSL after umount
+- Test 9: Status shows VHD as not mounted after umount
+
+
+### 2025-11-21 00:57:03 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 15s
+
+
+### 2025-11-21 00:56:07 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 16s
+
+**Failed Tests:**
+- Test 7: Mount in quiet mode produces minimal output
+
+
+### 2025-11-21 00:55:12 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 1
+- **Duration:** 9s
+
+**Failed Tests:**
+- Test 7: Mount in quiet mode produces minimal output
+
+
+### 2025-11-21 00:54:20 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 20s
+
+**Failed Tests:**
+- Test 7: Mount in quiet mode produces minimal output
+
+
+### 2025-11-21 00:53:04 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 10s
+
+**Failed Tests:**
+- Test 7: Mount in quiet mode produces minimal output
+
+
+### 2025-11-21 00:52:45 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 10s
+
+**Failed Tests:**
+- Test 3: Mount with explicit path parameter
+
+
+### 2025-11-21 00:52:31 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 12s
+
+**Failed Tests:**
+- Test 1: Mount VHD with default configuration
+
+
+### 2025-11-21 00:52:04 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 27s
+
+**Failed Tests:**
+- Test 1: Mount VHD with default configuration
+- Test 3: Mount with explicit path parameter
+- Test 7: Mount in quiet mode produces minimal output
+
+
+### 2025-11-21 00:51:12 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 8
+- **Duration:** 0s
+
+**Failed Tests:**
+- Test 1: Mount VHD with default configuration
+- Test 2: Mount already-mounted VHD (idempotency)
+- Test 3: Mount with explicit path parameter
+- Test 4: Mount with custom mount point
+- Test 6: Mount creates mount point directory
+- Test 8: Mount point is accessible after mounting
+- Test 9: Mounted filesystem has correct permissions
+- Test 10: Status shows VHD as mounted after mount
+
+
+### 2025-11-21 00:50:41 - test_detach.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 35s
+
+
+### 2025-11-21 00:49:43 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 35s
+
+**Failed Tests:**
+- Test 3: Detach already-detached VHD (idempotency)
+
+
+### 2025-11-21 00:47:18 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 1
+- **Duration:** 19s
+
+**Failed Tests:**
+- Test 3: Detach already-detached VHD (idempotency)
+
+
+### 2025-11-21 00:46:36 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 9
+- **Tests Failed:** 1
+- **Duration:** 30s
+
+**Failed Tests:**
+- Test 3: Detach already-detached VHD (idempotency)
+
+
+### 2025-11-21 00:45:34 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 19s
+
+**Failed Tests:**
+- Test 3: Detach already-detached VHD (idempotency)
+- Test 4: Detach command executes without error
+- Test 10: Detach command completes successfully
+
+
+### 2025-11-21 00:43:24 - test_detach.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-21 00:43:01 - test_detach.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 14s
+
+
+### 2025-11-21 00:42:36 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 19s
+
+**Failed Tests:**
+- Test 3: Detach already-detached VHD (idempotency)
+- Test 4: Detach command executes without error
+- Test 10: Detach command completes successfully
+
+
+### 2025-11-21 00:41:41 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 2
+- **Duration:** 18s
+
+**Failed Tests:**
+- Test 3: Detach already-detached VHD (idempotency)
+- Test 4: VHD is detached from WSL after detach
+
+
+### 2025-11-21 00:40:05 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 12s
+
+**Failed Tests:**
+- Test 4: VHD is detached from WSL after detach
+
+
+### 2025-11-21 00:39:51 - test_detach.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 0
+- **Duration:** 14s
+
+
+### 2025-11-21 00:39:27 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 7
+- **Tests Failed:** 3
+- **Duration:** 19s
+
+**Failed Tests:**
+- Test 3: Detach already-detached VHD (idempotency)
+- Test 4: VHD is detached from WSL after detach
+- Test 10: Status shows VHD as not attached after detach
+
+
+### 2025-11-21 00:38:06 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 10s
+
+**Failed Tests:**
+- Test 1: Detach VHD that is attached but not mounted
+
+
+### 2025-11-21 00:37:47 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 3
+- **Tests Failed:** 7
+- **Duration:** 13s
+
+**Failed Tests:**
+- Test 1: Detach VHD that is attached but not mounted
+- Test 2: Detach VHD that is attached and mounted
+- Test 3: Detach already-detached VHD (idempotency)
+- Test 4: VHD is detached from WSL after detach
+- Test 5: Mount point not accessible after detach
+- Test 6: Detach in quiet mode produces minimal output
+- Test 10: Status shows VHD as not attached after detach
+
+
+### 2025-11-21 00:37:08 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 0s
+
+**Failed Tests:**
+- Test 1: Detach VHD that is attached but not mounted
+
+
+### 2025-11-21 00:36:57 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 3
+- **Tests Failed:** 7
+- **Duration:** 0s
+
+**Failed Tests:**
+- Test 1: Detach VHD that is attached but not mounted
+- Test 2: Detach VHD that is attached and mounted
+- Test 3: Detach already-detached VHD (idempotency)
+- Test 4: VHD is detached from WSL after detach
+- Test 5: Mount point not accessible after detach
+- Test 9: Detach in debug mode shows command output
+- Test 10: Status shows VHD as not attached after detach
+
+
+### 2025-11-21 00:34:20 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 8
+- **Duration:** 1s
+
+**Failed Tests:**
+- Test 1: Umount mounted VHD with default configuration
+- Test 2: Umount already-unmounted VHD (idempotency)
+- Test 3: Umount with UUID parameter
+- Test 4: Umount with path parameter
+- Test 5: Umount with mount point parameter
+- Test 6: Mount point not accessible after umount
+- Test 8: VHD is detached from WSL after umount
+- Test 9: Status shows VHD as not mounted after umount
+
+
+### 2025-11-21 00:34:14 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 2
+- **Tests Failed:** 8
+- **Duration:** 0s
+
+**Failed Tests:**
+- Test 1: Mount VHD with default configuration
+- Test 2: Mount already-mounted VHD (idempotency)
+- Test 3: Mount with explicit path parameter
+- Test 4: Mount with custom mount point
+- Test 6: Mount creates mount point directory
+- Test 8: Mount point is accessible after mounting
+- Test 9: Mounted filesystem has correct permissions
+- Test 10: Status shows VHD as mounted after mount
+
+
+### 2025-11-21 00:34:03 - test_detach.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 3
+- **Tests Failed:** 7
+- **Duration:** 1s
+
+**Failed Tests:**
+- Test 1: Detach VHD that is attached but not mounted
+- Test 2: Detach VHD that is attached and mounted
+- Test 3: Detach already-detached VHD (idempotency)
+- Test 4: VHD is detached from WSL after detach
+- Test 5: Mount point not accessible after detach
+- Test 9: Detach in debug mode shows command output
+- Test 10: Status shows VHD as not attached after detach
+
+
+### 2025-11-21 00:33:35 - test_delete.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 2s
+
+
+### 2025-11-21 00:33:26 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 7s
+
+
+### 2025-11-21 00:33:08 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 13s
+
 
 ### 2025-11-20 23:34:44 - test_delete.sh
 

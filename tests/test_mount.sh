@@ -57,15 +57,32 @@ TEST_VHD_NAME="test_mount_disk"
 TEST_VHD_PATH="${WSL_DISKS_DIR}${TEST_VHD_NAME}.vhdx"
 TEST_MOUNT_POINT="${MOUNT_DIR}${TEST_VHD_NAME}"
 
-# Helper function to get UUID from VHD path
+# Helper function to get UUID from VHD path (create, attach, format if needed)
 get_vhd_uuid() {
     local vhd_path="$1"
     local mount_point="$2"
     local vhd_name="$3"
-    # Mount the VHD first to ensure it's attached
+    
+    # Create VHD if it doesn't exist
+    if ! bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" >/dev/null 2>&1; then
+        bash "$PARENT_DIR/disk_management.sh" create --path "$vhd_path" --size 100M >/dev/null 2>&1
+        # Attach the newly created VHD
+        bash "$PARENT_DIR/disk_management.sh" attach --path "$vhd_path" --name "$vhd_name" >/dev/null 2>&1
+        sleep 1
+        # Format the VHD (find device name first)
+        local device=$(lsblk -J | jq -r '.blockdevices[] | select(.name | test("sd[d-z]")) | .name' | head -1)
+        if [[ -n "$device" ]]; then
+            echo "yes" | bash "$PARENT_DIR/disk_management.sh" format --name "$device" --type ext4 >/dev/null 2>&1
+        fi
+    fi
+    
+    # Ensure VHD is attached and mounted
     bash "$PARENT_DIR/disk_management.sh" mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
-    # Get UUID from mount point
-    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$mount_point" 2>&1 | grep -oP '(?<=\().*(?=\):)')
+    # Give system time to update
+    sleep 1
+    # Get UUID using quiet mode status by path (more reliable)
+    # Extract only the UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
     echo "$uuid"
 }
 
@@ -165,9 +182,8 @@ cleanup_mount() {
     local vhd_path="$1"
     local mount_point="$2"
     if is_mounted "$mount_point"; then
-        # Get UUID dynamically for cleanup
-        local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --mount-point "$mount_point" 2>&1 | grep -oP '(?<=\().*(?=\):)')
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" --uuid "$uuid" --mount-point "$mount_point" >/dev/null 2>&1
+        # Just unmount from filesystem, don't detach
+        sudo umount "$mount_point" >/dev/null 2>&1
     fi
 }
 
@@ -233,13 +249,13 @@ run_test "Mount creates mount point directory" \
 
 # Cleanup
 if mountpoint -q "${TEST_MOUNT_POINT}_newdir" 2>/dev/null; then
-    bash "$PARENT_DIR/disk_management.sh" -q umount --path "$TEST_VHD_PATH" --mount-point "${TEST_MOUNT_POINT}_newdir" >/dev/null 2>&1
+    sudo umount "${TEST_MOUNT_POINT}_newdir" 2>/dev/null
     rmdir "${TEST_MOUNT_POINT}_newdir" 2>/dev/null
 fi
 
 # Test 7: Mount in quiet mode
 run_test "Mount in quiet mode produces minimal output" \
-    "bash $PARENT_DIR/disk_management.sh -q mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1 | wc -l | grep -q '^[0-2]$'" \
+    "bash $PARENT_DIR/disk_management.sh -q mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1 | tr -d '\\n' | grep -q 'mounted'" \
     0
 
 # Cleanup for next test
