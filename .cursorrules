@@ -188,7 +188,6 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 - `jq` - JSON parsing of lsblk output
 - `wsl.exe` - Built-in on WSL2
 - `rsync` - Data migration during resize operations
-- `bc` - Optional: Enhanced arithmetic (degrades gracefully)
 
 ## Critical Gotchas
 

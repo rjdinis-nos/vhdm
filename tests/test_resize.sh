@@ -324,23 +324,7 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
         "bash -c 'source $PARENT_DIR/disk_management.sh && size=\$(convert_size_to_bytes \"100M\"); [[ \$size -eq 104857600 ]]'" \
         0
     
-    # Test 9: Verify bc is available for calculations (informational only)
-    if which bc >/dev/null 2>&1; then
-        run_test "bc calculator is available" \
-            "which bc >/dev/null 2>&1" \
-            0
-    else
-        # Skip test if bc not installed - resize can still work
-        if [[ "$VERBOSE" == "true" ]]; then
-            echo -e "${YELLOW}Test 9: bc not installed - skipping (not critical)${NC}"
-        else
-            printf "Test %d: %-60s ${YELLOW}✓ SKIPPED${NC}\n" "$((TESTS_RUN + 1))" "bc calculator is available (optional)"
-        fi
-        TESTS_RUN=$((TESTS_RUN + 1))
-        TESTS_PASSED=$((TESTS_PASSED + 1))
-    fi
-    
-    # Test 10: Resize to larger size (actual resize operation)
+    # Test 9: Resize to larger size (actual resize operation)
     if [[ "$VERBOSE" == "true" ]]; then
         echo -e "${BLUE}----------------------------------------${NC}"
         echo -e "${BLUE}Running actual resize operation${NC}"

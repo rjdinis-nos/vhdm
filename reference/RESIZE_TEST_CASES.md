@@ -287,7 +287,7 @@ Duration:     120s
 - **Test Duration**: ~2-3 minutes for all tests
 - **Disk Space**: Requires ~500MB temporarily (test VHDs + backups)
 - **Network**: No network required
-- **Dependencies**: bc, rsync, qemu-img, jq
+- **Dependencies**: rsync, qemu-img, jq
 
 ## Cleanup
 

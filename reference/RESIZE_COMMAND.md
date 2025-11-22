@@ -85,7 +85,6 @@ ls -lh /mnt/c/aNOS/VMs/wsl_test/*_bkp.vhdx
 
 The resize command requires:
 
-- `bc` - For size calculations
 - `rsync` - For file copying with attribute preservation
 - `find` - For file counting
 - `du` - For directory size calculation

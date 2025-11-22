@@ -67,8 +67,6 @@ Simply use path-based or name-based commands as normal - tracking works automati
   - Fedora: `sudo dnf install qemu-img`
 - **jq** - For JSON parsing
   - Most distributions: `sudo <package-manager> install jq`
-- **bc** - For size calculations (used by resize command)
-  - Most distributions: `sudo <package-manager> install bc`
 - **rsync** - For file copying with attribute preservation (used by resize command)
   - Usually pre-installed, otherwise: `sudo <package-manager> install rsync`
 
@@ -458,9 +456,8 @@ All logging functions support timestamps and structured output. See [Structured 
 
 - `bytes_to_human BYTES` - Convert bytes to human-readable format
   - Args: Size in bytes
-  - Returns: Formatted string (e.g., "5.23GB", "150MB")
-  - Optional `bc` support for decimal precision (set `USE_BC=true`)
-  - Graceful fallback to bash arithmetic if `bc` not available
+  - Returns: Formatted string (e.g., "5GB", "150MB")
+  - Uses bash arithmetic for size conversion
 
 ### Usage Example
 ```bash

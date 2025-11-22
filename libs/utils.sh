@@ -418,27 +418,13 @@ convert_size_to_bytes() {
 bytes_to_human() {
     local bytes="$1"
     
-    if [[ "$USE_BC" == "true" ]] && command -v bc >/dev/null 2>&1; then
-        # Use bc for precise decimal calculations
-        if [[ $bytes -lt 1024 ]]; then
-            echo "${bytes}B"
-        elif [[ $bytes -lt $((1024 * 1024)) ]]; then
-            echo "$(echo "scale=2; $bytes / 1024" | bc)KB"
-        elif [[ $bytes -lt $((1024 * 1024 * 1024)) ]]; then
-            echo "$(echo "scale=2; $bytes / (1024 * 1024)" | bc)MB"
-        else
-            echo "$(echo "scale=2; $bytes / (1024 * 1024 * 1024)" | bc)GB"
-        fi
+    if [[ $bytes -lt 1024 ]]; then
+        echo "${bytes}B"
+    elif [[ $bytes -lt $((1024 * 1024)) ]]; then
+        echo "$((bytes / 1024))KB"
+    elif [[ $bytes -lt $((1024 * 1024 * 1024)) ]]; then
+        echo "$((bytes / (1024 * 1024)))MB"
     else
-        # Fallback to bash arithmetic (no decimal precision)
-        if [[ $bytes -lt 1024 ]]; then
-            echo "${bytes}B"
-        elif [[ $bytes -lt $((1024 * 1024)) ]]; then
-            echo "$((bytes / 1024))KB"
-        elif [[ $bytes -lt $((1024 * 1024 * 1024)) ]]; then
-            echo "$((bytes / (1024 * 1024)))MB"
-        else
-            echo "$((bytes / (1024 * 1024 * 1024)))GB"
-        fi
+        echo "$((bytes / (1024 * 1024 * 1024)))GB"
     fi
 }

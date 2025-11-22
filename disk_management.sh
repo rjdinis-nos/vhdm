@@ -13,13 +13,9 @@ QUIET=false
 # Debug mode flag
 DEBUG=false
 
-# Use bc for precise decimal calculations (requires bc installed)
-USE_BC=false
-
 # Export flags for child scripts
 export QUIET
 export DEBUG
-export USE_BC
 
 # Function to show usage
 show_usage() {
@@ -28,7 +24,6 @@ show_usage() {
     echo "Options:"
     echo "  -q, --quiet  - Run in quiet mode (minimal output)"
     echo "  -d, --debug  - Run in debug mode (show all commands before execution)"
-    echo "  --use-bc     - Use bc for precise decimal calculations (requires bc installed)"
     echo
     echo "Commands:"
     echo "  attach [OPTIONS]         - Attach a VHD to WSL (without mounting to filesystem)"
@@ -2193,10 +2188,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--debug)
             DEBUG=true
-            shift
-            ;;
-        --use-bc)
-            USE_BC=true
             shift
             ;;
         -h|--help|help)

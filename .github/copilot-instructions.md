@@ -291,7 +291,6 @@ sudo lsof +D /mnt/mydisk
 - `jq` - JSON parsing of lsblk output
 - `wsl.exe` - Built-in on WSL2
 - `rsync` - Data migration during resize operations
-- `bc` - Optional: Enhanced arithmetic for size calculations (degrades gracefully)
 - `du` - Directory size calculation
 - `find` - File counting for integrity verification
 
@@ -333,7 +332,6 @@ Complete list of all Linux and WSL commands used in the scripts:
 - `rsync -aP --stats "$source/" "$dest/"` - Copy files with progress and stats
 - `du -sb "$path"` - Calculate directory size in bytes
 - `find "$path" -type f` - Count files in directory
-- `bc -l` - Arbitrary precision calculator (optional)
 
 **Process Management:**
 - `sudo lsof +D "$mount_point"` - List processes using mount point
