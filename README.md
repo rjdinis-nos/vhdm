@@ -607,7 +607,7 @@ Log files include all messages (except debug when `DEBUG=false`) with timestamps
 
 ## Testing
 
-The repository includes a comprehensive test suite for validating functionality. Tests produce clean output with only test results displayed.
+The repository includes a comprehensive test suite for validating functionality. Tests produce clean output with only test results displayed, and automatically generate detailed test reports.
 
 **Quick Start:**
 ```bash
@@ -640,7 +640,30 @@ The repository includes a comprehensive test suite for validating functionality.
 - Summary statistics
 - Detailed output in verbose mode
 
-For detailed information about the test suite, coverage, configuration, and adding new tests, see **[tests/README.md](tests/README.md)**.
+**Test Reporting:**
+- **Automatic Reports**: Test results are automatically recorded after each test run
+- **JSON Format**: `tests/test_report.json` stores structured test data (machine-readable)
+- **Markdown Format**: `tests/test_report.md` provides human-readable reports with:
+  - Summary table showing all test suites with status, counts, and duration
+  - Detailed test result tables showing individual test names and status
+  - Color-coded status indicators (green for passed, red for failed)
+  - Navigation links between summary and detailed sections
+- **Individual Test Tracking**: Each test is tracked with its number, descriptive name, and status
+- **Historical Data**: Complete test execution history maintained over time
+
+**View Test Reports:**
+```bash
+# View human-readable markdown report
+cat tests/test_report.md
+
+# View machine-readable JSON data
+cat tests/test_report.json | jq
+
+# View specific suite results
+cat tests/test_report.json | jq '.suites["test_status.sh"]'
+```
+
+For detailed information about the test suite, coverage, configuration, adding new tests, and the reporting system, see **[tests/README.md](tests/README.md)**.
 
 ---
 

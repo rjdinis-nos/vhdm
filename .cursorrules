@@ -209,6 +209,17 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 - Test pattern: `run_test "Description" "command" expected_exit_code`
 - All disk_management.sh calls in tests must suppress non-test output using `2>&1` or `>/dev/null 2>&1`
 
+### Test Reporting
+
+- **Automatic Reports**: Test results are automatically recorded after each test run
+- **JSON Format**: `tests/test_report.json` stores structured test data (machine-readable, source of truth)
+- **Markdown Format**: `tests/test_report.md` provides human-readable reports with summary tables and detailed test results
+- **Individual Test Tracking**: Each test is tracked with its number, descriptive name, and status (PASSED/FAILED)
+- **Report Generation**: `update_test_report.sh` updates JSON and generates markdown from it
+- **Test Result Collection**: Tests collect results in `ALL_TEST_RESULTS` array with format `"NUM|NAME|STATUS"`
+- **Report Parameters**: `--test-results` parameter accepts pipe-separated list of all test results
+- **Historical Data**: Complete test execution history maintained over time
+
 ## Adding New Code
 
 ### Adding New Commands

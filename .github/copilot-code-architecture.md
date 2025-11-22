@@ -803,4 +803,63 @@ Each test suite validates:
 5. State verification
 6. Output modes (quiet, debug)
 
+### Test Reporting System
+
+The test suite includes an automated reporting system that tracks test execution results:
+
+**Architecture:**
+- **`test_report.json`** - JSON file serving as the source of truth for all test results
+- **`test_report.md`** - Markdown report generated from JSON for human-readable viewing
+- **`update_test_report.sh`** - Script that updates reports with test suite results
+
+**Data Flow:**
+```
+Test Suite Execution
+├─→ run_test() collects results in ALL_TEST_RESULTS array
+│   └─→ Format: "NUM|NAME|STATUS"
+├─→ After all tests complete
+│   ├─→ Calculate summary statistics (run, passed, failed, duration)
+│   └─→ Call update_test_report.sh with:
+│       ├─→ Suite name
+│       ├─→ Overall status
+│       ├─→ Summary statistics
+│       └─→ Individual test results (--test-results parameter)
+└─→ update_test_report.sh
+    ├─→ Updates test_report.json (source of truth)
+    └─→ Generates test_report.md from JSON
+```
+
+**Report Features:**
+- Individual test result tracking with test numbers, descriptive names, and status
+- Summary table showing all test suites with status, counts, and duration
+- Detailed test result tables for each suite showing every test's status
+- Color-coded status indicators (green for passed, red for failed)
+- Navigation anchors for easy linking between summary and detailed sections
+- Automatic updates after each test run
+- Historical data maintained over time
+
+**Test Result Collection Pattern:**
+```bash
+# Initialize array to store all test results
+ALL_TEST_RESULTS=()  # Format: "NUM|NAME|STATUS"
+
+# In run_test function:
+if [[ $exit_code -eq $expected_exit_code ]]; then
+    ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|PASSED")
+else
+    ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|FAILED")
+fi
+
+# After all tests, prepare and submit results
+TEST_RESULTS_STR=$(IFS='|'; echo "${ALL_TEST_RESULTS[*]}")
+bash "$SCRIPT_DIR/update_test_report.sh" \
+    --suite "test_status.sh" \
+    --status "$OVERALL_STATUS" \
+    --run "$TESTS_RUN" \
+    --passed "$TESTS_PASSED" \
+    --failed "$TESTS_FAILED" \
+    --duration "$DURATION" \
+    --test-results "$TEST_RESULTS_STR"
+```
+
 See `.github/copilot-instructions.md` for detailed test coverage information.

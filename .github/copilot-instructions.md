@@ -446,6 +446,63 @@ Tests automatically discover UUIDs dynamically using `get_vhd_uuid()` helper fun
 
 This approach eliminates hardcoded UUIDs and ensures tests work with dynamically created VHDs.
 
+**Test Reporting:**
+The test suite includes an automated reporting system that tracks test execution results:
+
+**Architecture:**
+- **`test_report.json`** - JSON file serving as the source of truth for all test results
+- **`test_report.md`** - Markdown report generated from JSON for human-readable viewing
+- **`update_test_report.sh`** - Script that updates reports with test suite results
+
+**Features:**
+- Individual test result tracking with test numbers, descriptive names, and status (PASSED/FAILED)
+- Summary table showing all test suites with status, counts, and duration
+- Detailed test result tables for each suite showing every test's status
+- Color-coded status indicators (green for passed, red for failed)
+- Navigation anchors for easy linking between summary and detailed sections
+- Automatic updates after each test run
+- Historical data maintained over time
+
+**Test Result Collection:**
+Test scripts collect results using the `ALL_TEST_RESULTS` array:
+```bash
+ALL_TEST_RESULTS=()  # Array to store all test results: "NUM|NAME|STATUS"
+
+# In run_test function:
+ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|PASSED")
+# or
+ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|FAILED")
+```
+
+**Report Update:**
+After test execution, scripts call `update_test_report.sh`:
+```bash
+# Prepare all test results as pipe-separated string: "NUM|NAME|STATUS|NUM|NAME|STATUS|..."
+TEST_RESULTS_STR=""
+if [[ ${#ALL_TEST_RESULTS[@]} -gt 0 ]]; then
+    TEST_RESULTS_STR=$(IFS='|'; echo "${ALL_TEST_RESULTS[*]}")
+fi
+
+bash "$SCRIPT_DIR/update_test_report.sh" \
+    --suite "test_status.sh" \
+    --status "$OVERALL_STATUS" \
+    --run "$TESTS_RUN" \
+    --passed "$TESTS_PASSED" \
+    --failed "$TESTS_FAILED" \
+    --duration "$DURATION" \
+    --test-results "$TEST_RESULTS_STR" >/dev/null 2>&1
+```
+
+**Report Parameters:**
+- `--suite NAME` - Test suite name (e.g., `test_status.sh`)
+- `--status STATUS` - Overall status (`PASSED` or `FAILED`)
+- `--run COUNT` - Number of tests run
+- `--passed COUNT` - Number of tests passed
+- `--failed COUNT` - Number of tests failed
+- `--duration SEC` - Test execution duration in seconds
+- `--test-results LIST` - Pipe-separated list of all test results in format: `"NUM|NAME|STATUS|NUM|NAME|STATUS|..."`
+- `--failed-tests LIST` - Pipe-separated list of failed test names (optional, deprecated, for backward compatibility)
+
 **Test Maintenance:**
 - Test expectations must match actual VHD state (mounted vs unmounted)
 - Update `tests/.env.test` to change test VHD directory or mount directory
@@ -456,6 +513,7 @@ This approach eliminates hardcoded UUIDs and ensures tests work with dynamically
 - Exit code expectations must match actual command behavior (not assumed behavior)
 - Use `sudo umount` for filesystem-only unmount; script's umount command fully detaches VHD
 - Each test suite includes `get_vhd_uuid()` helper for dynamic UUID discovery
+- Test results are automatically tracked and reported - no manual intervention needed
 
 ## Common Modifications
 

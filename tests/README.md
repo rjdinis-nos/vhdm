@@ -22,29 +22,63 @@ A comprehensive test runner that executes all test suites in sequence and report
 - Optional verbose mode for detailed output
 - Optional stop-on-failure mode for CI/CD
 
-### `test_report.md`
-An automatically generated test report that tracks test execution results over time.
+### `test_report.md` and `test_report.json`
+Automatically generated test reports that track test execution results over time.
+
+**Architecture:**
+- **`test_report.json`** - JSON file serving as the source of truth for all test results
+- **`test_report.md`** - Markdown report generated from JSON for human-readable viewing
 
 **Features:**
 - Summary table showing the latest status of all test suites
+- Individual test result tracking with test numbers, names, and status (PASSED/FAILED)
 - Includes test run date, pass/fail status, test counts, and duration
-- Maintains a chronological history of all test runs
+- Detailed test results table for each suite showing every test's status
+- Color-coded status indicators (green for passed, red for failed)
+- Navigation anchors for easy linking between summary and detailed sections
 - Updated automatically when test suites are executed
 
-**View the report:**
+**View the reports:**
 ```bash
-cat tests/test_report.md
+cat tests/test_report.md   # Human-readable markdown report
+cat tests/test_report.json # Machine-readable JSON data
 # Or open in any markdown viewer
 ```
 
 ### `update_test_report.sh`
 Script that updates the test report with results from test suite executions. This script is called automatically by individual test scripts and generally doesn't need to be run manually.
 
+**Architecture:**
+- Updates `test_report.json` with new test results
+- Generates `test_report.md` from the JSON data
+- Supports both individual test result tracking and backward-compatible failed test lists
+
 **Usage (if needed manually):**
 ```bash
+# Basic usage with summary statistics only
 ./update_test_report.sh --suite test_status.sh --status PASSED \
   --run 10 --passed 10 --failed 0 --duration 5
+
+# With individual test results (recommended)
+./update_test_report.sh --suite test_status.sh --status PASSED \
+  --run 10 --passed 10 --failed 0 --duration 5 \
+  --test-results "1|Status shows help|PASSED|2|Status with UUID|PASSED|3|Status with path|FAILED"
+
+# With failed tests list (deprecated, for backward compatibility)
+./update_test_report.sh --suite test_mount.sh --status FAILED \
+  --run 10 --passed 8 --failed 2 --duration 7 \
+  --failed-tests "Test 3: Mount failure|Test 7: Permission issue"
 ```
+
+**Parameters:**
+- `--suite NAME` - Test suite name (e.g., `test_status.sh`)
+- `--status STATUS` - Overall status (`PASSED` or `FAILED`)
+- `--run COUNT` - Number of tests run
+- `--passed COUNT` - Number of tests passed
+- `--failed COUNT` - Number of tests failed
+- `--duration SEC` - Test execution duration in seconds
+- `--test-results LIST` - Pipe-separated list of all test results in format: `"NUM|NAME|STATUS|NUM|NAME|STATUS|..."`
+- `--failed-tests LIST` - Pipe-separated list of failed test names (optional, deprecated, for backward compatibility)
 
 ---
 
@@ -142,7 +176,7 @@ Tests for the resize command, validating VHD resizing through data migration inc
 cat ./tests/test_report.md   # View the automatically generated test report
 ```
 
-**Note:** Test results are automatically recorded to `tests/test_report.md` after each test run, including the date, pass/fail status, test counts, and execution duration.
+**Note:** Test results are automatically recorded to `tests/test_report.json` and `tests/test_report.md` after each test run. The reports include the date, pass/fail status, test counts, execution duration, and individual test results with names and status.
 
 ---
 
@@ -494,17 +528,54 @@ fi
 
 ## Test Reporting
 
-All test suites automatically update the `test_report.md` file with their results. The report includes:
+All test suites automatically update the test reporting system with their results. The reporting system uses a JSON-based architecture:
 
-- **Last Updated**: Timestamp of the most recent test run
-- **Test Suite Summary Table**: Shows latest run date, status, counts, and duration for each suite
-- **Test History**: Chronological log of all test executions with detailed results
+### Report Structure
 
-The report is useful for:
+**JSON Source (`test_report.json`):**
+- Stores all test results in structured JSON format
+- Serves as the source of truth for test data
+- Enables programmatic access to test results
+- Maintains complete test history with individual test details
+
+**Markdown Report (`test_report.md`):**
+- Generated automatically from JSON data
+- Human-readable format with color-coded status indicators
+- Includes summary table and detailed test result tables
+- Navigation anchors for easy linking
+
+### Report Contents
+
+**Summary Table:**
+- Test suite names with links to detailed sections
+- Last run date for each suite
+- Overall status (PASSED/FAILED) with color coding
+- Test counts (run, passed, failed)
+- Execution duration
+
+**Detailed Test Results:**
+- Individual test tracking with test numbers and descriptive names
+- Status for each test (PASSED/FAILED) with color coding
+- Test results sorted numerically for easy review
+- Per-suite metrics (last run, status, counts, duration)
+
+### Report Features
+
+- **Individual Test Tracking**: Each test is tracked with its number, name, and status
+- **Color-Coded Status**: Visual indicators (green for passed, red for failed)
+- **Navigation**: Clickable links between summary and detailed sections
+- **Automatic Updates**: Reports update automatically after each test run
+- **Historical Data**: Maintains complete test execution history
+
+### Use Cases
+
+The reports are useful for:
 - Tracking test trends over time
-- Identifying frequently failing tests
+- Identifying frequently failing tests by name
 - Monitoring test execution performance
 - Quick overview of test suite health
+- Debugging specific test failures
+- CI/CD integration with structured JSON data
 
 ## Future Enhancements
 
