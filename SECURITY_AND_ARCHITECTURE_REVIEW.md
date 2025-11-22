@@ -79,27 +79,54 @@ mv "$temp_file" "$DISK_TRACKING_FILE"
 trap - EXIT INT TERM
 ```
 
-### 3. **Privilege Escalation via Sudo** (MEDIUM RISK)
+### 3. **Privilege Escalation via Sudo** (MEDIUM RISK) ✅ RESOLVED
+
+**Status**: ✅ **FIXED** - Comprehensive sudo validation implemented
 
 **Location**: Multiple locations using `sudo` without validation
 
-**Issues**:
+**Original Issues**:
 - `sudo` commands executed without checking if user has permissions
 - No validation that commands are actually executed as intended
 - Mount/umount operations require sudo but errors may be silent
 
-**Examples**:
+**Resolution**:
+- ✅ Added comprehensive sudo validation functions in `libs/utils.sh`:
+  - `check_sudo_permissions()` - Validates sudo availability and user permissions before operations
+  - `safe_sudo()` - Wrapper for sudo commands that validates permissions and provides detailed error messages
+  - `safe_sudo_capture()` - Wrapper for sudo commands that need output capture (e.g., blkid, lsblk)
+
+- ✅ Validation added at all sudo operation points:
+  - `mount_filesystem()` - Validates sudo before mount operations
+  - `umount_filesystem()` - Validates sudo before unmount operations
+  - `format_vhd()` - Validates sudo before formatting operations
+  - `wsl_get_block_devices()` - Uses `safe_sudo_capture()` for lsblk
+  - `wsl_get_disk_uuids()` - Uses `safe_sudo_capture()` for blkid
+  - `wsl_umount_vhd()` - Uses `safe_sudo()` for lsof diagnostics
+  - All sudo calls in `disk_management.sh` (rsync, blkid, lsof)
+
+- ✅ Comprehensive error handling:
+  - Clear error messages when sudo is unavailable
+  - Detailed error output when sudo commands fail
+  - Context-specific suggestions based on operation type (mount/umount/format)
+  - Validation happens before command execution to fail fast
+
+**Implementation**:
 ```bash
-# wsl_helpers.sh:573
-if debug_cmd sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
+# Check sudo permissions before operations
+if ! check_sudo_permissions; then
+    log_error "Cannot perform operation: sudo permissions required"
+    return 1
+fi
+
+# Use safe_sudo wrapper for commands
+if safe_sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
+    return 0
+else
+    log_error "Failed to mount filesystem"
+    return 1
+fi
 ```
-
-**Risk**: If sudo fails silently, operations may appear successful but fail.
-
-**Recommendation**:
-- Check sudo availability and permissions before operations
-- Validate sudo success explicitly
-- Provide clear error messages when sudo fails
 
 ### 4. **Path Traversal Vulnerabilities** (MEDIUM RISK) ✅ RESOLVED
 
@@ -352,7 +379,11 @@ get_lsblk_cached() {
 3. ✅ **COMPLETED** - Add path traversal protection
    - `validate_windows_path()` and `validate_mount_point()` reject `..` sequences
    - Validation applied before all path operations
-4. ✅ Validate sudo permissions before use (if applicable)
+4. ✅ **COMPLETED** - Validate sudo permissions before use
+   - Added `check_sudo_permissions()`, `safe_sudo()`, and `safe_sudo_capture()` functions
+   - All sudo operations now validate permissions before execution
+   - Comprehensive error messages and context-specific suggestions
+   - See section 3 above for detailed implementation
 
 ### Medium Priority (Architecture)
 1. ✅ Standardize error handling

@@ -440,3 +440,132 @@ bytes_to_human() {
         echo "$((bytes / (1024 * 1024 * 1024)))GB"
     fi
 }
+
+# ============================================================================
+# SUDO VALIDATION FUNCTIONS - Security: Validate sudo permissions
+# ============================================================================
+
+# Check if sudo is available and user has permissions
+# Returns: 0 if sudo is available and user has permissions, 1 otherwise
+# Security: Validates sudo availability before operations
+check_sudo_permissions() {
+    # Check if sudo command exists
+    if ! command -v sudo &>/dev/null; then
+        log_error "sudo command not found. Please install sudo or run as root."
+        return 1
+    fi
+    
+    # Check if user can run sudo (test with a harmless command)
+    # Use -n flag to avoid password prompt if not cached
+    if ! sudo -n true 2>/dev/null; then
+        # If -n fails, try with password prompt (but this will hang if no TTY)
+        # Instead, just check if sudo is configured
+        if ! sudo -v 2>/dev/null; then
+            log_error "Cannot verify sudo permissions. Please ensure you have sudo access."
+            log_info "You may need to run 'sudo -v' to cache your credentials first."
+            return 1
+        fi
+    fi
+    
+    return 0
+}
+
+# Safe sudo wrapper that validates permissions and command success
+# Args: $@ - Command and arguments to run with sudo
+# Returns: 0 on success, 1 on failure
+# Security: Validates sudo permissions and command execution
+# Note: For commands that need output, use safe_sudo_capture() instead
+#       Caller should redirect stdout/stderr as needed (e.g., >/dev/null 2>&1)
+safe_sudo() {
+    local cmd="$1"
+    shift
+    local args=("$@")
+    local error_output
+    local exit_code
+    local temp_stderr
+    
+    # Check sudo permissions first
+    if ! check_sudo_permissions; then
+        return 1
+    fi
+    
+    # Execute sudo command
+    if [[ "$DEBUG" == "true" ]]; then
+        log_debug "Executing: sudo $cmd ${args[*]}"
+    fi
+    
+    # Create temporary file for stderr capture
+    temp_stderr=$(mktemp /tmp/safe_sudo_stderr.XXXXXX 2>/dev/null)
+    if [[ $? -ne 0 || -z "$temp_stderr" ]]; then
+        # Fallback: execute directly and capture all output
+        error_output=$(sudo "$cmd" "${args[@]}" 2>&1)
+        exit_code=$?
+    else
+        # Execute command, capturing stderr to temp file
+        # stdout passes through (caller can redirect)
+        sudo "$cmd" "${args[@]}" 2>"$temp_stderr"
+        exit_code=$?
+        error_output=$(cat "$temp_stderr" 2>/dev/null)
+        rm -f "$temp_stderr"
+    fi
+    
+    if [[ $exit_code -ne 0 ]]; then
+        # Command failed - provide detailed error message
+        log_error "sudo command failed: $cmd ${args[*]}"
+        if [[ -n "$error_output" ]]; then
+            log_error "Error output: $error_output"
+        fi
+        
+        # Provide helpful suggestions based on common failures
+        if [[ "$cmd" == "mount" ]] || [[ "$cmd" == "umount" ]]; then
+            log_info "Mount/unmount operations require sudo privileges."
+            log_info "Please ensure you have sudo access and the necessary permissions."
+        elif [[ "$cmd" == "mkfs" ]]; then
+            log_info "Formatting operations require sudo privileges."
+            log_info "Please ensure you have sudo access and the necessary permissions."
+        fi
+        
+        return 1
+    fi
+    
+    return 0
+}
+
+# Safe sudo wrapper for commands that need output capture
+# Args: $@ - Command and arguments to run with sudo
+# Returns: Command output via stdout, exit code via return value
+# Security: Validates sudo permissions before execution
+# Note: Use this for commands that need their output (e.g., blkid, lsblk)
+safe_sudo_capture() {
+    local cmd="$1"
+    shift
+    local args=("$@")
+    local output
+    local exit_code
+    
+    # Check sudo permissions first
+    if ! check_sudo_permissions; then
+        return 1
+    fi
+    
+    if [[ "$DEBUG" == "true" ]]; then
+        log_debug "Executing: sudo $cmd ${args[*]}"
+    fi
+    
+    # Execute command and capture output
+    output=$(sudo "$cmd" "${args[@]}" 2>&1)
+    exit_code=$?
+    
+    if [[ $exit_code -ne 0 ]]; then
+        # Command failed - log error but don't print output (may contain sensitive info)
+        log_error "sudo command failed: $cmd ${args[*]}"
+        if [[ "$DEBUG" == "true" ]] && [[ -n "$output" ]]; then
+            log_debug "Error output: $output"
+        fi
+        return 1
+    fi
+    
+    # Success - output the result
+    echo "$output"
+    return 0
+}

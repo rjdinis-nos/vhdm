@@ -1236,7 +1236,12 @@ create_vhd() {
                         else
                             echo -e "${RED}[✗] Failed to unmount VHD from filesystem${NC}"
                             echo "Checking for processes using the mount point:"
-                            sudo lsof +D "$existing_mount_point" 2>/dev/null || echo "  No processes found"
+                            # Use safe_sudo for lsof (non-critical diagnostic command)
+                            if check_sudo_permissions; then
+                                safe_sudo lsof +D "$existing_mount_point" 2>/dev/null || echo "  No processes found"
+                            else
+                                echo "  Cannot check processes (sudo permissions required)"
+                            fi
                             exit 1
                         fi
                     fi
@@ -1559,7 +1564,17 @@ resize_vhd() {
         echo -e "${BLUE}[DEBUG]${NC} sudo rsync -a '$target_mount_point/' '$temp_mount_point/'" >&2
     fi
     
-    if sudo rsync -a "$target_mount_point/" "$temp_mount_point/" 2>&1; then
+    # Check sudo permissions before rsync operation
+    if ! check_sudo_permissions; then
+        echo -e "${RED}[✗] Cannot copy files: sudo permissions required${NC}"
+        # Cleanup
+        wsl_umount_vhd "$temp_mount_point"
+        wsl_detach_vhd "$new_vhd_path" "$new_uuid" ""
+        wsl_delete_vhd "$new_vhd_path"
+        exit 1
+    fi
+    
+    if safe_sudo rsync -a "$target_mount_point/" "$temp_mount_point/" 2>&1; then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Files copied successfully${NC}"
     else
         echo -e "${RED}[✗] Failed to copy files${NC}"
@@ -1887,7 +1902,9 @@ format_vhd_command() {
         fi
         
         # Check if device has existing UUID (already formatted)
-        local existing_uuid=$(sudo blkid -s UUID -o value "/dev/$device_name" 2>/dev/null)
+        # Use safe_sudo_capture for blkid command
+        local existing_uuid
+        existing_uuid=$(safe_sudo_capture blkid -s UUID -o value "/dev/$device_name" 2>/dev/null)
         if [[ -n "$existing_uuid" ]]; then
             [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] WARNING: Device /dev/$device_name is already formatted${NC}"
             [[ "$QUIET" == "false" ]] && echo "  Current UUID: $existing_uuid"

@@ -679,9 +679,17 @@ mount_filesystem() {
         return 1
     fi
     
-    if debug_cmd sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
+    # Check sudo permissions before attempting mount
+    if ! check_sudo_permissions; then
+        log_error "Cannot mount filesystem: sudo permissions required"
+        return 1
+    fi
+    
+    # Use safe_sudo wrapper for mount operation
+    if safe_sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
         return 0
     else
+        log_error "Failed to mount filesystem UUID=$uuid to $mount_point"
         return 1
     fi
 }
@@ -727,9 +735,17 @@ umount_filesystem() {
         return 1
     fi
     
-    if debug_cmd sudo umount "$mount_point" >/dev/null 2>&1; then
+    # Check sudo permissions before attempting unmount
+    if ! check_sudo_permissions; then
+        log_error "Cannot unmount filesystem: sudo permissions required"
+        return 1
+    fi
+    
+    # Use safe_sudo wrapper for umount operation
+    if safe_sudo umount "$mount_point" >/dev/null 2>&1; then
         return 0
     else
+        log_error "Failed to unmount filesystem from $mount_point"
         return 1
     fi
 }
@@ -756,7 +772,12 @@ wsl_umount_vhd() {
         log_info "Tip: Make sure no processes are using the mount point"
         log_info "Checking for processes using the mount point:"
         log_debug "sudo lsof +D $mount_point"
-        sudo lsof +D "$mount_point" 2>/dev/null || log_info "  No processes found (or lsof not available)"
+        # Use safe_sudo for lsof (non-critical diagnostic command)
+        if check_sudo_permissions; then
+            safe_sudo lsof +D "$mount_point" 2>/dev/null || log_info "  No processes found (or lsof not available)"
+        else
+            log_info "  Cannot check processes (sudo permissions required)"
+        fi
         log_info "You can try to force unmount with: sudo umount -l $mount_point"
         return 1
     fi
@@ -846,14 +867,26 @@ wsl_complete_unmount() {
 # Returns: Array of block device names
 wsl_get_block_devices() {
     log_debug "sudo lsblk -J | jq -r '.blockdevices[].name'"
-    sudo lsblk -J | jq -r '.blockdevices[].name'
+    local output
+    output=$(safe_sudo_capture lsblk -J 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        log_error "Failed to get block device list: sudo permissions required"
+        return 1
+    fi
+    echo "$output" | jq -r '.blockdevices[].name'
 }
 
 # Get list of all disk UUIDs
 # Returns: Array of UUIDs
 wsl_get_disk_uuids() {
     log_debug "sudo blkid -s UUID -o value"
-    sudo blkid -s UUID -o value
+    local output
+    output=$(safe_sudo_capture blkid -s UUID -o value 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        log_error "Failed to get disk UUIDs: sudo permissions required"
+        return 1
+    fi
+    echo "$output"
 }
 
 # Find UUID by mount point
@@ -1053,17 +1086,24 @@ format_vhd() {
         return 1
     fi
     
-    # Format the device
-    if ! debug_cmd sudo mkfs -t "$fs_type" "$device" >/dev/null 2>&1; then
+    # Check sudo permissions before formatting
+    if ! check_sudo_permissions; then
+        log_error "Cannot format device: sudo permissions required"
+        return 1
+    fi
+    
+    # Format the device using safe_sudo wrapper
+    if ! safe_sudo mkfs -t "$fs_type" "$device" >/dev/null 2>&1; then
         log_error "Failed to format device $device with $fs_type"
         return 1
     fi
     
     sleep 1  # Give system time to update UUID info
     
-    # Get the UUID of the newly formatted device
+    # Get the UUID of the newly formatted device using safe_sudo_capture
     log_debug "sudo blkid -s UUID -o value $device"
-    local new_uuid=$(sudo blkid -s UUID -o value "$device" 2>/dev/null)
+    local new_uuid
+    new_uuid=$(safe_sudo_capture blkid -s UUID -o value "$device" 2>/dev/null)
     
     if [[ -z "$new_uuid" ]]; then
         log_error "Could not retrieve UUID after formatting"
