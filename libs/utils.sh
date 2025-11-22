@@ -2,7 +2,14 @@
 
 # Utility functions for disk management scripts
 
-# Source colors if not already defined (for logging)
+# Source configuration file
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+if [[ -f "$PARENT_DIR/config.sh" ]]; then
+    source "$PARENT_DIR/config.sh"
+fi
+
+# Source colors if not already defined (for logging - fallback if config.sh not found)
 if [[ -z "${GREEN:-}" ]]; then
     export GREEN='\033[0;32m'
     export YELLOW='\033[1;33m'
@@ -52,7 +59,8 @@ validate_windows_path() {
     fi
     
     # Reject paths that are too long (prevent buffer issues)
-    if [[ ${#path} -gt 4096 ]]; then
+    local max_length="${MAX_PATH_LENGTH:-4096}"
+    if [[ ${#path} -gt $max_length ]]; then
         return 1
     fi
     
@@ -118,7 +126,8 @@ validate_mount_point() {
     fi
     
     # Reject paths that are too long
-    if [[ ${#mount_point} -gt 4096 ]]; then
+    local max_length="${MAX_PATH_LENGTH:-4096}"
+    if [[ ${#mount_point} -gt $max_length ]]; then
         return 1
     fi
     
@@ -148,7 +157,8 @@ validate_device_name() {
     fi
     
     # Reject if too long (unlikely to be valid)
-    if [[ ${#device} -gt 10 ]]; then
+    local max_length="${MAX_DEVICE_NAME_LENGTH:-10}"
+    if [[ ${#device} -gt $max_length ]]; then
         return 1
     fi
     
@@ -173,7 +183,8 @@ validate_vhd_name() {
     fi
     
     # Reject if too long
-    if [[ ${#name} -gt 64 ]]; then
+    local max_length="${MAX_VHD_NAME_LENGTH:-64}"
+    if [[ ${#name} -gt $max_length ]]; then
         return 1
     fi
     
@@ -203,7 +214,8 @@ validate_size_string() {
     fi
     
     # Reject if too long
-    if [[ ${#size} -gt 20 ]]; then
+    local max_length="${MAX_SIZE_STRING_LENGTH:-20}"
+    if [[ ${#size} -gt $max_length ]]; then
         return 1
     fi
     

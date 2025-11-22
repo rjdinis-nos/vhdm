@@ -3,15 +3,18 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Source configuration file
+if [[ -f "$SCRIPT_DIR/config.sh" ]]; then
+    source "$SCRIPT_DIR/config.sh"
+fi
+
 # Source helper functions (utils.sh first for validation functions)
 source "$SCRIPT_DIR/libs/utils.sh"
 source "$SCRIPT_DIR/libs/wsl_helpers.sh"
 
-# Quiet mode flag
-QUIET=false
-
-# Debug mode flag
-DEBUG=false
+# Initialize runtime flags (can be overridden by command-line options)
+QUIET="${QUIET:-false}"
+DEBUG="${DEBUG:-false}"
 
 # Export flags for child scripts
 export QUIET
@@ -39,14 +42,16 @@ show_usage() {
     echo
     echo "Attach Command Options:"
     echo "  --path PATH              - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
-    echo "  --name NAME              - [optional] VHD name for WSL attachment [default: disk]"
+    local default_name="${DEFAULT_VHD_NAME:-disk}"
+    echo "  --name NAME              - [optional] VHD name for WSL attachment [default: $default_name]"
     echo "  Note: Attaches VHD to WSL without mounting to filesystem."
     echo "        VHD will be accessible as a block device (/dev/sdX) after attachment."
     echo
     echo "Format Command Options:"
     echo "  --name NAME              - [optional] VHD device block name (e.g., sdd, sde)"
     echo "  --uuid UUID              - [optional] VHD UUID"
-    echo "  --type TYPE              - [optional] Filesystem type (ext4, ext3, xfs, etc.) [default: ext4]"
+    local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
+    echo "  --type TYPE              - [optional] Filesystem type (ext4, ext3, xfs, etc.) [default: $default_fs]"
     echo "  Note: Either --uuid or --name must be provided."
     echo "        VHD must be attached before formatting. Use 'attach' command first."
     echo "        If --uuid is provided for an already-formatted disk, confirmation will be required."
@@ -77,7 +82,8 @@ show_usage() {
     echo
     echo "Create Command Options:"
     echo "  --path PATH              - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
-    echo "  --size SIZE              - [optional] VHD size (e.g., 1G, 500M, 10G) [default: 1G]"
+    local default_size="${DEFAULT_VHD_SIZE:-1G}"
+    echo "  --size SIZE              - [optional] VHD size (e.g., 1G, 500M, 10G) [default: $default_size]"
     echo "  --force                  - [optional] Overwrite existing VHD (auto-unmounts if attached, prompts for confirmation)"
     echo "  Note: Creates VHD file only. Use 'attach' or 'mount' commands to attach and use the disk."
     echo
@@ -93,7 +99,9 @@ show_usage() {
     echo "  Note: Creates new disk, migrates data, and replaces original with backup."
     echo
     echo "History Command Options:"
-    echo "  --limit N                - [optional] Number of detach events to show [default: 10, max: 50]"
+    local default_limit="${DEFAULT_HISTORY_LIMIT:-10}"
+    local max_limit="${MAX_HISTORY_LIMIT:-50}"
+    echo "  --limit N                - [optional] Number of detach events to show [default: $default_limit, max: $max_limit]"
     echo "  --path PATH              - [optional] Show last detach event for specific VHD path"
     echo "  Note: Shows detach history with timestamps, UUIDs, and VHD names."
     echo
@@ -413,7 +421,8 @@ mount_vhd() {
     # Parse mount command arguments
     local mount_path=""
     local mount_point=""
-    local mount_name="disk"
+    local default_name="${DEFAULT_VHD_NAME:-disk}"
+    local mount_name="$default_name"
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1120,7 +1129,8 @@ delete_vhd() {
 create_vhd() {
     # Parse create command arguments
     local create_path=""
-    local create_size="1G"
+    local default_size="${DEFAULT_VHD_SIZE:-1G}"
+    local create_size="$default_size"
     local force="false"
     
     while [[ $# -gt 0 ]]; do
@@ -1731,7 +1741,8 @@ format_vhd_command() {
     # Parse format command arguments
     local format_name=""
     local format_uuid=""
-    local format_type="ext4"
+    local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
+    local format_type="$default_fs"
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1791,7 +1802,8 @@ format_vhd_command() {
         echo "Options:" >&2
         echo "  --name NAME   - VHD device block name (e.g., sdd, sde)" >&2
         echo "  --uuid UUID   - VHD UUID" >&2
-        echo "  --type TYPE   - Filesystem type [default: ext4]" >&2
+        local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
+        echo "  --type TYPE   - Filesystem type [default: $default_fs]" >&2
         echo >&2
         echo "Examples:" >&2
         echo "  $0 format --name sdd --type ext4" >&2
@@ -2086,7 +2098,8 @@ attach_vhd() {
 # Function to show detach history
 history_vhd() {
     # Parse history command arguments
-    local limit=10
+    local default_limit="${DEFAULT_HISTORY_LIMIT:-10}"
+    local limit="$default_limit"
     local show_path=""
     
     while [[ $# -gt 0 ]]; do

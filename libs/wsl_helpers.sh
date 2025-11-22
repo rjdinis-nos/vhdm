@@ -3,22 +3,30 @@
 # WSL Helper Functions Library
 # This file contains reusable functions for managing VHD disks in WSL
 
+# Source configuration file
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PARENT_DIR="$(dirname "$SCRIPT_DIR")"
+if [[ -f "$PARENT_DIR/config.sh" ]]; then
+    source "$PARENT_DIR/config.sh"
+fi
+
 # Source utility functions for validation (if not already sourced)
 # Note: utils.sh should be sourced before this file, but we try here as fallback
 if ! command -v validate_windows_path &>/dev/null; then
-    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
     source "$SCRIPT_DIR/utils.sh" 2>/dev/null || true
 fi
 
-# Colors for output
-export GREEN='\033[0;32m'
-export YELLOW='\033[1;33m'
-export RED='\033[0;31m'
-export BLUE='\033[0;34m'
-export NC='\033[0m' # No Color
+# Colors for output (fallback if config.sh not found)
+if [[ -z "${GREEN:-}" ]]; then
+    export GREEN='\033[0;32m'
+    export YELLOW='\033[1;33m'
+    export RED='\033[0;31m'
+    export BLUE='\033[0;34m'
+    export NC='\033[0m' # No Color
+fi
 
-# Persistent disk tracking file location
-DISK_TRACKING_FILE="$HOME/.config/wsl-disk-management/vhd_mapping.json"
+# Persistent disk tracking file location (use config value or default)
+DISK_TRACKING_FILE="${DISK_TRACKING_FILE:-$HOME/.config/wsl-disk-management/vhd_mapping.json}"
 
 # Initialize the disk tracking file if it doesn't exist
 # Creates directory and empty JSON structure
@@ -310,11 +318,13 @@ save_detach_history() {
 # Args: $1 - Number of entries to retrieve (optional, default: 10, max: 50)
 # Returns: JSON array of detach events, most recent first
 get_detach_history() {
-    local limit="${1:-10}"
+    local default_limit="${DEFAULT_HISTORY_LIMIT:-10}"
+    local max_limit="${MAX_HISTORY_LIMIT:-50}"
+    local limit="${1:-$default_limit}"
     
-    # Limit to max 50 entries
-    if [[ $limit -gt 50 ]]; then
-        limit=50
+    # Limit to max entries
+    if [[ $limit -gt $max_limit ]]; then
+        limit=$max_limit
     fi
     
     init_disk_tracking_file || return 1
@@ -942,7 +952,8 @@ wsl_find_uuid_by_path() {
 # Note: VHD must be attached to WSL before formatting
 format_vhd() {
     local device="$1"
-    local fs_type="${2:-ext4}"
+    local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
+    local fs_type="${2:-$default_fs}"
     
     if [[ -z "$device" ]]; then
         log_error "Device is required"
@@ -1040,8 +1051,10 @@ wsl_delete_vhd() {
 wsl_create_vhd() {
     local vhd_path_win="$1"
     local size="$2"
-    local fs_type="${3:-ext4}"
-    local vhd_name="${4:-disk}"
+    local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
+    local default_name="${DEFAULT_VHD_NAME:-disk}"
+    local fs_type="${3:-$default_fs}"
+    local vhd_name="${4:-$default_name}"
     
     if [[ -z "$vhd_path_win" || -z "$size" ]]; then
         log_error "VHD path and size are required"

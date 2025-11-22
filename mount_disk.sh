@@ -8,14 +8,20 @@ set -e
 
 # Get script directory for sourcing helpers
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Source configuration file
+if [[ -f "$SCRIPT_DIR/config.sh" ]]; then
+    source "$SCRIPT_DIR/config.sh"
+fi
+
 source "$SCRIPT_DIR/libs/utils.sh"
 source "$SCRIPT_DIR/libs/wsl_helpers.sh"
 
 # Initialize variables
 MOUNT_POINT=""
 DISK_PATH=""
-QUIET=false
-DEBUG=false
+QUIET="${QUIET:-false}"
+DEBUG="${DEBUG:-false}"
 
 # Export flags for child scripts
 export QUIET
