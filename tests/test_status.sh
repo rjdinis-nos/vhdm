@@ -101,6 +101,7 @@ TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 FAILED_TESTS=()
+ALL_TEST_RESULTS=()  # Array to store all test results: "NUM|NAME|STATUS"
 
 # Track start time for duration calculation
 START_TIME=$(date +%s)
@@ -157,6 +158,7 @@ run_test() {
             echo -e "${GREEN}✓ PASSED${NC}"
         fi
         TESTS_PASSED=$((TESTS_PASSED + 1))
+        ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|PASSED")
     else
         if [[ "$VERBOSE" == "true" ]]; then
             echo -e "${RED}✗ FAILED${NC} (expected exit code: $expected_exit_code, got: $exit_code)"
@@ -165,6 +167,7 @@ run_test() {
         fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
         FAILED_TESTS+=("Test $TESTS_RUN: $test_name")
+        ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|FAILED")
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then
@@ -271,10 +274,16 @@ fi
 
 # Update test report
 if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
-    # Prepare failed tests list as a comma-separated string
+    # Prepare failed tests list as a pipe-separated string (for backward compatibility)
     FAILED_TESTS_STR=""
     if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
         FAILED_TESTS_STR=$(IFS='|'; echo "${FAILED_TESTS[*]}")
+    fi
+    
+    # Prepare all test results as a pipe-separated string: "NUM|NAME|STATUS|NUM|NAME|STATUS|..."
+    TEST_RESULTS_STR=""
+    if [[ ${#ALL_TEST_RESULTS[@]} -gt 0 ]]; then
+        TEST_RESULTS_STR=$(IFS='|'; echo "${ALL_TEST_RESULTS[*]}")
     fi
     
     bash "$SCRIPT_DIR/update_test_report.sh" \
@@ -284,7 +293,8 @@ if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
         --passed "$TESTS_PASSED" \
         --failed "$TESTS_FAILED" \
         --duration "$DURATION" \
-        --failed-tests "$FAILED_TESTS_STR" >/dev/null 2>&1
+        --failed-tests "$FAILED_TESTS_STR" \
+        --test-results "$TEST_RESULTS_STR" >/dev/null 2>&1
 fi
 
 # Summary

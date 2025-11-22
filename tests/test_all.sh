@@ -35,14 +35,15 @@ while [[ $# -gt 0 ]]; do
             echo "  -s, --stop-on-failure  Stop execution if any test suite fails"
             echo "  -h, --help             Show this help message"
             echo
-            echo "This script runs all test suites in sequence:"
-            echo "  - test_status.sh"
-            echo "  - test_attach.sh"
-            echo "  - test_mount.sh"
-            echo "  - test_umount.sh"
-            echo "  - test_create.sh"
-            echo "  - test_delete.sh"
-            echo "  - test_resize.sh"
+    echo "This script runs all test suites in sequence:"
+    echo "  - test_status.sh"
+    echo "  - test_attach.sh"
+    echo "  - test_detach.sh"
+    echo "  - test_mount.sh"
+    echo "  - test_umount.sh"
+    echo "  - test_create.sh"
+    echo "  - test_delete.sh"
+    echo "  - test_resize.sh"
             exit 0
             ;;
         *)
@@ -57,6 +58,7 @@ done
 TEST_SUITES=(
     "test_status.sh"
     "test_attach.sh"
+    "test_detach.sh"
     "test_mount.sh"
     "test_umount.sh"
     "test_create.sh"

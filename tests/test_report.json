@@ -1,0 +1,564 @@
+{
+  "suites": {
+    "test_status.sh": {
+      "last_run": "2025-11-22",
+      "status": "✓ PASSED",
+      "tests_run": 10,
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "14s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Test 1",
+          "status": "PASSED"
+        },
+        {
+          "number": 2,
+          "name": "Test 2",
+          "status": "PASSED"
+        },
+        {
+          "number": 3,
+          "name": "Test 3",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Test 4",
+          "status": "PASSED"
+        },
+        {
+          "number": 5,
+          "name": "Test 5",
+          "status": "PASSED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Test 8",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Test 9",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        }
+      ]
+    },
+    "test_mount.sh": {
+      "last_run": "2025-11-22",
+      "status": "✓ PASSED",
+      "tests_run": 10,
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "25s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Test 1",
+          "status": "PASSED"
+        },
+        {
+          "number": 2,
+          "name": "Test 2",
+          "status": "PASSED"
+        },
+        {
+          "number": 3,
+          "name": "Test 3",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Test 4",
+          "status": "PASSED"
+        },
+        {
+          "number": 5,
+          "name": "Test 5",
+          "status": "PASSED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Test 8",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Test 9",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        }
+      ]
+    },
+    "test_umount.sh": {
+      "last_run": "2025-11-22",
+      "status": "✓ PASSED",
+      "tests_run": 10,
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "48s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Test 1",
+          "status": "PASSED"
+        },
+        {
+          "number": 2,
+          "name": "Test 2",
+          "status": "PASSED"
+        },
+        {
+          "number": 3,
+          "name": "Test 3",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Test 4",
+          "status": "PASSED"
+        },
+        {
+          "number": 5,
+          "name": "Test 5",
+          "status": "PASSED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Test 8",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Test 9",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        }
+      ]
+    },
+    "test_create.sh": {
+      "last_run": "2025-11-22",
+      "status": "✓ PASSED",
+      "tests_run": 10,
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "14s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Test 1",
+          "status": "PASSED"
+        },
+        {
+          "number": 2,
+          "name": "Test 2",
+          "status": "PASSED"
+        },
+        {
+          "number": 3,
+          "name": "Test 3",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Test 4",
+          "status": "PASSED"
+        },
+        {
+          "number": 5,
+          "name": "Test 5",
+          "status": "PASSED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Test 8",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Test 9",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        }
+      ]
+    },
+    "test_delete.sh": {
+      "last_run": "2025-11-22",
+      "status": "✗ FAILED",
+      "tests_run": 10,
+      "tests_passed": 3,
+      "tests_failed": 7,
+      "duration": "24s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Attempt to delete attached VHD (should fail)",
+          "status": "FAILED"
+        },
+        {
+          "number": 2,
+          "name": "Delete detached VHD by path",
+          "status": "FAILED"
+        },
+        {
+          "number": 3,
+          "name": "Verify VHD file is removed after delete",
+          "status": "FAILED"
+        },
+        {
+          "number": 4,
+          "name": "Delete detached VHD with --force flag",
+          "status": "FAILED"
+        },
+        {
+          "number": 5,
+          "name": "Delete in quiet mode",
+          "status": "FAILED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Create, detach, and delete a VHD",
+          "status": "FAILED"
+        },
+        {
+          "number": 9,
+          "name": "Verify temp VHD is removed",
+          "status": "FAILED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        }
+      ]
+    },
+    "test_attach.sh": {
+      "last_run": "2025-11-22",
+      "status": "✓ PASSED",
+      "tests_run": 15,
+      "tests_passed": 15,
+      "tests_failed": 0,
+      "duration": "23s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Test 1",
+          "status": "PASSED"
+        },
+        {
+          "number": 2,
+          "name": "Test 2",
+          "status": "PASSED"
+        },
+        {
+          "number": 3,
+          "name": "Test 3",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Test 4",
+          "status": "PASSED"
+        },
+        {
+          "number": 5,
+          "name": "Test 5",
+          "status": "PASSED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Test 8",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Test 9",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        },
+        {
+          "number": 11,
+          "name": "Test 11",
+          "status": "PASSED"
+        },
+        {
+          "number": 12,
+          "name": "Test 12",
+          "status": "PASSED"
+        },
+        {
+          "number": 13,
+          "name": "Test 13",
+          "status": "PASSED"
+        },
+        {
+          "number": 14,
+          "name": "Test 14",
+          "status": "PASSED"
+        },
+        {
+          "number": 15,
+          "name": "Test 15",
+          "status": "PASSED"
+        }
+      ]
+    },
+    "test_detach.sh": {
+      "last_run": "2025-11-22",
+      "status": "✓ PASSED",
+      "tests_run": 10,
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "33s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Test 1",
+          "status": "PASSED"
+        },
+        {
+          "number": 2,
+          "name": "Test 2",
+          "status": "PASSED"
+        },
+        {
+          "number": 3,
+          "name": "Test 3",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Test 4",
+          "status": "PASSED"
+        },
+        {
+          "number": 5,
+          "name": "Test 5",
+          "status": "PASSED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Test 8",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Test 9",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        }
+      ]
+    },
+    "test_resize.sh": {
+      "last_run": "2025-11-22",
+      "status": "✓ PASSED",
+      "tests_run": 21,
+      "tests_passed": 21,
+      "tests_failed": 0,
+      "duration": "23s",
+      "test_results": [
+        {
+          "number": 1,
+          "name": "Test 1",
+          "status": "PASSED"
+        },
+        {
+          "number": 2,
+          "name": "Test 2",
+          "status": "PASSED"
+        },
+        {
+          "number": 3,
+          "name": "Test 3",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Test 4",
+          "status": "PASSED"
+        },
+        {
+          "number": 5,
+          "name": "Test 5",
+          "status": "PASSED"
+        },
+        {
+          "number": 6,
+          "name": "Test 6",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Test 7",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Test 8",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Test 9",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Test 10",
+          "status": "PASSED"
+        },
+        {
+          "number": 11,
+          "name": "Test 11",
+          "status": "PASSED"
+        },
+        {
+          "number": 12,
+          "name": "Test 12",
+          "status": "PASSED"
+        },
+        {
+          "number": 13,
+          "name": "Test 13",
+          "status": "PASSED"
+        },
+        {
+          "number": 14,
+          "name": "Test 14",
+          "status": "PASSED"
+        },
+        {
+          "number": 15,
+          "name": "Test 15",
+          "status": "PASSED"
+        },
+        {
+          "number": 16,
+          "name": "Test 16",
+          "status": "PASSED"
+        },
+        {
+          "number": 17,
+          "name": "Test 17",
+          "status": "PASSED"
+        },
+        {
+          "number": 18,
+          "name": "Test 18",
+          "status": "PASSED"
+        },
+        {
+          "number": 19,
+          "name": "Test 19",
+          "status": "PASSED"
+        },
+        {
+          "number": 20,
+          "name": "Test 20",
+          "status": "PASSED"
+        },
+        {
+          "number": 21,
+          "name": "Test 21",
+          "status": "PASSED"
+        }
+      ]
+    }
+  }
+}
