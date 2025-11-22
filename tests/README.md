@@ -65,13 +65,13 @@ Tests for the attach command, validating VHD attachment to WSL without filesyste
 - Status verification after attach
 - VHD not mounted after attach (block device only)
 - Quiet mode machine-readable output
-- Debug mode command visibility
+- Debug mode command visibility (structured logging)
 - Error handling for non-existent paths
 - Error handling for missing required parameters
 - Detach and re-attach workflows
 - UUID automatic detection and reporting
 - Device name identification (/dev/sdX)
-- Completion message display
+- Completion message display (structured logging)
 - Combined quiet + debug mode
 - Windows path with backslashes
 

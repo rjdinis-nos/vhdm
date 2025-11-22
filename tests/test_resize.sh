@@ -181,14 +181,55 @@ create_test_vhd_with_data() {
     local size="$3"
     local data_size_mb="${4:-10}"  # Default 10MB of data
     
-    # Create VHD
-    bash $PARENT_DIR/disk_management.sh -q create --path "$vhd_path" --size "$size" --name "$(basename ${vhd_path%.vhdx})" >/dev/null 2>&1
+    # Clean up any existing VHD first
+    local vhd_path_wsl=$(echo "$vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    if [[ -f "$vhd_path_wsl" ]]; then
+        # Try to detach first
+        bash $PARENT_DIR/disk_management.sh -q umount --path "$vhd_path" >/dev/null 2>&1 || \
+            wsl.exe --unmount "$vhd_path" >/dev/null 2>&1 || true
+        rm -f "$vhd_path_wsl" >/dev/null 2>&1 || true
+    fi
+    
+    # Create VHD with --force to overwrite any existing VHD
+    if ! bash $PARENT_DIR/disk_management.sh -q create --path "$vhd_path" --size "$size" --force >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    # Attach the VHD (create doesn't auto-attach)
+    local vhd_name=$(basename ${vhd_path%.vhdx})
+    if ! bash $PARENT_DIR/disk_management.sh -q attach --path "$vhd_path" --name "$vhd_name" >/dev/null 2>&1; then
+        return 1
+    fi
+    
+    # Wait for device to be recognized
+    sleep 3
+    
+    # Get the UUID from status (more reliable than device name)
+    # Try multiple times as UUID might not be immediately available
+    local vhd_uuid=""
+    for i in {1..5}; do
+        vhd_uuid=$(bash $PARENT_DIR/disk_management.sh -q status --path "$vhd_path" 2>&1 | grep -oP '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+        if [[ -n "$vhd_uuid" ]]; then
+            break
+        fi
+        sleep 1
+    done
+    
+    if [[ -z "$vhd_uuid" ]]; then
+        return 1
+    fi
+    
+    # Format the VHD using UUID (format command accepts UUID)
+    bash $PARENT_DIR/disk_management.sh -q format --uuid "$vhd_uuid" --type ext4 >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
         return 1
     fi
     
+    # Wait for format to complete and UUID to update
+    sleep 2
+    
     # Mount it
-    bash $PARENT_DIR/disk_management.sh -q mount --path "$vhd_path" --mount-point "$mount_point" --name "$(basename ${vhd_path%.vhdx})" >/dev/null 2>&1
+    bash $PARENT_DIR/disk_management.sh -q mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
         return 1
     fi

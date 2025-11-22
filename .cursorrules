@@ -1,0 +1,234 @@
+# WSL VHD Disk Management - Cursor Rules
+
+## Project Overview
+
+Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Multi-script architecture:
+- `disk_management.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
+- `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
+- `libs/wsl_helpers.sh` - Shared WSL-specific function library
+- `libs/utils.sh` - Shared utility functions for size calculations and conversions
+
+Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
+
+**📖 For comprehensive architecture details, see `.github/copilot-code-architecture.md`**
+
+## CRITICAL RULE: No Heuristic Disk Discovery
+
+**NEVER use non-deterministic heuristics to identify which VHD/disk to operate on.**
+
+WSL does not provide a direct path→UUID mapping after attachment. These approaches FAIL with multiple VHDs:
+- ❌ "Find the first non-system disk (sd[d-z])" - arbitrary selection
+- ❌ "Assume the most recent disk is the target" - breaks with multiple disks
+- ❌ "Pick any disk that matches a pattern" - random selection
+
+**SAFE UUID Discovery Methods (in priority order):**
+1. ✅ **Persistent tracking file by path**: `lookup_vhd_uuid()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
+2. ✅ **Persistent tracking file by name**: `lookup_vhd_uuid_by_name()` queries by WSL mount name
+3. ✅ **UUID from mount point**: `findmnt` or `lsblk` lookup of mounted filesystem
+4. ✅ **Snapshot-based detection during attach/create**: Compare before/after disk lists immediately after WSL attach operation
+5. ✅ **Explicit user-provided UUID**: User specifies `--uuid` parameter
+
+**When UUID is unknown:**
+1. Count attached dynamic VHDs using `wsl_count_dynamic_vhds()`
+2. If count > 1: Require explicit `--uuid` or fail with clear error
+3. If count == 1: ONLY THEN use `wsl_find_dynamic_vhd_uuid()` safely
+4. If count == 0: Report "no VHDs attached"
+
+## Architecture Layers
+
+**Three-layer architecture:**
+1. **User Commands Layer** (`disk_management.sh`): CLI commands that orchestrate operations
+2. **WSL Helpers Layer** (`libs/wsl_helpers.sh`): WSL-specific operations with comprehensive error handling
+3. **Primitives Layer** (`libs/wsl_helpers.sh` & `libs/utils.sh`): Generic Linux operations, minimal error handling
+
+**Design Principles:**
+- Layered Architecture: Each layer can only call functions from its own layer or layers below
+- Single Responsibility: Primitives do one thing only
+- Orchestration at Command Level: User commands may combine multiple operations
+- State-Check-Then-Operate: Always verify current state before attempting operations
+- Deterministic UUID Resolution: Never use heuristics or guessing
+
+## Function Naming Conventions
+
+**Primitives** (generic operations): Simple names without prefixes
+- Examples: `mount_filesystem()`, `umount_filesystem()`, `create_mount_point()`, `convert_size_to_bytes()`
+- Generic Linux operations, no WSL-specific logic
+- Return 0 on success, 1 on failure
+- Minimal error handling
+
+**WSL Helpers** (comprehensive operations): Use `wsl_` prefix
+- Examples: `wsl_mount_vhd()`, `wsl_umount_vhd()`, `wsl_attach_vhd()`, `wsl_detach_vhd()`
+- WSL-specific operations with comprehensive error handling and diagnostics
+- May call primitive functions internally
+- Return 0 on success, 1 on failure
+
+**Command Functions** (user-facing): Simple verb names
+- Examples: `attach_vhd()`, `mount_vhd()`, `detach_vhd()`, `umount_vhd()`
+- May orchestrate multiple operations (e.g., `mount_vhd()` = attach + mount)
+- Exit on errors (exit 1)
+- Comprehensive user-facing error messages
+
+## Key Patterns
+
+### Persistent Disk Tracking
+- Location: `~/.config/wsl-disk-management/vhd_mapping.json`
+- Tracks VHD path→UUID→mount_points associations
+- Windows paths normalized to lowercase with forward slashes for case-insensitive matching
+- Tracking file checked FIRST before falling back to device discovery
+- Operations that save/update tracking: `attach_vhd()`, `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `wsl_create_vhd()`
+
+### Snapshot-Based Device Detection
+When attaching VHDs, capture before/after snapshots:
+```bash
+local old_uuids=($(wsl_get_disk_uuids))
+local old_devs=($(wsl_get_block_devices))
+# ... attach operation ...
+local new_uuids=($(wsl_get_disk_uuids))
+# Compare to find the new UUID
+```
+Include `sleep 2` after attach/create operations for kernel device recognition.
+
+### Path Format Handling
+- **User input**: Windows format with forward slashes: `C:/VMs/disk.vhdx`
+- **WSL.exe calls**: Use original Windows format
+- **Internal WSL operations**: Convert to `/mnt/c/VMs/disk.vhdx` using: `sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g'`
+- **Mount operations**: Standard Linux paths `/mnt/...` or `/home/...`
+
+### Dual Output Modes
+Functions must support both verbose and quiet modes:
+```bash
+[[ "$QUIET" == "false" ]] && echo "User-friendly message"
+[[ "$QUIET" == "true" ]] && echo "machine-readable: status"
+```
+Quiet mode outputs parseable status strings like `path (uuid): attached,mounted`.
+Flags must be exported: `export QUIET` and `export DEBUG`
+
+### Debug Mode
+All system commands must use `debug_cmd()` wrapper or manual debug output:
+```bash
+debug_cmd sudo mount UUID="$uuid" "$mount_point"
+
+# Or for pipelines:
+if [[ "$DEBUG" == "true" ]]; then
+    echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq ..." >&2
+fi
+```
+Debug messages go to stderr. Works with quiet mode (`-q -d` shows commands but minimal user output).
+
+### State-Check-Then-Operate Pattern
+Always check state before operations for idempotent behavior:
+```bash
+if ! wsl_is_vhd_attached "$uuid"; then
+    wsl_attach_vhd "$path" "$name"
+fi
+if ! wsl_is_vhd_mounted "$uuid"; then
+    wsl_mount_vhd "$uuid" "$mount_point"
+fi
+```
+
+## Command Behaviors
+
+**Attach** - Single operation: Only attaches VHD to WSL as block device. Does NOT mount to filesystem.
+- Uses snapshot-based UUID detection
+- Idempotent (detects already-attached VHDs)
+
+**Mount** - Orchestration: Attach + mount workflow for user convenience
+- Attaches VHD if not already attached
+- Verifies VHD is formatted (errors if not)
+- Creates mount point if needed
+- Does NOT auto-format (directs user to format command)
+
+**Format** - Single operation: Only formats device with filesystem
+- Requires explicit `--uuid` or `--name` (no path discovery)
+- Warns if already formatted (generates new UUID)
+
+**Unmount** - Orchestration: Unmount + optional detach
+- Unmounts from filesystem
+- Detaches from WSL if `--path` provided
+- Shows `lsof` diagnostics on failure
+
+**Detach** - Orchestration: Unmount if needed + detach
+- Checks if mounted, unmounts first if necessary
+- Requires `--path` for WSL detach operation
+
+**Create** - Single operation: Only creates VHD file
+- Does NOT auto-attach or format (separation of concerns)
+- Does NOT accept `--name` parameter (only `--path`, `--size`, `--force`)
+
+**Delete** - Single operation: Only deletes VHD file
+- Requires VHD to be detached first (safety check)
+
+**Resize** - Complex orchestration: 10+ step workflow
+- Creates new VHD, migrates data, preserves original as backup
+- Verifies integrity via file count comparison
+- Auto-calculates minimum size (data + 30%)
+
+## UUID vs Device Names
+
+VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
+- Device names can change between boots
+- UUIDs persist across mount/unmount cycles
+- UUIDs change only when formatting, not when attaching/detaching
+
+## Key Implementation Details
+
+### WSL Integration Commands
+- Attach: `wsl.exe --mount --vhd "$path" --bare --name "$name"`
+- Detach: `wsl.exe --unmount "$path"`
+- Query: `lsblk -f -J | jq` for JSON-parsed block device info
+- UUID retrieval: `sudo blkid -s UUID -o value`
+
+### Error Handling Strategy
+- **Primitives**: Return 0 on success, 1 on failure. Minimal error messages.
+- **WSL Helpers**: Return 0 on success, 1 on failure. Comprehensive error messages with context and diagnostics.
+- **Commands**: Exit on errors (exit 1). User-friendly error messages with suggestions.
+
+### Dependencies
+- `qemu-img` - VHD creation and resize
+- `jq` - JSON parsing of lsblk output
+- `wsl.exe` - Built-in on WSL2
+- `rsync` - Data migration during resize operations
+- `bc` - Optional: Enhanced arithmetic (degrades gracefully)
+
+## Critical Gotchas
+
+1. **Snapshot timing**: Take snapshots immediately before/after attach operations, not earlier
+2. **Windows path format**: `wsl.exe` commands require Windows paths; filesystem checks require WSL paths
+3. **Quiet mode completeness**: Every user-facing echo must have a quiet mode alternative
+4. **Debug mode implementation**: All command executions must use `debug_cmd` wrapper or manual debug output
+5. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
+6. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
+7. **Mount does not format**: Mount command will error if VHD is unformatted, directing user to use format command first
+8. **Flag exports**: QUIET and DEBUG flags must be exported at script initialization for child script access
+
+## Testing
+
+- Tests source `tests/.env.test` for test environment configuration
+- Each test suite creates unique VHDs: `test_[suite]_disk.vhdx`
+- UUIDs are discovered dynamically at test runtime
+- Test pattern: `run_test "Description" "command" expected_exit_code`
+- All disk_management.sh calls in tests must suppress non-test output using `2>&1` or `>/dev/null 2>&1`
+
+## Adding New Code
+
+### Adding New Commands
+1. Add function in `disk_management.sh` following pattern: `command_verb()`
+2. Parse arguments with `while [[ $# -gt 0 ]]` loop
+3. Support `QUIET` mode with conditional echo statements
+4. Add to main case statement at bottom
+5. Update `show_usage()` help text
+
+### Adding Helper Functions
+1. Add clear doc comment describing purpose, parameters, return values
+2. Follow naming convention for appropriate layer (Primitive/WSL Helper/Command)
+3. Respect `DEBUG` and `QUIET` flags
+4. Primitives: Minimal error handling, single operation
+5. WSL Helpers: Comprehensive error handling, may call primitives
+6. Commands: May orchestrate multiple operations, user-friendly output
+
+## References
+
+- Detailed architecture: `.github/copilot-code-architecture.md`
+- Comprehensive instructions: `.github/copilot-instructions.md`
+- Test documentation: `tests/README.md`
+

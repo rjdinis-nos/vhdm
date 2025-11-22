@@ -3,9 +3,9 @@
 # Get the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Source helper functions
-source "$SCRIPT_DIR/libs/wsl_helpers.sh"
+# Source helper functions (utils.sh first for validation functions)
 source "$SCRIPT_DIR/libs/utils.sh"
+source "$SCRIPT_DIR/libs/wsl_helpers.sh"
 
 # Quiet mode flag
 QUIET=false
@@ -162,12 +162,22 @@ show_status() {
                     echo -e "${RED}Error: --path requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
+                    return 1
+                fi
                 status_path="$2"
                 shift 2
                 ;;
             --uuid)
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --uuid requires a value${NC}" >&2
+                    return 1
+                fi
+                if ! validate_uuid "$2"; then
+                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
+                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
                     return 1
                 fi
                 status_uuid="$2"
@@ -178,12 +188,22 @@ show_status() {
                     echo -e "${RED}Error: --name requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_vhd_name "$2"; then
+                    echo -e "${RED}Error: Invalid VHD name format: $2${NC}" >&2
+                    echo "VHD name must contain only alphanumeric characters, hyphens, and underscores" >&2
+                    return 1
+                fi
                 status_name="$2"
                 shift 2
                 ;;
             --mount-point)
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
+                    return 1
+                fi
+                if ! validate_mount_point "$2"; then
+                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
+                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
                     return 1
                 fi
                 status_mount_point="$2"
@@ -407,6 +427,11 @@ mount_vhd() {
                     echo -e "${RED}Error: --path requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
+                    exit 1
+                fi
                 mount_path="$2"
                 shift 2
                 ;;
@@ -415,6 +440,11 @@ mount_vhd() {
                     echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_mount_point "$2"; then
+                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
+                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
+                    exit 1
+                fi
                 mount_point="$2"
                 shift 2
                 ;;
@@ -422,6 +452,11 @@ mount_vhd() {
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --name requires a value${NC}" >&2
                     return 1
+                fi
+                if ! validate_vhd_name "$2"; then
+                    echo -e "${RED}Error: Invalid VHD name format: $2${NC}" >&2
+                    echo "VHD name must contain only alphanumeric characters, hyphens, and underscores" >&2
+                    exit 1
                 fi
                 mount_name="$2"
                 shift 2
@@ -616,6 +651,11 @@ umount_vhd() {
                     echo -e "${RED}Error: --path requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
+                    return 1
+                fi
                 umount_path="$2"
                 shift 2
                 ;;
@@ -624,12 +664,22 @@ umount_vhd() {
                     echo -e "${RED}Error: --uuid requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_uuid "$2"; then
+                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
+                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
+                    return 1
+                fi
                 umount_uuid="$2"
                 shift 2
                 ;;
             --mount-point)
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
+                    return 1
+                fi
+                if ! validate_mount_point "$2"; then
+                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
+                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
                     return 1
                 fi
                 umount_point="$2"
@@ -778,6 +828,11 @@ detach_vhd() {
                     echo -e "${RED}Error: --uuid requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_uuid "$2"; then
+                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
+                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
+                    exit 1
+                fi
                 detach_uuid="$2"
                 shift 2
                 ;;
@@ -785,6 +840,11 @@ detach_vhd() {
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --path requires a value${NC}" >&2
                     return 1
+                fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
+                    exit 1
                 fi
                 detach_path="$2"
                 shift 2
@@ -912,6 +972,11 @@ delete_vhd() {
                     echo -e "${RED}Error: --path requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
+                    exit 1
+                fi
                 delete_path="$2"
                 shift 2
                 ;;
@@ -919,6 +984,11 @@ delete_vhd() {
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --uuid requires a value${NC}" >&2
                     return 1
+                fi
+                if ! validate_uuid "$2"; then
+                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
+                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
+                    exit 1
                 fi
                 delete_uuid="$2"
                 shift 2
@@ -975,14 +1045,42 @@ delete_vhd() {
     
     # Check if VHD is currently attached
     if [[ -n "$delete_uuid" ]] && wsl_is_vhd_attached "$delete_uuid"; then
-        echo -e "${RED}[✗] VHD is currently attached to WSL${NC}"
-        echo
-        echo "The VHD must be unmounted and detached before deletion."
-        echo "To unmount and detach, run:"
-        echo "  $0 umount --path $delete_path"
-        echo
-        echo "Then try the delete command again."
-        exit 1
+        # Try to automatically detach before failing
+        [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is currently attached to WSL${NC}"
+        [[ "$QUIET" == "false" ]] && echo "Attempting to detach automatically..."
+        
+        # Try umount first (handles both unmount and detach)
+        if [[ -n "$delete_path" ]]; then
+            if bash "$0" -q umount --path "$delete_path" >/dev/null 2>&1; then
+                [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
+                # Wait a moment for detachment to complete
+                sleep 1
+            else
+                # Umount failed, try direct wsl.exe --unmount as fallback
+                if wsl.exe --unmount "$delete_path" >/dev/null 2>&1; then
+                    [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
+                    sleep 1
+                else
+                    echo -e "${RED}[✗] VHD is currently attached to WSL and could not be detached${NC}"
+                    echo
+                    echo "The VHD must be unmounted and detached before deletion."
+                    echo "To unmount and detach, run:"
+                    echo "  $0 umount --path $delete_path"
+                    echo
+                    echo "Then try the delete command again."
+                    exit 1
+                fi
+            fi
+        else
+            echo -e "${RED}[✗] VHD is currently attached to WSL${NC}"
+            echo
+            echo "The VHD must be unmounted and detached before deletion."
+            echo "To unmount and detach, run:"
+            echo "  $0 umount --uuid $delete_uuid"
+            echo
+            echo "Then try the delete command again."
+            exit 1
+        fi
     fi
     
     [[ "$QUIET" == "false" ]] && echo "VHD file: $delete_path"
@@ -1037,6 +1135,11 @@ create_vhd() {
                     echo -e "${RED}Error: --path requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
+                    exit 1
+                fi
                 create_path="$2"
                 shift 2
                 ;;
@@ -1044,6 +1147,11 @@ create_vhd() {
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --size requires a value${NC}" >&2
                     return 1
+                fi
+                if ! validate_size_string "$2"; then
+                    echo -e "${RED}Error: Invalid size format: $2${NC}" >&2
+                    echo "Size must be in format: number[K|M|G|T] (e.g., 5G, 500M)" >&2
+                    exit 1
                 fi
                 create_size="$2"
                 shift 2
@@ -1241,6 +1349,11 @@ resize_vhd() {
                     echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
                     return 1
                 fi
+                if ! validate_mount_point "$2"; then
+                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
+                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
+                    exit 1
+                fi
                 target_mount_point="$2"
                 shift 2
                 ;;
@@ -1248,6 +1361,11 @@ resize_vhd() {
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --size requires a value${NC}" >&2
                     return 1
+                fi
+                if ! validate_size_string "$2"; then
+                    echo -e "${RED}Error: Invalid size format: $2${NC}" >&2
+                    echo "Size must be in format: number[K|M|G|T] (e.g., 5G, 500M)" >&2
+                    exit 1
                 fi
                 new_size="$2"
                 shift 2
@@ -1627,6 +1745,11 @@ format_vhd_command() {
                     echo "Error: --name requires a value" >&2
                     return 1
                 fi
+                if ! validate_device_name "$2"; then
+                    echo -e "${RED}Error: Invalid device name format: $2${NC}" >&2
+                    echo "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde)" >&2
+                    exit 1
+                fi
                 format_name="$2"
                 shift 2
                 ;;
@@ -1635,6 +1758,11 @@ format_vhd_command() {
                     echo "Error: --uuid requires a value" >&2
                     return 1
                 fi
+                if ! validate_uuid "$2"; then
+                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
+                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
+                    exit 1
+                fi
                 format_uuid="$2"
                 shift 2
                 ;;
@@ -1642,6 +1770,11 @@ format_vhd_command() {
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo "Error: --type requires a value" >&2
                     return 1
+                fi
+                if ! validate_filesystem_type "$2"; then
+                    echo -e "${RED}Error: Invalid filesystem type: $2${NC}" >&2
+                    echo "Supported types: ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat" >&2
+                    exit 1
                 fi
                 format_type="$2"
                 shift 2
@@ -1799,6 +1932,11 @@ attach_vhd() {
                     echo "Error: --path requires a value" >&2
                     return 1
                 fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
+                    exit 1
+                fi
                 attach_path="$2"
                 shift 2
                 ;;
@@ -1806,6 +1944,11 @@ attach_vhd() {
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo "Error: --name requires a value" >&2
                     return 1
+                fi
+                if ! validate_vhd_name "$2"; then
+                    echo -e "${RED}Error: Invalid VHD name format: $2${NC}" >&2
+                    echo "VHD name must contain only alphanumeric characters, hyphens, and underscores" >&2
+                    exit 1
                 fi
                 attach_name="$2"
                 shift 2
@@ -1964,6 +2107,11 @@ history_vhd() {
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
                     echo -e "${RED}Error: --path requires a value${NC}" >&2
+                    return 1
+                fi
+                if ! validate_windows_path "$2"; then
+                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
+                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
                     return 1
                 fi
                 show_path="$2"

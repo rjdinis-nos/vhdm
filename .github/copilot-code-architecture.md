@@ -35,6 +35,10 @@ The system is organized into three architectural layers:
 │  - convert_size_to_bytes(), bytes_to_human()               │
 │  - get_directory_size_bytes()                              │
 │  - wsl_get_block_devices(), wsl_get_disk_uuids()          │
+│  - validate_windows_path(), validate_uuid()               │
+│  - validate_mount_point(), validate_device_name()         │
+│  - validate_vhd_name(), validate_size_string()           │
+│  - validate_filesystem_type(), sanitize_string()          │
 └─────────────────────────────────────────────────────────────┘
                             │
                             ↓
@@ -181,7 +185,20 @@ All tests involving UUID discovery must:
 | `convert_size_to_bytes()` | `$1: size_string` (e.g., "1G", "500M") | Convert size string to bytes | utils.sh | Size calculation |
 | `bytes_to_human()` | `$1: bytes` | Convert bytes to human readable | utils.sh | Size formatting |
 | `get_directory_size_bytes()` | `$1: directory_path` | Calculate directory size | utils.sh | Size query |
-| `debug_cmd()` | `$@: command and args` | Wrapper to print commands in debug mode | wsl_helpers.sh | Debug support |
+| `validate_windows_path()` | `$1: path` | Validate Windows path format, reject dangerous patterns | utils.sh | Input validation (security) |
+| `validate_uuid()` | `$1: uuid` | Validate UUID format (RFC 4122) | utils.sh | Input validation (security) |
+| `validate_mount_point()` | `$1: mount_point` | Validate mount point path | utils.sh | Input validation (security) |
+| `validate_device_name()` | `$1: device` | Validate device name pattern | utils.sh | Input validation (security) |
+| `validate_vhd_name()` | `$1: name` | Validate VHD/WSL mount name | utils.sh | Input validation (security) |
+| `validate_size_string()` | `$1: size` | Validate size string format | utils.sh | Input validation (security) |
+| `validate_filesystem_type()` | `$1: fs_type` | Whitelist validation for filesystem types | utils.sh | Input validation (security) |
+| `sanitize_string()` | `$1: input` | Remove control characters (defense in depth) | utils.sh | Input sanitization (security) |
+| `log_debug()` | `$@: message` | Log debug message (only when DEBUG=true) | utils.sh | Structured logging |
+| `log_info()` | `$@: message` | Log info message (unless QUIET=true) | utils.sh | Structured logging |
+| `log_warn()` | `$@: message` | Log warning message (unless QUIET=true) | utils.sh | Structured logging |
+| `log_error()` | `$@: message` | Log error message (always shown) | utils.sh | Structured logging |
+| `log_success()` | `$@: message` | Log success message (unless QUIET=true) | utils.sh | Structured logging |
+| `debug_cmd()` | `$@: command and args` | Wrapper to log and execute commands in debug mode | wsl_helpers.sh | Debug support (uses log_debug) |
 
 ## Function Flow Diagrams
 
@@ -504,32 +521,115 @@ local vhd_path_wsl=$(echo "$path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\
 
 **Note**: Persistent tracking uses normalized paths (lowercase, forward slashes) for case-insensitive matching.
 
-### 5. Dual Output Mode Pattern
+### 5. Structured Logging Pattern
 
-Used in: All user commands
+Used in: All functions throughout the codebase
 
 ```bash
-[[ "$QUIET" == "false" ]] && echo "User-friendly message"
+# Use logging functions instead of echo statements
+log_info "User-friendly message"
+log_debug "Detailed diagnostic information"
+log_error "Error message (always shown)"
+log_warn "Warning message"
+log_success "Success message"
+
+# Logging functions automatically:
+# - Add timestamps: [YYYY-MM-DD HH:MM:SS] [LEVEL] message
+# - Respect QUIET flag (info/warn/success suppressed, errors always shown)
+# - Respect DEBUG flag (debug messages only when DEBUG=true)
+# - Use appropriate colors (blue=debug, yellow=warn, red=error, green=success)
+# - Write to optional log file if LOG_FILE environment variable is set
+```
+
+**Purpose**: Consistent, timestamped logging with proper log levels and flag handling.
+
+**Logging Functions** (in `libs/utils.sh`):
+- `log_debug()` - Debug messages (only when `DEBUG=true`)
+- `log_info()` - Informational messages (unless `QUIET=true`)
+- `log_warn()` - Warning messages (unless `QUIET=true`)
+- `log_error()` - Error messages (always shown, even in quiet mode)
+- `log_success()` - Success messages (unless `QUIET=true`)
+
+**Log File Support:**
+Set `LOG_FILE` environment variable to write logs to file:
+```bash
+export LOG_FILE="/var/log/wsl-disk-management.log"
+# All messages (except debug when DEBUG=false) written to file
+```
+
+### 6. Dual Output Mode Pattern
+
+Used in: All user commands (for machine-readable output in quiet mode)
+
+```bash
+[[ "$QUIET" == "false" ]] && log_info "User-friendly message"
 [[ "$QUIET" == "true" ]] && echo "machine-readable: status"
 ```
 
-**Purpose**: Support both human-readable and script-parseable output.
+**Purpose**: Support both human-readable (via logging) and script-parseable output (quiet mode).
 
-### 6. Debug Command Wrapper Pattern
+### 7. Debug Command Wrapper Pattern
 
 Used in: All system command invocations
 
 ```bash
+# Debug command wrapper (uses log_debug internally)
 debug_cmd sudo mount UUID="$uuid" "$mount_point"
 
-# Or for pipelines:
-if [[ "$DEBUG" == "true" ]]; then
-    echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq ..." >&2
-fi
+# For pipelines, use log_debug directly:
+log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
 lsblk -f -J | jq ...
 ```
 
-**Purpose**: Show all commands before execution when debugging.
+**Purpose**: Show all commands before execution when debugging. The `debug_cmd()` wrapper automatically calls `log_debug()` with the command string, providing consistent timestamped output.
+
+### 8. Input Validation Pattern
+
+Used in: All functions that receive user input
+
+```bash
+# Validate inputs before use
+if ! validate_windows_path "$vhd_path"; then
+    log_error "Invalid Windows path format: $vhd_path"
+    log_info "Path must start with drive letter (e.g., C:/VMs/disk.vhdx)"
+    return 1
+fi
+
+if ! validate_uuid "$uuid"; then
+    log_error "Invalid UUID format: $uuid"
+    log_info "UUID must match RFC 4122 format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    return 1
+fi
+
+if ! validate_mount_point "$mount_point"; then
+    log_error "Invalid mount point: $mount_point"
+    log_info "Mount point must be an absolute path starting with /"
+    return 1
+fi
+```
+
+**Purpose**: Prevent command injection and path traversal vulnerabilities. All user inputs are validated using whitelist patterns before use in commands.
+
+**Validation Functions** (in `libs/utils.sh`):
+- `validate_windows_path()` - Windows path format, rejects command injection chars, `..`, control chars
+- `validate_uuid()` - RFC 4122 format, exactly 36 hexadecimal characters
+- `validate_mount_point()` - Absolute paths starting with `/`, rejects dangerous patterns
+- `validate_device_name()` - Pattern `sd[a-z]+`, max 10 characters
+- `validate_vhd_name()` - Alphanumeric with `_` and `-`, max 64 characters
+- `validate_size_string()` - Pattern `number[K|M|G|T][B]?`, max 20 characters
+- `validate_filesystem_type()` - Whitelist: ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat
+- `sanitize_string()` - Removes control characters (defense in depth)
+
+**Validation Points:**
+- Command argument parsing in `disk_management.sh` (all commands)
+- Input parameters in `mount_disk.sh`
+- Helper functions in `libs/wsl_helpers.sh` that receive user input
+
+**Defense in Depth:**
+1. Validation at command argument parsing
+2. Validation in helper functions
+3. Validation before command execution
+4. Safe command execution (jq uses `--arg` for safe parameter passing)
 
 ## State Machine: VHD Lifecycle
 
@@ -597,15 +697,17 @@ lsblk -f -J | jq ...
 
 ### WSL Helper Functions
 - Return 0 on success, 1 on failure
-- Comprehensive error messages with context
-- Diagnostic output (e.g., lsof for unmount failures)
-- Suggestions for resolution
+- Comprehensive error messages with context using `log_error()`
+- Diagnostic output (e.g., lsof for unmount failures) using `log_info()`
+- Suggestions for resolution using `log_info()` or `log_warn()`
+- Use structured logging functions instead of echo statements
 
 ### Command Functions
 - Exit on errors (exit 1)
-- User-friendly error messages
-- Detailed suggestions for fixes
+- User-friendly error messages using `log_error()`
+- Detailed suggestions for fixes using `log_info()`
 - State validation before operations
+- Use structured logging functions for all output
 
 ### Example: Unmount Error Handling
 
@@ -624,10 +726,10 @@ wsl_umount_vhd() {
     if umount_filesystem "$mount_point"; then
         return 0
     else
-        echo -e "${RED}[✗] Failed to unmount VHD${NC}" >&2
-        echo "Tip: Make sure no processes are using the mount point" >&2
-        echo "Checking for processes using the mount point:" >&2
-        sudo lsof +D "$mount_point" 2>/dev/null
+        log_error "Failed to unmount VHD"
+        log_info "Tip: Make sure no processes are using the mount point"
+        log_info "Checking for processes using the mount point:"
+        sudo lsof +D "$mount_point" 2>/dev/null || log_info "  No processes found (or lsof not available)"
         return 1
     fi
 }

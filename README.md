@@ -74,14 +74,8 @@ Simply use path-based or name-based commands as normal - tracking works automati
 
 ### Setup
 ```bash
-# Clone or copy the scripts to your desired location
-cd /home/$USER/base_config/scripts
-
-# Make scripts executable
+# Clone and make scripts executable
 chmod +x disk_management.sh libs/wsl_helpers.sh
-
-# Source the helper functions in your scripts (if needed)
-source /home/$USER/base_config/scripts/libs/wsl_helpers.sh
 ```
 
 ---
@@ -429,6 +423,27 @@ The library files in `libs/` provide reusable functions that can be sourced in o
 
 ### `libs/utils.sh` - Utility Functions
 
+#### Input Validation Functions
+- `validate_windows_path(path)` - Validates Windows path format and rejects dangerous patterns
+- `validate_uuid(uuid)` - Validates UUID format (RFC 4122)
+- `validate_mount_point(mount_point)` - Validates mount point paths
+- `validate_device_name(device)` - Validates device names (e.g., sdd, sde)
+- `validate_vhd_name(name)` - Validates VHD/WSL mount names
+- `validate_size_string(size)` - Validates size strings (e.g., "5G", "500M")
+- `validate_filesystem_type(fs_type)` - Whitelist validation for filesystem types
+- `sanitize_string(input)` - Additional sanitization layer (defense in depth)
+
+All validation functions return 0 on success, 1 on failure. See [Security](#security) section for detailed validation rules.
+
+#### Logging Functions
+- `log_debug(message)` - Debug messages (only shown when `DEBUG=true`)
+- `log_info(message)` - Informational messages (shown unless `QUIET=true`)
+- `log_warn(message)` - Warning messages (shown unless `QUIET=true`)
+- `log_error(message)` - Error messages (always shown, even in quiet mode)
+- `log_success(message)` - Success messages (shown unless `QUIET=true`)
+
+All logging functions support timestamps and structured output. See [Structured Logging](#structured-logging) section for details.
+
 #### Size and Conversion Functions
 - `get_directory_size_bytes DIR` - Calculate total size of files in directory (in bytes)
   - Returns: Size in bytes or 0 on error
@@ -536,32 +551,57 @@ sudo umount -l /mnt/mydisk  # Lazy unmount
 ./disk_management.sh umount --path C:/VMs/mydisk.vhdx
 ```
 
-### Debug Mode
+### Structured Logging
 
-The scripts support a debug mode (`-d` or `--debug`) that prints all Linux and WSL commands before they are executed. This is useful for:
-- Troubleshooting command failures
-- Understanding what the script is doing
-- Learning the underlying WSL/Linux commands
-- Verifying correct parameters are being used
+The scripts use a structured logging system with timestamps and log levels for consistent, traceable output.
+
+**Log Levels:**
+- **DEBUG** - Detailed diagnostic information (only shown when `DEBUG=true`)
+- **INFO** - General information and progress updates (shown unless `QUIET=true`)
+- **WARN** - Warning messages (shown unless `QUIET=true`)
+- **ERROR** - Error messages (always shown, even in quiet mode)
+- **SUCCESS** - Success messages (shown unless `QUIET=true`)
+
+**Log Format:**
+All log messages include timestamps:
+```
+[YYYY-MM-DD HH:MM:SS] [LEVEL] message
+```
 
 **Examples:**
 ```bash
-# Debug a status check
-./disk_management.sh -d status --all
-# Output will show commands like:
-# [DEBUG] sudo blkid -s UUID -o value
-# [DEBUG] lsblk -f -J | jq -r ...
+# Normal operation with structured logging
+./disk_management.sh mount --path C:/VMs/disk.vhdx --mount-point /mnt/data
+# Output:
+# [2025-01-15 14:30:45] [INFO] Attaching VHD: C:/VMs/disk.vhdx
+# [2025-01-15 14:30:49] [SUCCESS] VHD attached (UUID: 550e8400-...)
+# [2025-01-15 14:30:50] [INFO] Mounting disk at /mnt/data...
+# [2025-01-15 14:30:51] [SUCCESS] Disk successfully mounted at /mnt/data
 
-# Debug a mount operation
-./disk_management.sh --debug mount --path C:/VMs/disk.vhdx --mount-point /mnt/data
-# Output will show:
-# [DEBUG] wsl.exe --mount --vhd C:/VMs/disk.vhdx --bare --name disk
-# [DEBUG] mkdir -p /mnt/data
-# [DEBUG] sudo mount UUID=... /mnt/data
+# Debug mode shows detailed command execution
+./disk_management.sh -d mount --path C:/VMs/disk.vhdx --mount-point /mnt/data
+# Output includes:
+# [2025-01-15 14:30:45] [DEBUG] Executing: wsl.exe --mount --vhd C:/VMs/disk.vhdx --bare --name disk
+# [2025-01-15 14:30:46] [DEBUG] lsblk -f -J | jq -r --arg UUID '...' '.blockdevices[] | select(.uuid == $UUID) | .name'
 
-# Combine with quiet mode (shows commands, minimal user messages)
-./disk_management.sh -q -d status --uuid <uuid>
+# Quiet mode suppresses info/warn/success (errors still shown)
+./disk_management.sh -q mount --path C:/VMs/disk.vhdx --mount-point /mnt/data
+# Only errors displayed (if any)
+
+# Optional log file support
+export LOG_FILE="/var/log/wsl-disk-management.log"
+./disk_management.sh mount --path C:/VMs/disk.vhdx --mount-point /mnt/data
+# Messages appear on screen AND in log file
 ```
+
+**Log File Support:**
+Set the `LOG_FILE` environment variable to write logs to a file:
+```bash
+export LOG_FILE="/var/log/wsl-disk-management.log"
+./disk_management.sh mount --path C:/VMs/disk.vhdx --mount-point /mnt/data
+```
+
+Log files include all messages (except debug when `DEBUG=false`) with timestamps for audit trails and troubleshooting.
 
 ---
 
@@ -665,6 +705,56 @@ The system automatically saves mappings when VHDs are attached/created and updat
 ```
 C:/VMs/mydisk.vhdx (57fd0f3a-4077-44b8-91ba-5abdee575293): attached,mounted
 ```
+
+---
+
+## Security
+
+The scripts implement comprehensive input validation to prevent command injection and path traversal vulnerabilities.
+
+### Input Validation
+
+All user-provided inputs are validated before use:
+
+- **Windows Paths**: Must start with drive letter (A-Z) followed by colon and slash. Rejects command injection characters (`;`, `|`, `&`, `$`, `` ` ``, `()`, etc.), directory traversal (`..`), control characters, and paths longer than 4096 characters.
+
+- **UUIDs**: Must match RFC 4122 format (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`) with exactly 36 characters. Only hexadecimal characters allowed.
+
+- **Mount Points**: Must be absolute paths starting with `/`. Rejects command injection characters, directory traversal, control characters, and paths longer than 4096 characters.
+
+- **Device Names**: Must match pattern `sd[a-z]+` (e.g., `sda`, `sdd`, `sde`, `sdaa`). Maximum length: 10 characters.
+
+- **VHD Names**: Alphanumeric with underscores and hyphens only. Maximum length: 64 characters. Cannot start/end with special characters.
+
+- **Size Strings**: Must match pattern `number[K|M|G|T][B]?` (e.g., `5G`, `500M`, `10GB`). Maximum length: 20 characters.
+
+- **Filesystem Types**: Whitelist validation. Allowed types: `ext2`, `ext3`, `ext4`, `xfs`, `btrfs`, `ntfs`, `vfat`, `exfat`. All other types rejected.
+
+### Validation Functions
+
+The validation functions are located in `libs/utils.sh`:
+
+- `validate_windows_path()` - Validates Windows path format
+- `validate_uuid()` - Validates UUID format (RFC 4122)
+- `validate_mount_point()` - Validates mount point paths
+- `validate_device_name()` - Validates device names
+- `validate_vhd_name()` - Validates VHD/WSL mount names
+- `validate_size_string()` - Validates size strings
+- `validate_filesystem_type()` - Whitelist validation for filesystem types
+- `sanitize_string()` - Additional sanitization layer (defense in depth)
+
+### Defense in Depth
+
+The scripts implement multiple layers of security:
+
+1. **Input Validation**: All user inputs are validated at command argument parsing
+2. **Helper Function Validation**: Additional validation in helper functions that receive user input
+3. **Safe Command Execution**: All user inputs validated before use in commands
+4. **No Direct Command Substitution**: User input is never directly substituted into command strings without validation
+
+### Error Messages
+
+When validation fails, the scripts provide clear error messages with format examples, without leaking information about internal structure.
 
 ---
 

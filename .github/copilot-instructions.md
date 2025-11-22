@@ -6,7 +6,7 @@ Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). 
 - `disk_management.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
 - `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
 - `libs/wsl_helpers.sh` - Shared WSL-specific function library
-- `libs/utils.sh` - Shared utility functions for size calculations and conversions
+- `libs/utils.sh` - Shared utility functions for size calculations, conversions, and input validation
 
 Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
 
@@ -80,24 +80,87 @@ Functions must support both verbose and quiet modes using `QUIET` flag:
 ```
 Quiet mode outputs parseable status strings like `path (uuid): attached,mounted`.
 
-### Debug Mode
-Scripts support debug mode via `DEBUG` flag (enabled with `-d` or `--debug`):
-- **Purpose**: Shows all Linux and WSL commands before execution for troubleshooting
-- **Implementation**: `debug_cmd()` wrapper function in `wsl_helpers.sh` prints commands to stderr when `DEBUG=true`
-- **Output format**: `[DEBUG] command args...` (blue text to stderr)
-- **Command coverage**: Wraps all `wsl.exe`, `sudo`, `lsblk`, `jq`, `mkdir`, `rm`, `qemu-img`, `blkid` invocations
-- **Pipeline handling**: Complex pipelines show full command for visibility
-- **Compatibility**: Works with quiet mode (`-q -d` shows commands but minimal user output)
+### Input Validation & Security
+All user-provided inputs are validated to prevent command injection and path traversal vulnerabilities.
 
+**Validation Functions** (in `libs/utils.sh`):
+- `validate_windows_path(path)` - Validates Windows path format, rejects command injection characters, directory traversal, control characters
+- `validate_uuid(uuid)` - Validates UUID format (RFC 4122), exactly 36 hexadecimal characters
+- `validate_mount_point(mount_point)` - Validates mount point paths (absolute paths starting with `/`)
+- `validate_device_name(device)` - Validates device names (pattern: `sd[a-z]+`)
+- `validate_vhd_name(name)` - Validates VHD/WSL mount names (alphanumeric with underscores/hyphens)
+- `validate_size_string(size)` - Validates size strings (pattern: `number[K|M|G|T][B]?`)
+- `validate_filesystem_type(fs_type)` - Whitelist validation (ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat)
+- `sanitize_string(input)` - Additional sanitization layer (removes control characters)
+
+**Validation Rules:**
+- Windows paths: Must start with drive letter, reject `;`, `|`, `&`, `$`, `` ` ``, `()`, `..`, control characters, max 4096 chars
+- UUIDs: RFC 4122 format, exactly 36 characters, hexadecimal only
+- Mount points: Absolute paths starting with `/`, reject command injection chars, `..`, control characters, max 4096 chars
+- Device names: Pattern `sd[a-z]+`, max 10 characters
+- VHD names: Alphanumeric with `_` and `-`, max 64 characters, cannot start/end with special chars
+- Size strings: Pattern `number[K|M|G|T][B]?`, max 20 characters
+- Filesystem types: Whitelist only (ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat)
+
+**Validation Points:**
+- All command argument parsing in `disk_management.sh` (status, mount, umount, detach, delete, create, resize, format, attach, history)
+- All input parameters in `mount_disk.sh` (`--mount-point`, `--disk-path`)
+- Helper functions in `libs/wsl_helpers.sh` that receive user input (`save_vhd_mapping()`, `lookup_vhd_uuid()`, `wsl_attach_vhd()`, `mount_filesystem()`, `format_vhd()`, etc.)
+
+**Defense in Depth:**
+1. Validation at command argument parsing
+2. Validation in helper functions
+3. Validation before command execution
+4. Safe command execution (jq uses `--arg` for safe parameter passing)
+
+**Error Messages:**
+Clear error messages when validation fails, with format examples, without information leakage.
+
+### Structured Logging
+Scripts use a comprehensive structured logging system with timestamps and log levels:
+
+**Logging Functions** (in `libs/utils.sh`):
+- `log_debug(message)` - Debug messages (only when `DEBUG=true`)
+- `log_info(message)` - Informational messages (unless `QUIET=true`)
+- `log_warn(message)` - Warning messages (unless `QUIET=true`)
+- `log_error(message)` - Error messages (always shown, even in quiet mode)
+- `log_success(message)` - Success messages (unless `QUIET=true`)
+
+**Log Format:**
+All messages include timestamps: `[YYYY-MM-DD HH:MM:SS] [LEVEL] message`
+
+**Features:**
+- Timestamps on all log entries
+- Color-coded output (blue=debug, yellow=warn, red=error, green=success)
+- Respects `QUIET` and `DEBUG` flags
+- Optional log file support via `LOG_FILE` environment variable
+- All messages go to stderr (except log file writes)
+
+**Usage:**
 ```bash
-# Debug command wrapper usage
+# Replace echo statements with logging functions
+log_info "Attaching VHD: $vhd_path"
+log_debug "Executing: wsl.exe --mount --vhd $vhd_path"
+log_error "Failed to mount filesystem"
+log_success "VHD mounted successfully"
+log_warn "VHD may still be detaching"
+```
+
+**Debug Mode Integration:**
+The `debug_cmd()` wrapper now uses `log_debug()` for consistent output:
+```bash
+# Debug command wrapper (uses log_debug internally)
 debug_cmd sudo mount UUID="$uuid" "$mount_point"
 
 # Manual debug output for pipelines
-if [[ "$DEBUG" == "true" ]]; then
-    echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq ..." >&2
-fi
-command | pipeline
+log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
+```
+
+**Log File Support:**
+Set `LOG_FILE` environment variable to write logs to file:
+```bash
+export LOG_FILE="/var/log/wsl-disk-management.log"
+# All non-debug messages (or all messages if DEBUG=true) written to file
 ```
 
 ### State-Check-Then-Operate Pattern
@@ -431,7 +494,21 @@ This approach eliminates hardcoded UUIDs and ensures tests work with dynamically
 3. Primitives: Minimal error handling, single operation
 4. WSL Helpers: Comprehensive error handling, may call primitives
 5. Commands: May orchestrate multiple operations, user-friendly output
-6. Respect `DEBUG` and `QUIET` flags
+6. **Validate all user inputs** using validation functions from `libs/utils.sh`:
+   - `validate_windows_path()` for Windows paths
+   - `validate_uuid()` for UUIDs
+   - `validate_mount_point()` for mount points
+   - `validate_device_name()` for device names
+   - `validate_vhd_name()` for VHD names
+   - `validate_size_string()` for size strings
+   - `validate_filesystem_type()` for filesystem types
+7. Use structured logging functions instead of echo statements:
+   - `log_debug()` for debug messages
+   - `log_info()` for informational messages
+   - `log_warn()` for warnings
+   - `log_error()` for errors
+   - `log_success()` for success messages
+8. Respect `DEBUG` and `QUIET` flags (logging functions handle this automatically)
 
 ### Modifying Path Conversion
 Path conversion logic appears in multiple places. Consolidate into a helper function if adding more conversions:
@@ -455,8 +532,9 @@ wsl_convert_path() {
 
 1. **Snapshot timing**: Take snapshots immediately before/after attach operations, not earlier
 2. **Windows path format**: `wsl.exe` commands require Windows paths; filesystem checks require WSL paths
-3. **Quiet mode completeness**: Every user-facing echo must have a quiet mode alternative
-4. **Debug mode implementation**: All command executions must use `debug_cmd` wrapper or manual debug output; debug messages go to stderr
+3. **Structured logging**: Use logging functions (`log_info`, `log_error`, etc.) instead of echo statements for consistent, timestamped output
+4. **Quiet mode**: Logging functions automatically respect `QUIET` flag (info/warn/success suppressed, errors always shown)
+5. **Debug mode**: All command executions use `debug_cmd()` wrapper which calls `log_debug()` internally; debug messages only shown when `DEBUG=true`
 5. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
 6. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
 7. **Already-attached detection**: Mount command has complex fallback logic for detecting already-attached VHDs; maintain this when refactoring

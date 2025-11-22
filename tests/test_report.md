@@ -1,18 +1,1080 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-21 01:16:57
+Last Updated: 2025-11-22 21:43:57
 
 ## Test Suite Summary
 
 | Test Suite | Last Run | Status | Tests Run | Passed | Failed | Duration |
 |------------|----------|--------|-----------|--------|--------|----------|
-| test_status.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 12s |
-| test_mount.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 16s |
-| test_umount.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 39s |
-| test_create.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 7s |
-| test_delete.sh | 2025-11-21 | ✓ PASSED | 10 | 10 | 0 | 3s |
+| test_status.sh | 2025-11-22 | ✓ PASSED | 10 | 10 | 0 | 14s |
+| test_mount.sh | 2025-11-22 | ✓ PASSED | 10 | 10 | 0 | 20s |
+| test_umount.sh | 2025-11-22 | ✓ PASSED | 10 | 10 | 0 | 47s |
+| test_create.sh | 2025-11-22 | ✓ PASSED | 10 | 10 | 0 | 11s |
+| test_delete.sh | 2025-11-22 | ✗ FAILED | 10 | 0 | 1 | 13s |
 
 ## Test History
+
+### 2025-11-22 21:43:57 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 13s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 21:36:41 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 3
+- **Tests Failed:** 7
+- **Duration:** 30s
+
+**Failed Tests:**
+- Test 1: Attempt to delete attached VHD (should fail)
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:36:11 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 11s
+
+
+### 2025-11-22 21:36:00 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 47s
+
+
+### 2025-11-22 21:35:13 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 20s
+
+
+### 2025-11-22 21:34:30 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 14s
+
+
+### 2025-11-22 21:33:12 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 14s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:32:57 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 10s
+
+
+### 2025-11-22 21:32:47 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 45s
+
+
+### 2025-11-22 21:32:02 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 28s
+
+
+### 2025-11-22 21:31:12 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 14s
+
+
+### 2025-11-22 21:27:52 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 15s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:27:37 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 11s
+
+
+### 2025-11-22 21:27:26 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 42s
+
+
+### 2025-11-22 21:26:44 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 20s
+
+
+### 2025-11-22 21:26:04 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 14s
+
+
+### 2025-11-22 21:25:14 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 14s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 21:24:48 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 17s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:22:54 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 17s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:22:37 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 11s
+
+
+### 2025-11-22 21:22:26 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 48s
+
+
+### 2025-11-22 21:21:37 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 19s
+
+
+### 2025-11-22 21:20:58 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 14s
+
+
+### 2025-11-22 21:19:56 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 19s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:19:37 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 12s
+
+
+### 2025-11-22 21:19:25 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 50s
+
+
+### 2025-11-22 21:18:35 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 24s
+
+
+### 2025-11-22 21:17:45 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 15s
+
+
+### 2025-11-22 21:16:43 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 17s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:16:26 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 10s
+
+
+### 2025-11-22 21:16:16 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 45s
+
+
+### 2025-11-22 21:15:31 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 22s
+
+
+### 2025-11-22 21:14:51 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-22 21:12:50 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 17s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:12:33 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 11s
+
+
+### 2025-11-22 21:12:22 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 57s
+
+
+### 2025-11-22 21:11:25 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 19s
+
+
+### 2025-11-22 21:10:41 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 15s
+
+
+### 2025-11-22 21:09:04 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 12s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 21:08:25 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 14s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:08:11 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 12s
+
+
+### 2025-11-22 21:07:59 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 47s
+
+
+### 2025-11-22 21:07:12 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 19s
+
+
+### 2025-11-22 21:06:30 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 15s
+
+
+### 2025-11-22 21:02:56 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 13s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 21:02:43 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-22 21:02:30 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 58s
+
+
+### 2025-11-22 21:01:32 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 23s
+
+
+### 2025-11-22 21:00:40 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 16s
+
+
+### 2025-11-22 20:59:14 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 10s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 20:58:38 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 10s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 20:57:46 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 14s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 20:57:32 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 12s
+
+
+### 2025-11-22 20:57:20 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 50s
+
+
+### 2025-11-22 20:56:30 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 24s
+
+
+### 2025-11-22 20:55:42 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 16s
+
+
+### 2025-11-22 20:53:47 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 13s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 20:53:23 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 16s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 20:53:07 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-22 20:52:54 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 52s
+
+
+### 2025-11-22 20:52:02 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 28s
+
+
+### 2025-11-22 20:51:08 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 16s
+
+
+### 2025-11-22 20:47:19 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 15s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 20:47:04 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 13s
+
+
+### 2025-11-22 20:46:51 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 50s
+
+
+### 2025-11-22 20:46:01 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 21s
+
+
+### 2025-11-22 20:45:17 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 16s
+
+
+### 2025-11-22 20:43:15 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 9s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 20:41:35 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 10s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 20:41:09 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 13s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 20:40:55 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 12s
+
+
+### 2025-11-22 20:40:43 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 51s
+
+
+### 2025-11-22 20:39:52 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 25s
+
+
+### 2025-11-22 20:39:03 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 15s
+
+
+### 2025-11-22 20:35:58 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 14s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+
+
+### 2025-11-22 20:34:33 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 4
+- **Tests Failed:** 6
+- **Duration:** 15s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 3: Verify VHD file is removed after delete
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+- Test 9: Verify temp VHD is removed
+
+
+### 2025-11-22 20:34:18 - test_create.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 12s
+
+
+### 2025-11-22 20:34:06 - test_umount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 43s
+
+
+### 2025-11-22 20:33:22 - test_mount.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 21s
+
+
+### 2025-11-22 20:32:40 - test_status.sh
+
+- **Status:** ✓ PASSED
+- **Tests Run:** 10
+- **Tests Passed:** 10
+- **Tests Failed:** 0
+- **Duration:** 10s
+
+
+### 2025-11-22 20:31:16 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 1
+- **Duration:** 6s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+
+
+### 2025-11-22 20:30:07 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 6
+- **Tests Failed:** 4
+- **Duration:** 4s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+
+
+### 2025-11-22 20:30:03 - test_create.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 9
+- **Duration:** 3s
+
+**Failed Tests:**
+- Test 1: Create VHD with default settings
+- Test 2: Verify created VHD file exists
+- Test 3: Verify created VHD file can be found
+- Test 4: Create VHD with custom size (500M)
+- Test 5: Verify custom size VHD exists
+- Test 6: Create VHD in quiet mode
+- Test 8: Create VHD with 2G size
+- Test 9: Verify custom VHD file exists
+- Test 10: Attach created VHD
+
+
+### 2025-11-22 20:30:00 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 10
+- **Duration:** 9s
+
+**Failed Tests:**
+- Test 1: Umount mounted VHD with default configuration
+- Test 2: Umount already-unmounted VHD (idempotency)
+- Test 3: Umount with UUID parameter
+- Test 4: Umount with path parameter
+- Test 5: Umount with mount point parameter
+- Test 6: Mount point not accessible after umount
+- Test 7: Umount in quiet mode produces minimal output
+- Test 8: Umount command completes successfully
+- Test 9: Umount reports successful completion
+- Test 10: Umount handles non-existent UUID gracefully
+
+
+### 2025-11-22 20:29:51 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 9
+- **Duration:** 6s
+
+**Failed Tests:**
+- Test 1: Mount VHD with default configuration
+- Test 2: Mount already-mounted VHD (idempotency)
+- Test 3: Mount with explicit path parameter
+- Test 4: Mount with custom mount point
+- Test 6: Mount creates mount point directory
+- Test 7: Mount in quiet mode produces minimal output
+- Test 8: Mount point is accessible after mounting
+- Test 9: Mounted filesystem has correct permissions
+- Test 10: Status shows VHD as mounted after mount
+
+
+### 2025-11-22 20:29:37 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 6
+- **Tests Failed:** 4
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+- Test 10: Status with invalid UUID (should fail)
+
+
+### 2025-11-22 20:29:24 - test_delete.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 6
+- **Tests Failed:** 4
+- **Duration:** 4s
+
+**Failed Tests:**
+- Test 2: Delete detached VHD by path
+- Test 4: Delete detached VHD with --force flag
+- Test 5: Delete in quiet mode
+- Test 8: Create, detach, and delete a VHD
+
+
+### 2025-11-22 20:29:20 - test_create.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 9
+- **Duration:** 2s
+
+**Failed Tests:**
+- Test 1: Create VHD with default settings
+- Test 2: Verify created VHD file exists
+- Test 3: Verify created VHD file can be found
+- Test 4: Create VHD with custom size (500M)
+- Test 5: Verify custom size VHD exists
+- Test 6: Create VHD in quiet mode
+- Test 8: Create VHD with 2G size
+- Test 9: Verify custom VHD file exists
+- Test 10: Attach created VHD
+
+
+### 2025-11-22 20:29:18 - test_umount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 0
+- **Tests Failed:** 10
+- **Duration:** 8s
+
+**Failed Tests:**
+- Test 1: Umount mounted VHD with default configuration
+- Test 2: Umount already-unmounted VHD (idempotency)
+- Test 3: Umount with UUID parameter
+- Test 4: Umount with path parameter
+- Test 5: Umount with mount point parameter
+- Test 6: Mount point not accessible after umount
+- Test 7: Umount in quiet mode produces minimal output
+- Test 8: Umount command completes successfully
+- Test 9: Umount reports successful completion
+- Test 10: Umount handles non-existent UUID gracefully
+
+
+### 2025-11-22 20:29:10 - test_mount.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 1
+- **Tests Failed:** 9
+- **Duration:** 5s
+
+**Failed Tests:**
+- Test 1: Mount VHD with default configuration
+- Test 2: Mount already-mounted VHD (idempotency)
+- Test 3: Mount with explicit path parameter
+- Test 4: Mount with custom mount point
+- Test 6: Mount creates mount point directory
+- Test 7: Mount in quiet mode produces minimal output
+- Test 8: Mount point is accessible after mounting
+- Test 9: Mounted filesystem has correct permissions
+- Test 10: Status shows VHD as mounted after mount
+
+
+### 2025-11-22 20:29:01 - test_status.sh
+
+- **Status:** ✗ FAILED
+- **Tests Run:** 10
+- **Tests Passed:** 6
+- **Tests Failed:** 4
+- **Duration:** 9s
+
+**Failed Tests:**
+- Test 2: Status with specific UUID
+- Test 3: Status with specific path
+- Test 4: Status with specific mount point
+- Test 10: Status with invalid UUID (should fail)
+
 
 ### 2025-11-21 01:16:57 - test_delete.sh
 
