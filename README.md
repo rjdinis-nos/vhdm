@@ -363,7 +363,7 @@ A convenience script for ensuring a VHD is attached and mounted, ideal for autom
 - `--disk-path PATH` - Path to VHD file (Windows format: C:/path/to/disk.vhdx) [**required**]
 - `-q, --quiet` - Suppress verbose output
 - `-d, --debug` - Show all commands before execution
-- `-h, --help` - Show help message
+- `-h, --help` - Show help message 
 
 #### Behavior
 - **Idempotent**: Safe to run multiple times - no changes if already mounted
