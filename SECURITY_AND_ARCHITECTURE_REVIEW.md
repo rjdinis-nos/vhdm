@@ -41,33 +41,42 @@ This review covers security vulnerabilities, architecture improvements, and best
 
 **See**: `COMMAND_INJECTION_FIX.md` for detailed implementation summary
 
-### 2. **Insecure Temporary File Handling** (MEDIUM RISK)
+### 2. **Insecure Temporary File Handling** (MEDIUM RISK) ✅ RESOLVED
+
+**Status**: ✅ **FIXED** - Secure temporary file handling implemented
 
 **Location**: `wsl_helpers.sh` - Multiple functions using temp files
 
-**Issues**:
+**Original Issues**:
 - Temp files use predictable names (`$$` PID-based)
 - Race condition: temp file creation and atomic move
 - No cleanup on script interruption
 
-**Examples**:
+**Resolution**:
+- ✅ Replaced all `$$` PID-based temp file creation with `mktemp` using `XXXXXX` pattern for secure random file names
+- ✅ Added trap handlers (`EXIT INT TERM`) to ensure cleanup on script interruption
+- ✅ Explicit cleanup in all code paths (success and error) before removing trap handlers
+- ✅ Maintained atomic operations using `mv` for file updates
+- ✅ Applied to all 4 functions: `save_vhd_mapping()`, `update_vhd_mount_points()`, `remove_vhd_mapping()`, `save_detach_history()`
+
+**Implementation**:
 ```bash
-# wsl_helpers.sh:69
-local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
-```
+# Secure temp file creation with mktemp
+local temp_file
+temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+if [[ $? -ne 0 || -z "$temp_file" ]]; then
+    log_debug "Failed to create temporary file"
+    return 1
+fi
 
-**Risk**: Race conditions could lead to data corruption or information disclosure.
-
-**Recommendation**:
-- Use `mktemp` for secure temporary file creation
-- Add trap handlers for cleanup
-- Use atomic operations (already using `mv`, which is good)
-
-**Fix Example**:
-```bash
-# Use mktemp
-local temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX")
+# Trap handler for cleanup on exit/interrupt
 trap "rm -f '$temp_file'" EXIT INT TERM
+
+# ... operations ...
+
+# Cleanup and remove trap on success
+mv "$temp_file" "$DISK_TRACKING_FILE"
+trap - EXIT INT TERM
 ```
 
 ### 3. **Privilege Escalation via Sudo** (MEDIUM RISK)
@@ -335,7 +344,11 @@ get_lsblk_cached() {
    - Comprehensive validation functions added in `libs/utils.sh`
    - Validation applied at all user input points
    - See `COMMAND_INJECTION_FIX.md` for details
-2. ✅ Replace temp file creation with `mktemp` (if applicable)
+2. ✅ **COMPLETED** - Replace temp file creation with `mktemp`
+   - All 4 functions in `libs/wsl_helpers.sh` now use `mktemp` with `XXXXXX` pattern
+   - Trap handlers added for cleanup on exit/interrupt (`EXIT INT TERM`)
+   - Explicit cleanup in all code paths before removing trap handlers
+   - Maintains atomic operations using `mv` for file updates
 3. ✅ **COMPLETED** - Add path traversal protection
    - `validate_windows_path()` and `validate_mount_point()` reject `..` sequences
    - Validation applied before all path operations

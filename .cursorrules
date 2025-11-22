@@ -126,6 +126,33 @@ if ! wsl_is_vhd_mounted "$uuid"; then
 fi
 ```
 
+### Secure Temporary File Handling Pattern
+All temporary file operations must use secure patterns:
+```bash
+# Use mktemp with XXXXXX pattern (never use $$ PID-based names)
+local temp_file
+temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+if [[ $? -ne 0 || -z "$temp_file" ]]; then
+    log_debug "Failed to create temporary file"
+    return 1
+fi
+
+# Set trap handler for cleanup on interruption
+trap "rm -f '$temp_file'" EXIT INT TERM
+
+# Perform operation, then atomic move
+if jq ... "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+    mv "$temp_file" "$DISK_TRACKING_FILE"  # Atomic move
+    trap - EXIT INT TERM  # Remove trap on success
+    return 0
+else
+    rm -f "$temp_file"
+    trap - EXIT INT TERM  # Remove trap on error
+    return 1
+fi
+```
+**Requirements**: Use `mktemp` with `XXXXXX`, trap handlers for cleanup, explicit cleanup in all paths, atomic `mv` operations.
+
 ## Command Behaviors
 
 **Attach** - Single operation: Only attaches VHD to WSL as block device. Does NOT mount to filesystem.

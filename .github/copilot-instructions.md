@@ -196,6 +196,48 @@ WSL does not provide a direct path→UUID mapping after attachment. Avoid using 
 
 See [copilot-code-architecture.md](copilot-code-architecture.md) for detailed implementation requirements.
 
+### Secure Temporary File Handling
+
+All temporary file operations must use secure patterns to prevent race conditions and information disclosure:
+
+**Requirements:**
+1. ✅ Use `mktemp` with `XXXXXX` pattern for secure random file names (never use `$$` PID-based names)
+2. ✅ Set trap handlers (`EXIT INT TERM`) to ensure cleanup on script interruption
+3. ✅ Remove trap handlers after successful operations
+4. ✅ Explicit cleanup in all error paths
+5. ✅ Use `mv` for atomic file updates (not `cp` + `rm`)
+
+**Pattern:**
+```bash
+# Create secure temporary file
+local temp_file
+temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+if [[ $? -ne 0 || -z "$temp_file" ]]; then
+    log_debug "Failed to create temporary file"
+    return 1
+fi
+
+# Set up trap handler for cleanup
+trap "rm -f '$temp_file'" EXIT INT TERM
+
+# Perform operation
+if jq ... "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+    mv "$temp_file" "$DISK_TRACKING_FILE"  # Atomic move
+    trap - EXIT INT TERM  # Remove trap on success
+    return 0
+else
+    rm -f "$temp_file"
+    trap - EXIT INT TERM  # Remove trap on error
+    return 1
+fi
+```
+
+**Functions Using This Pattern:**
+- `save_vhd_mapping()` - Updates tracking file
+- `update_vhd_mount_points()` - Updates mount points
+- `remove_vhd_mapping()` - Removes VHD mappings
+- `save_detach_history()` - Adds detach events
+
 ## Key Implementation Details
 
 ### Configuration

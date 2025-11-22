@@ -631,6 +631,57 @@ fi
 3. Validation before command execution
 4. Safe command execution (jq uses `--arg` for safe parameter passing)
 
+### 9. Secure Temporary File Handling Pattern
+
+Used in: All functions that create temporary files for atomic file operations (e.g., JSON tracking file updates)
+
+```bash
+# Create secure temporary file using mktemp (not PID-based $$)
+local temp_file
+temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+if [[ $? -ne 0 || -z "$temp_file" ]]; then
+    log_debug "Failed to create temporary file"
+    return 1
+fi
+
+# Set up trap handler to clean up temp file on exit/interrupt
+# Use inline trap command to avoid function definition issues
+trap "rm -f '$temp_file'" EXIT INT TERM
+
+# Perform operation (e.g., jq to write JSON)
+if jq --arg path "$normalized" '.mappings[$path] = {...}' \
+      "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+    # Atomic move (mv is atomic on same filesystem)
+    mv "$temp_file" "$DISK_TRACKING_FILE"
+    trap - EXIT INT TERM  # Remove trap handler on success
+    return 0
+else
+    # Cleanup on error
+    rm -f "$temp_file"
+    trap - EXIT INT TERM  # Remove trap handler on error
+    return 1
+fi
+```
+
+**Purpose**: 
+- **Security**: Use `mktemp` with `XXXXXX` pattern for secure, unpredictable temporary file names (prevents race conditions and information disclosure)
+- **Reliability**: Trap handlers ensure cleanup on script interruption (EXIT, INT, TERM signals)
+- **Atomicity**: Use `mv` for atomic file updates (prevents corruption if script is interrupted during write)
+- **Cleanup**: Explicit cleanup in all code paths plus trap handlers for defense in depth
+
+**Key Requirements**:
+1. ✅ Always use `mktemp` with `XXXXXX` pattern (never use `$$` PID-based names)
+2. ✅ Set trap handlers for cleanup on interruption
+3. ✅ Remove trap handlers after successful operations
+4. ✅ Explicit cleanup in all error paths
+5. ✅ Use `mv` for atomic file updates (not `cp` + `rm`)
+
+**Functions Using This Pattern**:
+- `save_vhd_mapping()` - Updates tracking file with new VHD mappings
+- `update_vhd_mount_points()` - Updates mount points for existing VHD
+- `remove_vhd_mapping()` - Removes VHD from tracking file
+- `save_detach_history()` - Adds detach events to history
+
 ## State Machine: VHD Lifecycle
 
 ```

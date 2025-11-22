@@ -97,11 +97,24 @@ save_vhd_mapping() {
     
     local normalized=$(normalize_vhd_path "$path")
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    # Create secure temporary file using mktemp
+    local temp_file
+    temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+    if [[ $? -ne 0 || -z "$temp_file" ]]; then
+        log_debug "Failed to create temporary file"
+        return 1
+    fi
+    
+    # Set up trap handler to clean up temp file on exit/interrupt
+    # Use inline trap command to avoid function definition issues
+    trap "rm -f '$temp_file'" EXIT INT TERM
     
     # Ensure jq is available
     if ! command -v jq &> /dev/null; then
         log_debug "jq not available, skipping mapping save"
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 1
     fi
     
@@ -116,10 +129,12 @@ save_vhd_mapping() {
           '.mappings[$path] = {uuid: $uuid, last_attached: $ts, mount_points: $mp, name: $name}' \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
+        trap - EXIT INT TERM
         log_debug "Saved mapping: $normalized → $uuid (name: $vhd_name)"
         return 0
     else
         rm -f "$temp_file"
+        trap - EXIT INT TERM
         log_debug "Failed to save mapping"
         return 1
     fi
@@ -210,9 +225,22 @@ update_vhd_mount_points() {
     init_disk_tracking_file || return 1
     
     local normalized=$(normalize_vhd_path "$path")
-    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    # Create secure temporary file using mktemp
+    local temp_file
+    temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+    if [[ $? -ne 0 || -z "$temp_file" ]]; then
+        log_debug "Failed to create temporary file"
+        return 1
+    fi
+    
+    # Set up trap handler to clean up temp file on exit/interrupt
+    # Use inline trap command to avoid function definition issues
+    trap "rm -f '$temp_file'" EXIT INT TERM
     
     if ! command -v jq &> /dev/null; then
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 1
     fi
     
@@ -220,6 +248,8 @@ update_vhd_mount_points() {
     local exists=$(jq -r --arg path "$normalized" '.mappings[$path] // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
     if [[ -z "$exists" || "$exists" == "null" ]]; then
         log_debug "No mapping found for $normalized to update"
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 1
     fi
     
@@ -230,9 +260,11 @@ update_vhd_mount_points() {
           '.mappings[$path].mount_points = $mp' \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
+        trap - EXIT INT TERM
         return 0
     else
         rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 1
     fi
 }
@@ -250,9 +282,22 @@ remove_vhd_mapping() {
     init_disk_tracking_file || return 1
     
     local normalized=$(normalize_vhd_path "$path")
-    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    # Create secure temporary file using mktemp
+    local temp_file
+    temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+    if [[ $? -ne 0 || -z "$temp_file" ]]; then
+        log_debug "Failed to create temporary file"
+        return 1
+    fi
+    
+    # Set up trap handler to clean up temp file on exit/interrupt
+    # Use inline trap command to avoid function definition issues
+    trap "rm -f '$temp_file'" EXIT INT TERM
     
     if ! command -v jq &> /dev/null; then
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 1
     fi
     
@@ -261,9 +306,11 @@ remove_vhd_mapping() {
     if jq --arg path "$normalized" 'del(.mappings[$path])' \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
+        trap - EXIT INT TERM
         return 0
     else
         rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 1
     fi
 }
@@ -287,11 +334,24 @@ save_detach_history() {
     
     local normalized=$(normalize_vhd_path "$path")
     local timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    local temp_file="${DISK_TRACKING_FILE}.tmp.$$"
+    
+    # Create secure temporary file using mktemp
+    local temp_file
+    temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+    if [[ $? -ne 0 || -z "$temp_file" ]]; then
+        log_debug "Failed to create temporary file"
+        return 1
+    fi
+    
+    # Set up trap handler to clean up temp file on exit/interrupt
+    # Use inline trap command to avoid function definition issues
+    trap "rm -f '$temp_file'" EXIT INT TERM
     
     # Ensure jq is available
     if ! command -v jq &> /dev/null; then
         log_debug "jq not available, skipping detach history save"
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
         return 1
     fi
     
@@ -305,10 +365,12 @@ save_detach_history() {
           '.detach_history = ([{path: $path, uuid: $uuid, name: $name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]' \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
+        trap - EXIT INT TERM
         log_debug "Saved detach event: $normalized → $uuid at $timestamp"
         return 0
     else
         rm -f "$temp_file"
+        trap - EXIT INT TERM
         log_debug "Failed to save detach event"
         return 1
     fi
