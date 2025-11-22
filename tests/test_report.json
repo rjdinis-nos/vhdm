@@ -4,14 +4,59 @@
       "last_run": "2025-11-22",
       "status": "✗ FAILED",
       "tests_run": 10,
-      "tests_passed": 0,
-      "tests_failed": 1,
-      "duration": "8s",
+      "tests_passed": 7,
+      "tests_failed": 3,
+      "duration": "11s",
       "test_results": [
+        {
+          "number": 1,
+          "name": "Status shows help without arguments",
+          "status": "PASSED"
+        },
         {
           "number": 2,
           "name": "Status with specific UUID",
           "status": "FAILED"
+        },
+        {
+          "number": 3,
+          "name": "Status with specific path",
+          "status": "PASSED"
+        },
+        {
+          "number": 4,
+          "name": "Status with specific mount point",
+          "status": "FAILED"
+        },
+        {
+          "number": 5,
+          "name": "Status shows attached but not mounted",
+          "status": "FAILED"
+        },
+        {
+          "number": 6,
+          "name": "Status with --all flag",
+          "status": "PASSED"
+        },
+        {
+          "number": 7,
+          "name": "Status in quiet mode",
+          "status": "PASSED"
+        },
+        {
+          "number": 8,
+          "name": "Status with non-existent VHD path (should fail)",
+          "status": "PASSED"
+        },
+        {
+          "number": 9,
+          "name": "Status with non-existent mount point (should fail)",
+          "status": "PASSED"
+        },
+        {
+          "number": 10,
+          "name": "Status with invalid UUID (should fail)",
+          "status": "PASSED"
         }
       ]
     },

@@ -1466,33 +1466,42 @@ resize_vhd() {
     [[ "$QUIET" == "false" ]] && echo "  File count: $target_file_count"
     [[ "$QUIET" == "false" ]] && echo
     
-    # We need to find the VHD path by searching mounted disks
+    # We need to find the VHD path by looking it up from the tracking file using UUID
     local target_vhd_path=""
     local target_vhd_name=""
     
-    # Try to infer VHD path from mount point name  
-    target_vhd_name=$(basename "$target_mount_point")
-    
-    # Get device for the mounted filesystem
-    if [[ "$DEBUG" == "true" ]]; then
-        echo -e "${BLUE}[DEBUG]${NC} findmnt -n -o SOURCE '$target_mount_point'" >&2
+    # Look up VHD path from tracking file using UUID
+    if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+        if [[ "$DEBUG" == "true" ]]; then
+            echo -e "${BLUE}[DEBUG]${NC} jq -r --arg uuid '$target_uuid' '.mappings[] | select(.uuid == \$uuid) | path(.) | .[-1]' $DISK_TRACKING_FILE" >&2
+        fi
+        # Find the path (key) that has this UUID
+        local normalized_path=$(jq -r --arg uuid "$target_uuid" '.mappings | to_entries[] | select(.value.uuid == $uuid) | .key' "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+        
+        if [[ -n "$normalized_path" && "$normalized_path" != "null" ]]; then
+            # Convert normalized path back to Windows format (uppercase drive letter)
+            # Normalized format is lowercase: c:/vms/disk.vhdx
+            # Windows format should be: C:/VMs/disk.vhdx (but we'll use as-is since tracking uses lowercase)
+            target_vhd_path="$normalized_path"
+            # Extract name from tracking file if available
+            target_vhd_name=$(jq -r --arg uuid "$target_uuid" '.mappings | to_entries[] | select(.value.uuid == $uuid) | .value.name // empty' "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+        fi
     fi
-    local mount_device=$(findmnt -n -o SOURCE "$target_mount_point" 2>/dev/null)
     
-    if [[ -z "$mount_device" ]]; then
-        echo -e "${RED}[✗] Cannot determine device for mount point${NC}"
+    # If path lookup failed, try to infer from mount point name as fallback
+    if [[ -z "$target_vhd_path" ]]; then
+        target_vhd_name=$(basename "$target_mount_point")
+        echo -e "${RED}[✗] Cannot determine VHD path from tracking file${NC}"
+        echo "The VHD path is required for resize operation."
+        echo "Please ensure the VHD was attached/mounted using disk_management.sh so it's tracked."
+        echo "Alternatively, you can manually specify the path by modifying the resize command."
         exit 1
     fi
     
-    # Use mount point name to construct likely path
-    # This is a best-effort approach - user should provide path explicitly for resize
-    target_vhd_path="C:/path/to/${target_vhd_name}.vhdx"
-    
-    [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] Warning: VHD path inferred as $target_vhd_path${NC}"
-    [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] If resize fails, this path may be incorrect${NC}"
-    [[ "$QUIET" == "false" ]] && echo
-    
     [[ "$QUIET" == "false" ]] && echo "Target VHD path: $target_vhd_path"
+    if [[ -n "$target_vhd_name" ]]; then
+        [[ "$QUIET" == "false" ]] && echo "Target VHD name: $target_vhd_name"
+    fi
     [[ "$QUIET" == "false" ]] && echo
     
     # Create new VHD with temporary name
@@ -1834,6 +1843,14 @@ format_vhd_command() {
             echo
             echo "The UUID might be incorrect or the VHD is not attached."
             echo "To find attached VHDs, run: $0 status --all"
+            exit 1
+        fi
+        
+        # Validate device name format for security before use in mkfs
+        if ! validate_device_name "$device_name"; then
+            echo -e "${RED}Error: Invalid device name format: $device_name${NC}" >&2
+            echo "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde, sdaa)" >&2
+            echo "This is a security check to prevent command injection." >&2
             exit 1
         fi
         

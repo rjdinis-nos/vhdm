@@ -128,7 +128,9 @@ fi
 log_info "Disk not mounted. Checking attachment status..."
 
 # Try to find UUID by path (if already attached)
-UUID=$(wsl_find_uuid_by_path "$WSL_DISK_PATH" 2>/dev/null || true)
+# Use Windows path format (DISK_PATH) not WSL path format (WSL_DISK_PATH)
+# because wsl_find_uuid_by_path expects Windows path format for tracking file lookup
+UUID=$(wsl_find_uuid_by_path "$DISK_PATH" 2>/dev/null || true)
 
 # If not attached, attach it now
 if [[ -z "$UUID" ]]; then

@@ -898,9 +898,10 @@ wsl_count_dynamic_vhds() {
         local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
         
         if [[ -n "$dev_name" ]]; then
-            # Count dynamically attached disks (usually sd[d-z])
+            # Count dynamically attached disks (usually sd[d-z] and multi-character variants like sdaa, sdab)
             # Skip system disks (sda, sdb, sdc)
-            if [[ "$dev_name" =~ ^sd[d-z]$ ]]; then
+            # Pattern matches: sd[d-z] followed by zero or more lowercase letters (e.g., sdd, sde, sdaa, sdab)
+            if [[ "$dev_name" =~ ^sd[d-z][a-z]*$ ]]; then
                 ((count++))
             fi
         fi
@@ -926,9 +927,10 @@ wsl_find_dynamic_vhd_uuid() {
         local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
         
         if [[ -n "$dev_name" ]]; then
-            # Look for dynamically attached disks (usually sd[d-z])
+            # Look for dynamically attached disks (usually sd[d-z] and multi-character variants like sdaa, sdab)
             # Skip system disks (sda, sdb, sdc)
-            if [[ "$dev_name" =~ ^sd[d-z]$ ]]; then
+            # Pattern matches: sd[d-z] followed by zero or more lowercase letters (e.g., sdd, sde, sdaa, sdab)
+            if [[ "$dev_name" =~ ^sd[d-z][a-z]*$ ]]; then
                 echo "$uuid"
                 return 0
             fi

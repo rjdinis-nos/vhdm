@@ -1,6 +1,6 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-22 23:36:18
+Last Updated: 2025-11-22 23:47:10
 
 <a id="test-suite-summary"></a>
 ## Test Suite Summary
@@ -13,7 +13,7 @@ Last Updated: 2025-11-22 23:36:18
 | [test_detach.sh](#test-detach) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 3 | 7 | 11s |
 | [test_mount.sh](#test-mount) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 2 | 8 | 12s |
 | [test_resize.sh](#test-resize) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 20 | 4 | 16 | 2s |
-| [test_status.sh](#test-status) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 0 | 1 | 8s |
+| [test_status.sh](#test-status) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 7 | 3 | 11s |
 | [test_umount.sh](#test-umount) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 2 | 8 | 14s |
 
 <a id="test-attach"></a>
@@ -215,15 +215,24 @@ Last Updated: 2025-11-22 23:36:18
 | **Last Run** | 2025-11-22 |
 | **Status** | ✗ FAILED |
 | **Tests Run** | 10 |
-| **Passed** | <span style="color: green;">0</span> |
-| **Failed** | <span style="color: red;">1</span> |
-| **Duration** | 8s |
+| **Passed** | <span style="color: green;">7</span> |
+| **Failed** | <span style="color: red;">3</span> |
+| **Duration** | 11s |
 
 #### Test Results
 
 | # | Test Name | Status |
 |---|-----------|--------|
+| **1** | Status shows help without arguments | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **2** | Status with specific UUID | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **3** | Status with specific path | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **4** | Status with specific mount point | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **5** | Status shows attached but not mounted | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **6** | Status with --all flag | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **7** | Status in quiet mode | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **8** | Status with non-existent VHD path (should fail) | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **9** | Status with non-existent mount point (should fail) | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **10** | Status with invalid UUID (should fail) | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 
 <a id="test-umount"></a>
 ### test_umount.sh ![FAILED](https://img.shields.io/badge/status-FAILED-red)
