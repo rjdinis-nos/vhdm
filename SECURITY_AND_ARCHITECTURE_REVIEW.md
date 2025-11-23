@@ -173,35 +173,46 @@ error_exit() {
 }
 ```
 
-### 2. **Code Duplication**
+### 2. **Code Duplication** ✅ RESOLVED
 
-**Issue**: Repeated patterns across functions
+**Status**: ✅ **FIXED** - Path conversion centralized, validation already centralized
+
+**Original Issue**: Repeated patterns across functions
 - Path conversion logic duplicated
 - UUID validation repeated
 - Similar error messages in multiple places
 
-**Recommendation**:
-- Extract common patterns into helper functions
-- Create utility functions for path operations
-- Centralize validation logic
+**Resolution**:
+- ✅ **Path conversion centralized**: Created `wsl_convert_path()` function in `libs/utils.sh`
+  - Replaced 20+ instances of duplicated path conversion logic across codebase
+  - All scripts now use the centralized function: `libs/wsl_helpers.sh`, `disk_management.sh`, `mount_disk.sh`, and test files
+  - Function handles both forward and backslash separators
+  - Includes proper error handling for empty paths
+- ✅ **UUID validation already centralized**: `validate_uuid()` function in `libs/utils.sh` is used throughout
+- ✅ **Error messages**: Consistent error message patterns using validation functions
 
-**Example**:
+**Implementation**:
 ```bash
-# Centralize path conversion
+# Centralized path conversion in libs/utils.sh
 wsl_convert_path() {
     local win_path="$1"
+    if [[ -z "$win_path" ]]; then
+        return 1
+    fi
+    # Convert drive letter to lowercase and prepend /mnt/
+    # Convert backslashes to forward slashes
     echo "$win_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g'
 }
-
-# Centralize path validation
-validate_windows_path() {
-    local path="$1"
-    # Validate format, reject dangerous patterns
-    [[ "$path" =~ ^[A-Za-z]:/ ]] || return 1
-    [[ "$path" =~ \.\. ]] && return 1
-    return 0
-}
 ```
+
+**Files Updated**:
+- `libs/utils.sh` - Added `wsl_convert_path()` function
+- `libs/wsl_helpers.sh` - Replaced 3 instances
+- `disk_management.sh` - Replaced 8 instances
+- `mount_disk.sh` - Replaced 1 instance
+- `tests/test_delete.sh` - Replaced 3 instances
+- `tests/test_create.sh` - Replaced 2 instances
+- `tests/test_resize.sh` - Replaced 3 instances
 
 ### 3. **Missing Input Validation** ✅ RESOLVED
 
@@ -387,7 +398,10 @@ get_lsblk_cached() {
 
 ### Medium Priority (Architecture)
 1. ✅ Standardize error handling
-2. ✅ Extract common code patterns
+2. ✅ **COMPLETED** - Extract common code patterns
+   - Path conversion centralized in `wsl_convert_path()` function
+   - All 20+ instances of duplicated path conversion logic replaced
+   - See section 2 above for detailed implementation
 3. ✅ Add resource cleanup handlers
 4. ✅ Add file locking for concurrent operations
 

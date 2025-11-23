@@ -442,6 +442,26 @@ bytes_to_human() {
 }
 
 # ============================================================================
+# PATH CONVERSION FUNCTIONS - Convert Windows paths to WSL paths
+# ============================================================================
+
+# Convert Windows path to WSL path format
+# Args: $1 - Windows path (e.g., C:/path/to/file.vhdx or C:\path\to\file.vhdx)
+# Returns: WSL path via stdout (e.g., /mnt/c/path/to/file.vhdx)
+# Example: wsl_convert_path "C:/VMs/disk.vhdx" -> "/mnt/c/VMs/disk.vhdx"
+wsl_convert_path() {
+    local win_path="$1"
+    
+    if [[ -z "$win_path" ]]; then
+        return 1
+    fi
+    
+    # Convert drive letter to lowercase and prepend /mnt/
+    # Convert backslashes to forward slashes
+    echo "$win_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g'
+}
+
+# ============================================================================
 # SUDO VALIDATION FUNCTIONS - Security: Validate sudo permissions
 # ============================================================================
 

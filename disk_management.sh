@@ -259,7 +259,8 @@ show_status() {
             [[ "$QUIET" == "false" ]] && echo
         # If path is provided, check if VHD file exists first
         elif [[ -n "$status_path" ]]; then
-            local vhd_path_wsl=$(echo "$status_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+            local vhd_path_wsl
+            vhd_path_wsl=$(wsl_convert_path "$status_path")
             
             if [[ ! -e "$vhd_path_wsl" ]]; then
                 echo -e "${RED}[✗] VHD file not found${NC}"
@@ -352,7 +353,8 @@ show_status() {
             echo "  4. Mount the VHD first: $0 mount --path <path> --mount-point $status_mount_point"
         elif [[ -n "$status_path" ]]; then
             # Convert to WSL path to check if file exists
-            local vhd_path_wsl=$(echo "$status_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+            local vhd_path_wsl
+            vhd_path_wsl=$(wsl_convert_path "$status_path")
             
             if [[ ! -e "$vhd_path_wsl" ]]; then
                 echo "VHD file not found at: $status_path"
@@ -487,7 +489,8 @@ mount_vhd() {
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
-    local vhd_path_wsl=$(echo "$mount_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$mount_path")
     if [[ ! -e "$vhd_path_wsl" ]]; then
         echo -e "${RED}[✗] VHD file does not exist at $mount_path${NC}"
         exit 1
@@ -1017,7 +1020,8 @@ delete_vhd() {
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
-    local vhd_path_wsl=$(echo "$delete_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$delete_path")
     if [[ ! -e "$vhd_path_wsl" ]]; then
         echo -e "${RED}[✗] VHD file does not exist at $delete_path${NC}"
         echo "  (WSL path: $vhd_path_wsl)"
@@ -1186,7 +1190,8 @@ create_vhd() {
     [[ "$QUIET" == "false" ]] && echo
     
     # Check if VHD already exists
-    local vhd_path_wsl=$(echo "$create_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$create_path")
     if [[ -e "$vhd_path_wsl" ]]; then
         if [[ "$force" == "false" ]]; then
             echo -e "${RED}[✗] VHD file already exists at $create_path${NC}"
@@ -1646,7 +1651,8 @@ resize_vhd() {
     [[ "$QUIET" == "false" ]] && echo
     
     # Rename target VHD to backup
-    local target_vhd_path_wsl=$(echo "$target_vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    local target_vhd_path_wsl
+    target_vhd_path_wsl=$(wsl_convert_path "$target_vhd_path")
     local backup_vhd_path_wsl="${target_vhd_path_wsl%.vhdx}_bkp.vhdx"
     local backup_vhd_path_wsl="${backup_vhd_path_wsl%.vhd}_bkp.vhd"
     
@@ -1681,7 +1687,8 @@ resize_vhd() {
     [[ "$QUIET" == "false" ]] && echo
     
     # Rename new VHD to target name
-    local new_vhd_path_wsl=$(echo "$new_vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    local new_vhd_path_wsl
+    new_vhd_path_wsl=$(wsl_convert_path "$new_vhd_path")
     
     [[ "$QUIET" == "false" ]] && echo "Renaming new VHD to target name..."
     if [[ "$DEBUG" == "true" ]]; then
@@ -2009,7 +2016,8 @@ attach_vhd() {
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
-    local vhd_path_wsl=$(echo "$attach_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$attach_path")
     if [[ ! -e "$vhd_path_wsl" ]]; then
         echo "Error: VHD file does not exist: $attach_path" >&2
         echo "  (WSL path: $vhd_path_wsl)" >&2

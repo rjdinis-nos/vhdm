@@ -91,7 +91,9 @@ Include `sleep 2` after attach/create operations for kernel device recognition.
 ### Path Format Handling
 - **User input**: Windows format with forward slashes: `C:/VMs/disk.vhdx`
 - **WSL.exe calls**: Use original Windows format
-- **Internal WSL operations**: Convert to `/mnt/c/VMs/disk.vhdx` using: `sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g'`
+- **Internal WSL operations**: Convert to `/mnt/c/VMs/disk.vhdx` using `wsl_convert_path()` function from `libs/utils.sh`
+  - **Always use `wsl_convert_path()` instead of inline sed commands** for consistency
+  - Example: `local vhd_path_wsl=$(wsl_convert_path "$vhd_path_win")`
 - **Mount operations**: Standard Linux paths `/mnt/...` or `/home/...`
 
 ### Dual Output Modes

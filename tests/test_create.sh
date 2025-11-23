@@ -7,6 +7,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Source utility functions for path conversion
+source "$PARENT_DIR/libs/utils.sh" 2>/dev/null || true
+
 # Parse command line arguments
 VERBOSE=false
 SELECTED_TESTS=()
@@ -84,7 +87,8 @@ TEST_VHD_BASE="${TEST_VHD_DIR}test_create"
 # Cleanup function to remove test VHDs
 cleanup_test_vhd() {
     local vhd_path="$1"
-    local vhd_path_wsl=$(echo "$vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$vhd_path")
     
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to unmount if attached
@@ -193,7 +197,7 @@ run_test "Create VHD with default settings" \
     0
 
 # Test 2: Verify created VHD file exists
-TEST_VHD_DIR_WSL=$(echo "$TEST_VHD_DIR" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+TEST_VHD_DIR_WSL=$(wsl_convert_path "$TEST_VHD_DIR")
 run_test "Verify created VHD file exists" \
     "test -f ${TEST_VHD_DIR_WSL}test_create_1.vhdx" \
     0

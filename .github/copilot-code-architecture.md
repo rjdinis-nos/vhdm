@@ -514,12 +514,16 @@ Used in: All commands handling paths
 wsl.exe --mount --vhd "C:/VMs/disk.vhdx"
 
 # For filesystem operations: Convert to /mnt/c/VMs/disk.vhdx
-local vhd_path_wsl=$(echo "$path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+# Always use the centralized wsl_convert_path() function from libs/utils.sh
+local vhd_path_wsl
+vhd_path_wsl=$(wsl_convert_path "$path")
 ```
 
 **Purpose**: Handle different path requirements for WSL vs Linux operations.
 
-**Note**: Persistent tracking uses normalized paths (lowercase, forward slashes) for case-insensitive matching.
+**Note**: 
+- **Always use `wsl_convert_path()` instead of inline sed commands** for consistency and maintainability
+- Persistent tracking uses normalized paths (lowercase, forward slashes) for case-insensitive matching
 
 ### 5. Structured Logging Pattern
 

@@ -68,7 +68,9 @@ This pattern is critical in `mount_vhd()` and `wsl_create_vhd()`. System disks (
 
 ### Path Format Handling
 - **User input**: Windows format with forward slashes: `C:/VMs/disk.vhdx`
-- **Internal WSL operations**: Convert to `/mnt/c/VMs/disk.vhdx` using: `sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g'`
+- **Internal WSL operations**: Convert to `/mnt/c/VMs/disk.vhdx` using `wsl_convert_path()` function from `libs/utils.sh`
+  - **Always use `wsl_convert_path()` instead of inline sed commands** for consistency
+  - Example: `local vhd_path_wsl=$(wsl_convert_path "$path")`
 - **WSL.exe calls**: Use original Windows format
 - **Mount operations**: Standard Linux paths `/mnt/...` or `/home/...`
 
@@ -380,8 +382,7 @@ Complete list of all Linux and WSL commands used in the scripts:
 - `command -v qemu-img` - Check if command exists
 
 **Text Processing:**
-- `sed 's|^\([A-Za-z]\):|/mnt/\L\1|'` - Convert Windows drive letter to WSL mount path
-- `sed 's|\\\\|/|g'` - Convert backslashes to forward slashes
+- `wsl_convert_path()` - Convert Windows paths to WSL paths (use this instead of inline sed commands)
 - `grep -v "null"` - Filter out null values
 - `head -n 1` - Get first line
 
@@ -608,13 +609,21 @@ bash "$SCRIPT_DIR/update_test_report.sh" \
    - `log_success()` for success messages
 8. Respect `DEBUG` and `QUIET` flags (logging functions handle this automatically)
 
-### Modifying Path Conversion
-Path conversion logic appears in multiple places. Consolidate into a helper function if adding more conversions:
+### Path Conversion
+Path conversion is centralized in `libs/utils.sh`:
 ```bash
 wsl_convert_path() {
-    echo "$1" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g'
+    local win_path="$1"
+    if [[ -z "$win_path" ]]; then
+        return 1
+    fi
+    # Convert drive letter to lowercase and prepend /mnt/
+    # Convert backslashes to forward slashes
+    echo "$win_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g'
 }
 ```
+
+**Always use `wsl_convert_path()` instead of inline sed commands** when converting Windows paths to WSL paths. This ensures consistency and makes future modifications easier.
 
 ### Adding New Tests
 1. Add test function call in `test_status.sh` following pattern: `run_test "Description" "command" expected_exit_code`

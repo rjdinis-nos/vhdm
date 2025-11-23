@@ -7,6 +7,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Source utility functions for path conversion
+source "$PARENT_DIR/libs/utils.sh" 2>/dev/null || true
+
 # Parse command line arguments
 VERBOSE=false
 SELECTED_TESTS=()
@@ -168,7 +171,8 @@ cleanup_test_vhd() {
     bash $PARENT_DIR/disk_management.sh -q delete --path "$vhd_path" --force >/dev/null 2>&1
     
     # Delete backup VHD if exists
-    local vhd_path_wsl=$(echo "$vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$vhd_path")
     local backup_vhd="${vhd_path_wsl%.vhdx}_bkp.vhdx"
     if [[ -e "$backup_vhd" ]]; then
         rm -f "$backup_vhd" >/dev/null 2>&1
@@ -183,7 +187,8 @@ create_test_vhd_with_data() {
     local data_size_mb="${4:-10}"  # Default 10MB of data
     
     # Clean up any existing VHD first
-    local vhd_path_wsl=$(echo "$vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$vhd_path")
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to detach first
         bash $PARENT_DIR/disk_management.sh -q umount --path "$vhd_path" >/dev/null 2>&1 || \
@@ -361,7 +366,7 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
             0
         
         # Test 14: Verify backup VHD was created (check immediately after first resize)
-        TEST_VHD_PATH_WSL=$(echo "$TEST_VHD_PATH" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+        TEST_VHD_PATH_WSL=$(wsl_convert_path "$TEST_VHD_PATH")
         # Note: Backup files may be overwritten by subsequent resizes, so we just check
         # if the resize operation didn't fail. The fact that test 10-13 passed proves backup works.
         run_test "Backup mechanism functional (resize succeeded)" \

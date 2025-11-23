@@ -1064,7 +1064,8 @@ wsl_find_uuid_by_path() {
     fi
     
     # Convert Windows path to WSL path to check if VHD file exists
-    local vhd_path_wsl=$(echo "$vhd_path_win" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$vhd_path_win")
     
     # Check if VHD file exists
     if [[ ! -e "$vhd_path_wsl" ]]; then
@@ -1174,7 +1175,8 @@ wsl_delete_vhd() {
     fi
     
     # Convert Windows path to WSL path for file operations
-    local vhd_path_wsl=$(echo "$vhd_path_win" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$vhd_path_win")
     
     # Check if VHD file exists
     if [[ ! -e "$vhd_path_wsl" ]]; then
@@ -1212,7 +1214,8 @@ wsl_create_vhd() {
     fi
     
     # Convert Windows path to WSL path for file operations
-    local vhd_path_wsl=$(echo "$vhd_path_win" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$vhd_path_win")
     
     # Check if VHD already exists
     if [[ -e "$vhd_path_wsl" ]]; then

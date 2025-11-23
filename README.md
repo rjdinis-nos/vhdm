@@ -763,6 +763,15 @@ The validation functions are located in `libs/utils.sh`:
 - `validate_filesystem_type()` - Whitelist validation for filesystem types
 - `sanitize_string()` - Additional sanitization layer (defense in depth)
 
+### Utility Functions
+
+Additional utility functions in `libs/utils.sh`:
+
+- `wsl_convert_path()` - Converts Windows paths to WSL paths (e.g., `C:/VMs/disk.vhdx` → `/mnt/c/VMs/disk.vhdx`)
+- `convert_size_to_bytes()` - Converts size strings to bytes (e.g., `5G` → `5368709120`)
+- `bytes_to_human()` - Converts bytes to human-readable format (e.g., `5368709120` → `5GB`)
+- `get_directory_size_bytes()` - Calculates total size of files in directory
+
 ### Defense in Depth
 
 The scripts implement multiple layers of security:

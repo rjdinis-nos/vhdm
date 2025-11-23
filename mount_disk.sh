@@ -111,7 +111,7 @@ if [[ -z "$DISK_PATH" ]]; then
 fi
 
 # Convert Windows path to WSL path for file existence check
-WSL_DISK_PATH=$(echo "$DISK_PATH" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+WSL_DISK_PATH=$(wsl_convert_path "$DISK_PATH")
 
 # Check if VHD file exists
 if [[ ! -f "$WSL_DISK_PATH" ]]; then

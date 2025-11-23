@@ -7,6 +7,9 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Source utility functions for path conversion
+source "$PARENT_DIR/libs/utils.sh" 2>/dev/null || true
+
 # Parse command line arguments
 VERBOSE=false
 SELECTED_TESTS=()
@@ -85,7 +88,8 @@ TEST_VHD_BASE="${TEST_VHD_DIR}test_delete"
 # Cleanup function to remove test VHDs
 cleanup_test_vhd() {
     local vhd_path="$1"
-    local vhd_path_wsl=$(echo "$vhd_path" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+    local vhd_path_wsl
+    vhd_path_wsl=$(wsl_convert_path "$vhd_path")
     
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to unmount if attached
@@ -203,7 +207,8 @@ bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_2.vhdx"
 # VHDs created by 'create' command are not attached, so no need to detach
 # However, if it somehow got attached, try to detach it
 # Check if actually attached via lsblk before trying to detach
-local vhd_path_wsl=$(echo "${TEST_VHD_BASE}_2.vhdx" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\|/|g')
+local vhd_path_wsl
+vhd_path_wsl=$(wsl_convert_path "${TEST_VHD_BASE}_2.vhdx")
 if lsblk -f -J 2>/dev/null | jq -e --arg path "$vhd_path_wsl" '.blockdevices[] | select(.name != null)' >/dev/null 2>&1; then
     # VHD appears to be attached, try to detach
     bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_2.vhdx" >/dev/null 2>&1 || \
@@ -216,7 +221,7 @@ run_test "Delete detached VHD by path" \
     0
 
 # Test 3: Verify VHD file is removed after delete
-TEST_VHD_DIR_WSL=$(echo "$TEST_VHD_DIR" | sed 's|^\([A-Za-z]\):|/mnt/\L\1|' | sed 's|\\\\|/|g')
+TEST_VHD_DIR_WSL=$(wsl_convert_path "$TEST_VHD_DIR")
 run_test "Verify VHD file is removed after delete" \
     "test ! -f ${TEST_VHD_DIR_WSL}test_delete_2.vhdx" \
     0
