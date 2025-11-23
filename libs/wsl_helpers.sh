@@ -60,6 +60,40 @@ normalize_vhd_path() {
     echo "$path" | tr '\\' '/' | tr '[:upper:]' '[:lower:]'
 }
 
+# Check if a VHD path is test-related
+# Args: $1 - VHD path (Windows format)
+# Returns: 0 if test VHD, 1 if not
+# Test VHDs are identified by:
+#   - Path is within WSL_DISKS_DIR from .env.test (if set)
+#   - Path contains "test" (case-insensitive) in filename or directory (fallback)
+#   - Path contains "wsl_tests" directory (fallback)
+is_test_vhd() {
+    local path="$1"
+    
+    if [[ -z "$path" ]]; then
+        return 1
+    fi
+    
+    local normalized=$(normalize_vhd_path "$path")
+    
+    # Check if WSL_DISKS_DIR is set (from .env.test) and path is within it
+    # This is the primary method when running tests
+    if [[ -n "${WSL_DISKS_DIR:-}" ]]; then
+        local test_dir_normalized=$(normalize_vhd_path "$WSL_DISKS_DIR")
+        if [[ "$normalized" == "$test_dir_normalized"* ]]; then
+            return 0
+        fi
+    fi
+    
+    # Fallback: Check if path contains "test" or "wsl_tests" (case-insensitive)
+    # This catches test VHDs even if WSL_DISKS_DIR is not set
+    if [[ "$normalized" == *"test"* ]] || [[ "$normalized" == *"wsl_tests"* ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
 # Save path→UUID mapping to tracking file
 # Args: $1 - VHD path (Windows format)
 #       $2 - UUID
@@ -222,6 +256,12 @@ update_vhd_mount_points() {
         return 1
     fi
     
+    # Skip tracking for test-related VHDs
+    if is_test_vhd "$path"; then
+        log_debug "Skipping mount points update for test VHD: $path"
+        return 0
+    fi
+    
     init_disk_tracking_file || return 1
     
     local normalized=$(normalize_vhd_path "$path")
@@ -328,6 +368,12 @@ save_detach_history() {
     if [[ -z "$path" || -z "$uuid" ]]; then
         log_debug "save_detach_history: path or uuid is empty"
         return 1
+    fi
+    
+    # Skip tracking for test-related VHDs
+    if is_test_vhd "$path"; then
+        log_debug "Skipping detach history save for test VHD: $path"
+        return 0
     fi
     
     init_disk_tracking_file || return 1

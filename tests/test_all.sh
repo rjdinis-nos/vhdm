@@ -86,7 +86,8 @@ else
 fi
 
 # Override DISK_TRACKING_FILE for tests (before any test runs)
-export DISK_TRACKING_FILE="$TEST_DISK_TRACKING_FILE"
+# Default to tests/vhd_mapping.json if TEST_DISK_TRACKING_FILE is not set
+export DISK_TRACKING_FILE="${TEST_DISK_TRACKING_FILE:-$SCRIPT_DIR/vhd_mapping.json}"
 
 # Ensure test tracking directory exists
 mkdir -p "$(dirname "$DISK_TRACKING_FILE")" 2>/dev/null

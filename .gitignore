@@ -1,1 +1,2 @@
 tests/.env.test
+tests/vhd_mapping.json
