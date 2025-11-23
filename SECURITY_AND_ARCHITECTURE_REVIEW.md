@@ -149,29 +149,70 @@ fi
 
 ## 🟡 ARCHITECTURE IMPROVEMENTS
 
-### 1. **Error Handling Inconsistencies**
+### 1. **Error Handling Inconsistencies** ✅ RESOLVED
 
-**Issue**: Mixed error handling patterns across functions
+**Status**: ✅ **FIXED** - Centralized error handling implemented
+
+**Original Issue**: Mixed error handling patterns across functions
 - Some functions return exit codes
 - Some functions use `exit 1` directly
 - Inconsistent error message formatting
 
-**Recommendation**:
-- Standardize on return codes for helper functions
-- Use `exit` only in command-level functions
-- Create centralized error handling functions
+**Resolution**:
+- ✅ **Centralized error handling functions** added in `libs/utils.sh`:
+  - `error_exit()` - For command-level functions (exits with error code)
+  - `error_return()` - For helper functions (returns error code)
+  - Both functions use `log_error()` for consistent error message formatting
+  - Support for optional help text and exit/return codes
 
-**Example**:
+- ✅ **Standardized command functions** in `disk_management.sh`:
+  - All command functions now use `error_exit()` instead of `return 1` or direct `exit 1`
+  - Consistent error message formatting through `log_error()`
+  - All error messages include helpful context and suggestions
+
+- ✅ **Verified helper functions**:
+  - Helper functions in `libs/wsl_helpers.sh` correctly use `return` (not `exit`)
+  - No changes needed - already compliant
+
+**Implementation**:
 ```bash
-# Add error handling helper
+# Centralized error handling in libs/utils.sh
 error_exit() {
     local msg="$1"
     local code="${2:-1}"
-    echo -e "${RED}Error: $msg${NC}" >&2
-    [[ "$QUIET" != "true" ]] && echo "Use --help for usage information" >&2
+    local help_text="${3:-}"
+    
+    # Always log error (even in quiet mode)
+    log_error "$msg"
+    
+    # Show help text if provided and not in quiet mode
+    if [[ -n "$help_text" ]] && [[ "$QUIET" != "true" ]]; then
+        echo "$help_text" >&2
+    fi
+    
+    # Show usage hint if not in quiet mode
+    if [[ "$QUIET" != "true" ]]; then
+        echo "Use --help for usage information" >&2
+    fi
+    
     exit "$code"
 }
+
+error_return() {
+    local msg="$1"
+    local code="${2:-1}"
+    
+    # Log error (always shown, even in quiet mode)
+    log_error "$msg"
+    
+    return "$code"
+}
 ```
+
+**Files Updated**:
+- `libs/utils.sh` - Added `error_exit()` and `error_return()` functions
+- `disk_management.sh` - Replaced 50+ instances of inconsistent error handling with `error_exit()`
+  - All command functions: `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `create_vhd()`, `resize_vhd()`, `format_vhd_command()`, `attach_vhd()`, `show_status()`, `history_vhd()`
 
 ### 2. **Code Duplication** ✅ RESOLVED
 
@@ -397,7 +438,11 @@ get_lsblk_cached() {
    - See section 3 above for detailed implementation
 
 ### Medium Priority (Architecture)
-1. ✅ Standardize error handling
+1. ✅ **COMPLETED** - Standardize error handling
+   - Centralized error handling functions (`error_exit()`, `error_return()`) added
+   - All command functions now use `error_exit()` for consistent error handling
+   - All error messages use `log_error()` for consistent formatting
+   - See section 1 above for detailed implementation
 2. ✅ **COMPLETED** - Extract common code patterns
    - Path conversion centralized in `wsl_convert_path()` function
    - All 20+ instances of duplicated path conversion logic replaced

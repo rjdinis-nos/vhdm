@@ -584,8 +584,8 @@ bash "$SCRIPT_DIR/update_test_report.sh" \
 - **Command Functions** (user-facing): Simple verb names
   - Examples: `attach_vhd()`, `mount_vhd()`, `detach_vhd()`, `umount_vhd()`
   - May orchestrate multiple operations (e.g., `mount_vhd()` = attach + mount)
-  - Exit on errors (exit 1)
-  - Comprehensive user-facing error messages
+  - Exit on errors using `error_exit()` function (not direct `exit 1`)
+  - Comprehensive user-facing error messages via `error_exit()`
 
 **Guidelines for new functions:**
 1. Add clear doc comment describing purpose, parameters, return values
@@ -601,13 +601,18 @@ bash "$SCRIPT_DIR/update_test_report.sh" \
    - `validate_vhd_name()` for VHD names
    - `validate_size_string()` for size strings
    - `validate_filesystem_type()` for filesystem types
-7. Use structured logging functions instead of echo statements:
+7. **Use centralized error handling functions** from `libs/utils.sh`:
+   - **Command functions**: Always use `error_exit()` instead of `return 1` or direct `exit 1`
+     - Example: `error_exit "Invalid path format: $path" 1 "Path must be a valid Windows path"`
+   - **Helper functions**: Use `return 1` directly (or `error_return()` if you need logging)
+     - Example: `log_error "Operation failed"; return 1`
+8. Use structured logging functions instead of echo statements:
    - `log_debug()` for debug messages
    - `log_info()` for informational messages
    - `log_warn()` for warnings
    - `log_error()` for errors
    - `log_success()` for success messages
-8. Respect `DEBUG` and `QUIET` flags (logging functions handle this automatically)
+9. Respect `DEBUG` and `QUIET` flags (logging functions handle this automatically)
 
 ### Path Conversion
 Path conversion is centralized in `libs/utils.sh`:

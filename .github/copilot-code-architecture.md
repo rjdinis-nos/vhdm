@@ -758,11 +758,50 @@ fi
 - Use structured logging functions instead of echo statements
 
 ### Command Functions
-- Exit on errors (exit 1)
-- User-friendly error messages using `log_error()`
-- Detailed suggestions for fixes using `log_info()`
+- Exit on errors using `error_exit()` function (not direct `exit 1`)
+- User-friendly error messages using `log_error()` via `error_exit()`
+- Detailed suggestions for fixes using optional help text parameter
 - State validation before operations
 - Use structured logging functions for all output
+- **Always use `error_exit()` instead of `return 1` or direct `exit 1`**
+
+### Centralized Error Handling Functions
+
+Located in `libs/utils.sh`:
+
+**`error_exit()`** - For command-level functions:
+```bash
+error_exit() {
+    local msg="$1"           # Error message (required)
+    local code="${2:-1}"     # Exit code (default: 1)
+    local help_text="${3:-}" # Optional help text
+    
+    log_error "$msg"         # Always log error (even in quiet mode)
+    
+    # Show help text if provided and not in quiet mode
+    if [[ -n "$help_text" ]] && [[ "$QUIET" != "true" ]]; then
+        echo "$help_text" >&2
+    fi
+    
+    # Show usage hint if not in quiet mode
+    if [[ "$QUIET" != "true" ]]; then
+        echo "Use --help for usage information" >&2
+    fi
+    
+    exit "$code"
+}
+```
+
+**`error_return()`** - For helper functions (if needed):
+```bash
+error_return() {
+    local msg="$1"           # Error message (required)
+    local code="${2:-1}"     # Return code (default: 1)
+    
+    log_error "$msg"         # Always log error (even in quiet mode)
+    return "$code"
+}
+```
 
 ### Example: Unmount Error Handling
 
@@ -786,6 +825,42 @@ wsl_umount_vhd() {
         log_info "Checking for processes using the mount point:"
         sudo lsof +D "$mount_point" 2>/dev/null || log_info "  No processes found (or lsof not available)"
         return 1
+    fi
+}
+
+# Command Function: umount_vhd()
+umount_vhd() {
+    # ... argument parsing ...
+    
+    if ! wsl_umount_vhd "$umount_point"; then
+        error_exit "Failed to unmount VHD"
+    fi
+    
+    # ... rest of function ...
+}
+```
+
+### Example: Command Function Error Handling
+
+```bash
+# Good: Using error_exit()
+mount_vhd() {
+    if [[ -z "$mount_path" ]]; then
+        error_exit "--path parameter is required" 1 "Usage: $0 mount --path PATH --mount-point MOUNT_POINT"
+    fi
+    
+    if ! validate_windows_path "$mount_path"; then
+        error_exit "Invalid path format: $mount_path" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
+    fi
+    
+    # ... rest of function ...
+}
+
+# Bad: Direct exit or return
+mount_vhd() {
+    if [[ -z "$mount_path" ]]; then
+        echo -e "${RED}Error: --path is required${NC}" >&2
+        return 1  # ❌ WRONG: Command functions should use error_exit()
     fi
 }
 ```

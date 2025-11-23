@@ -162,52 +162,40 @@ show_status() {
         case "$1" in
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --path requires a value${NC}" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    return 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 status_path="$2"
                 shift 2
                 ;;
             --uuid)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
-                    return 1
+                    error_exit "--uuid requires a value"
                 fi
                 if ! validate_uuid "$2"; then
-                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
-                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
-                    return 1
+                    error_exit "Invalid UUID format: $2" 1 "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 fi
                 status_uuid="$2"
                 shift 2
                 ;;
             --name)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --name requires a value${NC}" >&2
-                    return 1
+                    error_exit "--name requires a value"
                 fi
                 if ! validate_vhd_name "$2"; then
-                    echo -e "${RED}Error: Invalid VHD name format: $2${NC}" >&2
-                    echo "VHD name must contain only alphanumeric characters, hyphens, and underscores" >&2
-                    return 1
+                    error_exit "Invalid VHD name format: $2" 1 "VHD name must contain only alphanumeric characters, hyphens, and underscores"
                 fi
                 status_name="$2"
                 shift 2
                 ;;
             --mount-point)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
-                    return 1
+                    error_exit "--mount-point requires a value"
                 fi
                 if ! validate_mount_point "$2"; then
-                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
-                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
-                    return 1
+                    error_exit "Invalid mount point format: $2" 1 "Mount point must be an absolute path (e.g., /mnt/data)"
                 fi
                 status_mount_point="$2"
                 shift 2
@@ -217,9 +205,7 @@ show_status() {
                 shift
                 ;;
             *)
-                echo -e "${RED}Error: Unknown status option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown status option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done
@@ -231,28 +217,26 @@ show_status() {
             status_uuid=$(lookup_vhd_uuid_by_name "$status_name")
             
             if [[ -z "$status_uuid" ]]; then
-                echo -e "${RED}[✗] VHD name not found in tracking file${NC}"
-                echo
-                echo "VHD with name '$status_name' is not tracked."
-                echo
-                echo "Suggestions:"
-                echo "  1. Check the name is correct (case-sensitive)"
-                echo "  2. VHD might be attached with a different name"
-                echo "  3. See all attached VHDs: $0 status --all"
-                
-                [[ "$QUIET" == "true" ]] && echo "not found"
-                return 1
+                local name_help="VHD with name '$status_name' is not tracked.
+
+Suggestions:
+  1. Check the name is correct (case-sensitive)
+  2. VHD might be attached with a different name
+  3. See all attached VHDs: $0 status --all"
+                if [[ "$QUIET" == "true" ]]; then
+                    echo "not found"
+                fi
+                error_exit "VHD name not found in tracking file" 1 "$name_help"
             fi
             
             # Verify the UUID is actually attached
             if ! wsl_is_vhd_attached "$status_uuid"; then
-                echo -e "${YELLOW}[!] VHD found in tracking but not currently attached${NC}"
-                echo
-                echo "VHD with name '$status_name' (UUID: $status_uuid) is not attached."
-                echo "The tracking file may be stale."
-                
-                [[ "$QUIET" == "true" ]] && echo "not attached"
-                return 1
+                local stale_help="VHD with name '$status_name' (UUID: $status_uuid) is not attached.
+The tracking file may be stale."
+                if [[ "$QUIET" == "true" ]]; then
+                    echo "not attached"
+                fi
+                error_exit "VHD found in tracking but not currently attached" 1 "$stale_help"
             fi
             
             [[ "$QUIET" == "false" ]] && echo "Discovered UUID from name '$status_name': $status_uuid"
@@ -263,18 +247,17 @@ show_status() {
             vhd_path_wsl=$(wsl_convert_path "$status_path")
             
             if [[ ! -e "$vhd_path_wsl" ]]; then
-                echo -e "${RED}[✗] VHD file not found${NC}"
-                echo
-                echo "VHD file does not exist at: $status_path"
-                echo "  (WSL path: $vhd_path_wsl)"
-                echo
-                echo "Suggestions:"
-                echo "  1. Check the file path is correct"
-                echo "  2. Create a new VHD: $0 create --path $status_path --size <size>"
-                echo "  3. See all attached VHDs: $0 status --all"
-                
-                [[ "$QUIET" == "true" ]] && echo "not found"
-                return 1
+                local file_not_found_help="VHD file does not exist at: $status_path
+  (WSL path: $vhd_path_wsl)
+
+Suggestions:
+  1. Check the file path is correct
+  2. Create a new VHD: $0 create --path $status_path --size <size>
+  3. See all attached VHDs: $0 status --all"
+                if [[ "$QUIET" == "true" ]]; then
+                    echo "not found"
+                fi
+                error_exit "VHD file not found" 1 "$file_not_found_help"
             fi
             
             # File exists, try to find UUID by path with multi-VHD safety
@@ -284,11 +267,12 @@ show_status() {
             
             if [[ $discovery_result -eq 2 ]]; then
                 # Multiple VHDs detected
-                echo -e "${YELLOW}[!] Multiple VHDs are attached${NC}"
-                echo "Cannot determine UUID from path alone."
-                echo "Run '$0 status --all' to see all attached VHDs."
-                [[ "$QUIET" == "true" ]] && echo "ambiguous: multiple VHDs"
-                return 1
+                local multi_vhd_help="Cannot determine UUID from path alone.
+Run '$0 status --all' to see all attached VHDs."
+                if [[ "$QUIET" == "true" ]]; then
+                    echo "ambiguous: multiple VHDs"
+                fi
+                error_exit "Multiple VHDs are attached" 1 "$multi_vhd_help"
             elif [[ -n "$status_uuid" ]]; then
                 [[ "$QUIET" == "false" ]] && echo "Found VHD UUID: $status_uuid"
                 [[ "$QUIET" == "false" ]] && echo
@@ -335,53 +319,53 @@ show_status() {
             done <<< "$all_uuids"
         fi
         [[ "$QUIET" == "false" ]] && echo "========================================"
-        return 0
+        exit 0
     fi
     
     # If no UUID found after all lookup attempts, report error with suggestions
     if [[ -z "$status_uuid" ]]; then
-        echo -e "${RED}[✗] Unable to find VHD${NC}"
-        echo
-        
+        local suggestions=""
         if [[ -n "$status_mount_point" ]]; then
-            echo "No VHD is currently mounted at: $status_mount_point"
-            echo
-            echo "Suggestions:"
-            echo "  1. Check if the mount point exists: ls -ld $status_mount_point"
-            echo "  2. Verify VHD is mounted: mount | grep $status_mount_point"
-            echo "  3. See all attached VHDs: $0 status --all"
-            echo "  4. Mount the VHD first: $0 mount --path <path> --mount-point $status_mount_point"
+            suggestions="No VHD is currently mounted at: $status_mount_point
+
+Suggestions:
+  1. Check if the mount point exists: ls -ld $status_mount_point
+  2. Verify VHD is mounted: mount | grep $status_mount_point
+  3. See all attached VHDs: $0 status --all
+  4. Mount the VHD first: $0 mount --path <path> --mount-point $status_mount_point"
         elif [[ -n "$status_path" ]]; then
             # Convert to WSL path to check if file exists
             local vhd_path_wsl
             vhd_path_wsl=$(wsl_convert_path "$status_path")
             
             if [[ ! -e "$vhd_path_wsl" ]]; then
-                echo "VHD file not found at: $status_path"
-                echo
-                echo "Suggestions:"
-                echo "  1. Check the file path is correct"
-                echo "  2. Create a new VHD: $0 create --path $status_path"
+                suggestions="VHD file not found at: $status_path
+
+Suggestions:
+  1. Check the file path is correct
+  2. Create a new VHD: $0 create --path $status_path"
             else
-                echo "VHD file exists at: $status_path"
-                echo "But it is not currently attached to WSL."
-                echo
-                echo "Suggestions:"
-                echo "  1. Mount the VHD: $0 mount --path $status_path"
-                echo "  2. See all attached VHDs: $0 status --all"
+                suggestions="VHD file exists at: $status_path
+But it is not currently attached to WSL.
+
+Suggestions:
+  1. Mount the VHD: $0 mount --path $status_path
+  2. See all attached VHDs: $0 status --all"
             fi
         else
-            echo "No UUID, path, or mount point specified."
-            echo
-            echo "Suggestions:"
-            echo "  1. Provide a UUID: $0 status --uuid <uuid>"
-            echo "  2. Provide a path: $0 status --path <path>"
-            echo "  3. Provide a mount point: $0 status --mount-point <path>"
-            echo "  4. See all attached VHDs: $0 status --all"
+            suggestions="No UUID, path, or mount point specified.
+
+Suggestions:
+  1. Provide a UUID: $0 status --uuid <uuid>
+  2. Provide a path: $0 status --path <path>
+  3. Provide a mount point: $0 status --mount-point <path>
+  4. See all attached VHDs: $0 status --all"
         fi
         
-        [[ "$QUIET" == "true" ]] && echo "not found"
-        return 1
+        if [[ "$QUIET" == "true" ]]; then
+            echo "not found"
+        fi
+        error_exit "Unable to find VHD" 1 "$suggestions"
     fi
     
     # Show status for specific VHD
@@ -430,70 +414,54 @@ mount_vhd() {
         case "$1" in
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --path requires a value${NC}" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    exit 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 mount_path="$2"
                 shift 2
                 ;;
             --mount-point)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
-                    return 1
+                    error_exit "--mount-point requires a value"
                 fi
                 if ! validate_mount_point "$2"; then
-                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
-                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
-                    exit 1
+                    error_exit "Invalid mount point format: $2" 1 "Mount point must be an absolute path (e.g., /mnt/data)"
                 fi
                 mount_point="$2"
                 shift 2
                 ;;
             --name)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --name requires a value${NC}" >&2
-                    return 1
+                    error_exit "--name requires a value"
                 fi
                 if ! validate_vhd_name "$2"; then
-                    echo -e "${RED}Error: Invalid VHD name format: $2${NC}" >&2
-                    echo "VHD name must contain only alphanumeric characters, hyphens, and underscores" >&2
-                    exit 1
+                    error_exit "Invalid VHD name format: $2" 1 "VHD name must contain only alphanumeric characters, hyphens, and underscores"
                 fi
                 mount_name="$2"
                 shift 2
                 ;;
             *)
-                echo -e "${RED}Error: Unknown mount option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown mount option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done
     
     # Validate required parameters
     if [[ -z "$mount_path" ]]; then
-        echo -e "${RED}Error: --path parameter is required${NC}"
-        echo "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
-        exit 1
+        error_exit "--path parameter is required" 1 "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
     fi
     
     if [[ -z "$mount_point" ]]; then
-        echo -e "${RED}Error: --mount-point parameter is required${NC}"
-        echo "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
-        exit 1
+        error_exit "--mount-point parameter is required" 1 "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
     local vhd_path_wsl
     vhd_path_wsl=$(wsl_convert_path "$mount_path")
     if [[ ! -e "$vhd_path_wsl" ]]; then
-        echo -e "${RED}[✗] VHD file does not exist at $mount_path${NC}"
-        exit 1
+        error_exit "VHD file does not exist at $mount_path"
     fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
@@ -548,21 +516,18 @@ mount_vhd() {
         # If no UUID found, the VHD is unformatted
         if [[ -z "$mount_uuid" ]]; then
             if [[ -z "$new_dev" ]]; then
-                echo -e "${RED}[✗] Failed to detect device of attached VHD${NC}"
-                exit 1
+                error_exit "Failed to detect device of attached VHD"
             fi
             
-            echo -e "${RED}[✗] VHD has no filesystem${NC}"
-            echo
-            echo "The VHD is attached but not formatted."
-            echo "  Device: /dev/$new_dev"
-            echo
-            echo "To format the VHD, run:"
-            echo "  $0 format --name $new_dev --type ext4"
-            echo
-            echo "Or use a different filesystem type (ext3, xfs, etc.):"
-            echo "  $0 format --name $new_dev --type xfs"
-            exit 1
+            local format_help="The VHD is attached but not formatted.
+  Device: /dev/$new_dev
+
+To format the VHD, run:
+  $0 format --name $new_dev --type ext4
+
+Or use a different filesystem type (ext3, xfs, etc.):
+  $0 format --name $new_dev --type xfs"
+            error_exit "VHD has no filesystem" 1 "$format_help"
         fi
         
         [[ "$QUIET" == "false" ]] && echo "  Detected UUID: $mount_uuid"
@@ -578,18 +543,13 @@ mount_vhd() {
         
         if [[ $discovery_result -eq 2 ]]; then
             # Multiple VHDs detected - cannot safely determine which one
-            echo -e "${RED}[✗] Cannot determine UUID: Multiple VHDs are attached${NC}"
-            echo
-            echo "Use one of these options:"
-            echo "  1. View all attached VHDs: $0 status --all"
-            echo "  2. Detach other VHDs first, then retry"
-            echo "  3. Use explicit UUID if known: $0 mount --path $mount_path --mount-point $mount_point (then provide UUID)"
-            exit 1
+            local multi_vhd_help="Use one of these options:
+  1. View all attached VHDs: $0 status --all
+  2. Detach other VHDs first, then retry
+  3. Use explicit UUID if known: $0 mount --path $mount_path --mount-point $mount_point (then provide UUID)"
+            error_exit "Cannot determine UUID: Multiple VHDs are attached" 1 "$multi_vhd_help"
         elif [[ -z "$mount_uuid" ]]; then
-            echo -e "${RED}[✗] Could not detect UUID of VHD${NC}"
-            echo "The VHD file exists but is not attached to WSL."
-            echo "Try running: $0 status --all"
-            exit 1
+            error_exit "Could not detect UUID of VHD" 1 "The VHD file exists but is not attached to WSL. Try running: $0 status --all"
         else
             [[ "$QUIET" == "false" ]] && echo "  Found UUID: $mount_uuid"
         fi
@@ -610,8 +570,7 @@ mount_vhd() {
         if [[ ! -d "$mount_point" ]]; then
             [[ "$QUIET" == "false" ]] && echo "Creating mount point: $mount_point"
             if ! create_mount_point "$mount_point"; then
-                echo -e "${RED}[✗] Failed to create mount point${NC}"
-                exit 1
+                error_exit "Failed to create mount point"
             fi
         fi
         
@@ -622,8 +581,7 @@ mount_vhd() {
             # Update mount point in tracking file
             update_vhd_mount_points "$mount_path" "$mount_point"
         else
-            echo -e "${RED}[✗] Failed to mount VHD${NC}"
-            exit 1
+            error_exit "Failed to mount VHD"
         fi
     fi
 
@@ -655,47 +613,36 @@ umount_vhd() {
         case "$1" in
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --path requires a value${NC}" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    return 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 umount_path="$2"
                 shift 2
                 ;;
             --uuid)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
-                    return 1
+                    error_exit "--uuid requires a value"
                 fi
                 if ! validate_uuid "$2"; then
-                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
-                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
-                    return 1
+                    error_exit "Invalid UUID format: $2" 1 "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 fi
                 umount_uuid="$2"
                 shift 2
                 ;;
             --mount-point)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
-                    return 1
+                    error_exit "--mount-point requires a value"
                 fi
                 if ! validate_mount_point "$2"; then
-                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
-                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
-                    return 1
+                    error_exit "Invalid mount point format: $2" 1 "Mount point must be an absolute path (e.g., /mnt/data)"
                 fi
                 umount_point="$2"
                 shift 2
                 ;;
             *)
-                echo -e "${RED}Error: Unknown umount option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown umount option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done
@@ -710,11 +657,11 @@ umount_vhd() {
             
             if [[ $discovery_result -eq 2 ]]; then
                 # Multiple VHDs detected
-                echo -e "${RED}[✗] Cannot determine UUID: Multiple VHDs are attached${NC}"
-                echo
-                echo "Please specify --uuid explicitly or run: $0 status --all"
-                [[ "$QUIET" == "true" ]] && echo "ambiguous: multiple VHDs"
-                return 1
+                local multi_vhd_help="Please specify --uuid explicitly or run: $0 status --all"
+                if [[ "$QUIET" == "true" ]]; then
+                    echo "ambiguous: multiple VHDs"
+                fi
+                error_exit "Cannot determine UUID: Multiple VHDs are attached" 1 "$multi_vhd_help"
             elif [[ -n "$umount_uuid" ]]; then
                 [[ "$QUIET" == "false" ]] && echo "Discovered UUID from path: $umount_uuid"
                 [[ "$QUIET" == "false" ]] && echo
@@ -731,16 +678,16 @@ umount_vhd() {
     
     # If UUID still not found, report error
     if [[ -z "$umount_uuid" ]]; then
-        echo -e "${RED}[✗] Unable to identify VHD${NC}"
-        echo
-        echo "Could not discover UUID. Please provide one of:"
-        echo "  --uuid UUID           Explicit UUID"
-        echo "  --path PATH           VHD file path (will attempt discovery)"
-        echo "  --mount-point PATH    Mount point (will attempt discovery)"
-        echo
-        echo "To find UUID, run: $0 status --all"
-        [[ "$QUIET" == "true" ]] && echo "uuid not found"
-        return 1
+        local uuid_help="Could not discover UUID. Please provide one of:
+  --uuid UUID           Explicit UUID
+  --path PATH           VHD file path (will attempt discovery)
+  --mount-point PATH    Mount point (will attempt discovery)
+
+To find UUID, run: $0 status --all"
+        if [[ "$QUIET" == "true" ]]; then
+            echo "uuid not found"
+        fi
+        error_exit "Unable to identify VHD" 1 "$uuid_help"
     fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
@@ -752,7 +699,7 @@ umount_vhd() {
         [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is not attached to WSL${NC}"
         [[ "$QUIET" == "false" ]] && echo "Nothing to do."
         [[ "$QUIET" == "false" ]] && echo "========================================"
-        return 0
+        exit 0
     fi
     
     [[ "$QUIET" == "false" ]] && echo -e "${BLUE}[i] VHD is attached to WSL${NC}"
@@ -774,7 +721,7 @@ umount_vhd() {
                 update_vhd_mount_points "$umount_path" ""
             fi
         else
-            exit 1
+            error_exit "Failed to unmount VHD"
         fi
     else
         [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is not mounted to filesystem${NC}"
@@ -792,8 +739,7 @@ umount_vhd() {
         if wsl_detach_vhd "$umount_path" "$umount_uuid" "$umount_name"; then
             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
         else
-            echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
-            exit 1
+            error_exit "Failed to detach VHD from WSL"
         fi
     else
         [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD was not detached from WSL${NC}"
@@ -832,44 +778,33 @@ detach_vhd() {
         case "$1" in
             --uuid)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
-                    return 1
+                    error_exit "--uuid requires a value"
                 fi
                 if ! validate_uuid "$2"; then
-                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
-                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
-                    exit 1
+                    error_exit "Invalid UUID format: $2" 1 "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 fi
                 detach_uuid="$2"
                 shift 2
                 ;;
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --path requires a value${NC}" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    exit 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 detach_path="$2"
                 shift 2
                 ;;
             *)
-                echo -e "${RED}Error: Unknown detach option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown detach option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done
     
     # Validate that UUID is provided
     if [[ -z "$detach_uuid" ]]; then
-        echo -e "${RED}Error: --uuid is required${NC}"
-        echo "Use --uuid to specify the VHD UUID to detach"
-        echo "To find UUIDs, run: $0 status --all"
-        exit 1
+        error_exit "--uuid is required" 1 "Use --uuid to specify the VHD UUID to detach. To find UUIDs, run: $0 status --all"
     fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
@@ -883,7 +818,7 @@ detach_vhd() {
         [[ "$QUIET" == "false" ]] && echo "Nothing to do."
         [[ "$QUIET" == "true" ]] && echo "$detach_uuid: not attached"
         [[ "$QUIET" == "false" ]] && echo "========================================"
-        return 0
+        exit 0
     fi
     
     [[ "$QUIET" == "false" ]] && echo -e "${BLUE}[i] VHD is attached to WSL${NC}"
@@ -911,7 +846,7 @@ detach_vhd() {
                 update_vhd_mount_points "$detach_path" ""
             fi
         else
-            exit 1
+            error_exit "Failed to unmount VHD"
         fi
         [[ "$QUIET" == "false" ]] && echo
     else
@@ -934,21 +869,18 @@ detach_vhd() {
         if wsl_detach_vhd "$detach_path" "$detach_uuid" "$detach_name"; then
             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
         else
-            echo -e "${RED}[✗] Failed to detach VHD from WSL${NC}"
-            exit 1
+            error_exit "Failed to detach VHD from WSL"
         fi
     else
         # If we couldn't find the path, report error with helpful message
-        echo -e "${RED}[✗] Could not determine VHD path${NC}"
-        echo
-        echo "The VHD path could not be found automatically."
-        echo "Please provide the path explicitly:"
-        echo "  $0 detach --uuid $detach_uuid --path <vhd_path>"
-        echo
-        echo "Or use the umount command if you know the path or mount point:"
-        echo "  $0 umount --path <vhd_path>"
-        echo "  $0 umount --mount-point <mount_point>"
-        exit 1
+        local path_help="The VHD path could not be found automatically.
+Please provide the path explicitly:
+  $0 detach --uuid $detach_uuid --path <vhd_path>
+
+Or use the umount command if you know the path or mount point:
+  $0 umount --path <vhd_path>
+  $0 umount --mount-point <mount_point>"
+        error_exit "Could not determine VHD path" 1 "$path_help"
     fi
     
     [[ "$QUIET" == "false" ]] && echo
@@ -976,26 +908,20 @@ delete_vhd() {
         case "$1" in
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --path requires a value${NC}" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    exit 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 delete_path="$2"
                 shift 2
                 ;;
             --uuid)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --uuid requires a value${NC}" >&2
-                    return 1
+                    error_exit "--uuid requires a value"
                 fi
                 if ! validate_uuid "$2"; then
-                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
-                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
-                    exit 1
+                    error_exit "Invalid UUID format: $2" 1 "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 fi
                 delete_uuid="$2"
                 shift 2
@@ -1005,27 +931,21 @@ delete_vhd() {
                 shift
                 ;;
             *)
-                echo -e "${RED}Error: Unknown delete option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown delete option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done
     
     # Validate that at least path is provided
     if [[ -z "$delete_path" ]]; then
-        echo -e "${RED}Error: VHD path is required${NC}"
-        echo "Use --path to specify the VHD file path"
-        exit 1
+        error_exit "VHD path is required" 1 "Use --path to specify the VHD file path"
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
     local vhd_path_wsl
     vhd_path_wsl=$(wsl_convert_path "$delete_path")
     if [[ ! -e "$vhd_path_wsl" ]]; then
-        echo -e "${RED}[✗] VHD file does not exist at $delete_path${NC}"
-        echo "  (WSL path: $vhd_path_wsl)"
-        exit 1
+        error_exit "VHD file does not exist at $delete_path (WSL path: $vhd_path_wsl)"
     fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
@@ -1141,26 +1061,20 @@ create_vhd() {
         case "$1" in
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --path requires a value${NC}" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    exit 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 create_path="$2"
                 shift 2
                 ;;
             --size)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --size requires a value${NC}" >&2
-                    return 1
+                    error_exit "--size requires a value"
                 fi
                 if ! validate_size_string "$2"; then
-                    echo -e "${RED}Error: Invalid size format: $2${NC}" >&2
-                    echo "Size must be in format: number[K|M|G|T] (e.g., 5G, 500M)" >&2
-                    exit 1
+                    error_exit "Invalid size format: $2" 1 "Size must be in format: number[K|M|G|T] (e.g., 5G, 500M)"
                 fi
                 create_size="$2"
                 shift 2
@@ -1170,18 +1084,14 @@ create_vhd() {
                 shift
                 ;;
             *)
-                echo -e "${RED}Error: Unknown create option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown create option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done
     
     # Validate required parameters
     if [[ -z "$create_path" ]]; then
-        echo -e "${RED}Error: VHD path is required${NC}"
-        echo "Use --path to specify the VHD file path"
-        exit 1
+        error_exit "VHD path is required" 1 "Use --path to specify the VHD file path"
     fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
@@ -1361,49 +1271,37 @@ resize_vhd() {
         case "$1" in
             --mount-point)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --mount-point requires a value${NC}" >&2
-                    return 1
+                    error_exit "--mount-point requires a value"
                 fi
                 if ! validate_mount_point "$2"; then
-                    echo -e "${RED}Error: Invalid mount point format: $2${NC}" >&2
-                    echo "Mount point must be an absolute path (e.g., /mnt/data)" >&2
-                    exit 1
+                    error_exit "Invalid mount point format: $2" 1 "Mount point must be an absolute path (e.g., /mnt/data)"
                 fi
                 target_mount_point="$2"
                 shift 2
                 ;;
             --size)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --size requires a value${NC}" >&2
-                    return 1
+                    error_exit "--size requires a value"
                 fi
                 if ! validate_size_string "$2"; then
-                    echo -e "${RED}Error: Invalid size format: $2${NC}" >&2
-                    echo "Size must be in format: number[K|M|G|T] (e.g., 5G, 500M)" >&2
-                    exit 1
+                    error_exit "Invalid size format: $2" 1 "Size must be in format: number[K|M|G|T] (e.g., 5G, 500M)"
                 fi
                 new_size="$2"
                 shift 2
                 ;;
             *)
-                echo -e "${RED}Error: Unknown resize option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown resize option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done
     
     # Validate required parameters
     if [[ -z "$target_mount_point" ]]; then
-        echo -e "${RED}Error: --mount-point is required${NC}"
-        echo "Specify the mount point of the target disk to resize"
-        exit 1
+        error_exit "--mount-point is required" 1 "Specify the mount point of the target disk to resize"
     fi
     
     if [[ -z "$new_size" ]]; then
-        echo -e "${RED}Error: --size is required${NC}"
-        echo "Specify the new size for the disk (e.g., 5G, 10G)"
-        exit 1
+        error_exit "--size is required" 1 "Specify the new size for the disk (e.g., 5G, 10G)"
     fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
@@ -1413,16 +1311,13 @@ resize_vhd() {
     
     # Check if target mount point exists and is mounted
     if [[ ! -d "$target_mount_point" ]]; then
-        echo -e "${RED}[✗] Target mount point does not exist: $target_mount_point${NC}"
-        exit 1
+        error_exit "Target mount point does not exist: $target_mount_point"
     fi
     
     # Find UUID of target disk
     local target_uuid=$(wsl_find_uuid_by_mountpoint "$target_mount_point")
     if [[ -z "$target_uuid" ]]; then
-        echo -e "${RED}[✗] No VHD mounted at $target_mount_point${NC}"
-        echo "Please ensure the target disk is mounted first"
-        exit 1
+        error_exit "No VHD mounted at $target_mount_point" 1 "Please ensure the target disk is mounted first"
     fi
     
     [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Found target disk${NC}"
@@ -1437,8 +1332,7 @@ resize_vhd() {
     local target_device=$(lsblk -f -J | jq -r --arg UUID "$target_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
     
     if [[ -z "$target_device" ]]; then
-        echo -e "${RED}[✗] Could not find device for UUID $target_uuid${NC}"
-        exit 1
+        error_exit "Could not find device for UUID $target_uuid"
     fi
     
     # Calculate total size of all files in target disk
@@ -1779,47 +1673,36 @@ format_vhd_command() {
         case "$1" in
             --name)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo "Error: --name requires a value" >&2
-                    return 1
+                    error_exit "--name requires a value"
                 fi
                 if ! validate_device_name "$2"; then
-                    echo -e "${RED}Error: Invalid device name format: $2${NC}" >&2
-                    echo "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde)" >&2
-                    exit 1
+                    error_exit "Invalid device name format: $2" 1 "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde)"
                 fi
                 format_name="$2"
                 shift 2
                 ;;
             --uuid)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo "Error: --uuid requires a value" >&2
-                    return 1
+                    error_exit "--uuid requires a value"
                 fi
                 if ! validate_uuid "$2"; then
-                    echo -e "${RED}Error: Invalid UUID format: $2${NC}" >&2
-                    echo "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" >&2
-                    exit 1
+                    error_exit "Invalid UUID format: $2" 1 "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
                 fi
                 format_uuid="$2"
                 shift 2
                 ;;
             --type)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo "Error: --type requires a value" >&2
-                    return 1
+                    error_exit "--type requires a value"
                 fi
                 if ! validate_filesystem_type "$2"; then
-                    echo -e "${RED}Error: Invalid filesystem type: $2${NC}" >&2
-                    echo "Supported types: ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat" >&2
-                    exit 1
+                    error_exit "Invalid filesystem type: $2" 1 "Supported types: ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat"
                 fi
                 format_type="$2"
                 shift 2
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
-                echo "Use --help to see available options" >&2
-                exit 1
+                error_exit "Unknown option: $1" 1 "Use --help to see available options"
                 ;;
         esac
     done
@@ -1977,51 +1860,40 @@ attach_vhd() {
         case "$1" in
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo "Error: --path requires a value" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    exit 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 attach_path="$2"
                 shift 2
                 ;;
             --name)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo "Error: --name requires a value" >&2
-                    return 1
+                    error_exit "--name requires a value"
                 fi
                 if ! validate_vhd_name "$2"; then
-                    echo -e "${RED}Error: Invalid VHD name format: $2${NC}" >&2
-                    echo "VHD name must contain only alphanumeric characters, hyphens, and underscores" >&2
-                    exit 1
+                    error_exit "Invalid VHD name format: $2" 1 "VHD name must contain only alphanumeric characters, hyphens, and underscores"
                 fi
                 attach_name="$2"
                 shift 2
                 ;;
             *)
-                echo "Error: Unknown option: $1" >&2
-                echo "Use --help to see available options" >&2
-                exit 1
+                error_exit "Unknown option: $1" 1 "Use --help to see available options"
                 ;;
         esac
     done
     
     # Validate required parameters
     if [[ -z "$attach_path" ]]; then
-        echo "Error: VHD path is required. Use --path option." >&2
-        exit 1
+        error_exit "VHD path is required. Use --path option."
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
     local vhd_path_wsl
     vhd_path_wsl=$(wsl_convert_path "$attach_path")
     if [[ ! -e "$vhd_path_wsl" ]]; then
-        echo "Error: VHD file does not exist: $attach_path" >&2
-        echo "  (WSL path: $vhd_path_wsl)" >&2
-        exit 1
+        error_exit "VHD file does not exist: $attach_path (WSL path: $vhd_path_wsl)"
     fi
     
     [[ "$QUIET" == "false" ]] && echo "========================================"
@@ -2148,29 +2020,23 @@ history_vhd() {
         case "$1" in
             --limit)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --limit requires a value${NC}" >&2
-                    return 1
+                    error_exit "--limit requires a value"
                 fi
                 limit="$2"
                 shift 2
                 ;;
             --path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    echo -e "${RED}Error: --path requires a value${NC}" >&2
-                    return 1
+                    error_exit "--path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
-                    echo -e "${RED}Error: Invalid path format: $2${NC}" >&2
-                    echo "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)" >&2
-                    return 1
+                    error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
                 show_path="$2"
                 shift 2
                 ;;
             *)
-                echo -e "${RED}Error: Unknown history option '$1'${NC}"
-                echo
-                show_usage
+                error_exit "Unknown history option '$1'" 1 "$(show_usage)"
                 ;;
         esac
     done

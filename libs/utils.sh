@@ -366,6 +366,52 @@ log_success() {
     fi
 }
 
+# ============================================================================
+# CENTRALIZED ERROR HANDLING FUNCTIONS
+# ============================================================================
+
+# Error exit function for command-level functions
+# Command functions should exit on errors (not return)
+# Args: $1 - Error message
+#       $2 - Exit code (default: 1)
+#       $3 - Additional help text (optional)
+# Exits: With specified exit code (default: 1)
+error_exit() {
+    local msg="$1"
+    local code="${2:-1}"
+    local help_text="${3:-}"
+    
+    # Always log error (even in quiet mode)
+    log_error "$msg"
+    
+    # Show help text if provided and not in quiet mode
+    if [[ -n "$help_text" ]] && [[ "$QUIET" != "true" ]]; then
+        echo "$help_text" >&2
+    fi
+    
+    # Show usage hint if not in quiet mode
+    if [[ "$QUIET" != "true" ]]; then
+        echo "Use --help for usage information" >&2
+    fi
+    
+    exit "$code"
+}
+
+# Error return function for helper functions
+# Helper functions should return error codes (not exit)
+# Args: $1 - Error message
+#       $2 - Return code (default: 1)
+# Returns: With specified return code (default: 1)
+error_return() {
+    local msg="$1"
+    local code="${2:-1}"
+    
+    # Log error (always shown, even in quiet mode)
+    log_error "$msg"
+    
+    return "$code"
+}
+
 # Helper function to calculate total size of files in directory (in bytes)
 # Args: $1 - Directory path
 # Returns: Size in bytes
