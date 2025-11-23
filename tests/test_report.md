@@ -1,13 +1,13 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-23 15:17:28
+Last Updated: 2025-11-23 15:43:53
 
 <a id="test-suite-summary"></a>
 ## Test Suite Summary
 
 | Test Suite | Last Run | Status | Tests Run | Passed | Failed | Duration |
 |------------|----------|--------|-----------|--------|--------|----------|
-| [test_attach.sh](#test-attach) | 2025-11-23 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 15 | 11 | 4 | 16s |
+| [test_attach.sh](#test-attach) | 2025-11-23 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 15 | 12 | 3 | 39s |
 | [test_create.sh](#test-create) | 2025-11-23 | <span style="color: green; font-weight: bold;">✓ PASSED</span> | 10 | 10 | 0 | 176s |
 | [test_delete.sh](#test-delete) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 6 | 4 | 3s |
 | [test_detach.sh](#test-detach) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 3 | 7 | 11s |
@@ -26,9 +26,9 @@ Last Updated: 2025-11-23 15:17:28
 | **Last Run** | 2025-11-23 |
 | **Status** | ✗ FAILED |
 | **Tests Run** | 15 |
-| **Passed** | <span style="color: green;">11</span> |
-| **Failed** | <span style="color: red;">4</span> |
-| **Duration** | 16s |
+| **Passed** | <span style="color: green;">12</span> |
+| **Failed** | <span style="color: red;">3</span> |
+| **Duration** | 39s |
 
 #### Test Results
 
@@ -45,7 +45,7 @@ Last Updated: 2025-11-23 15:17:28
 | **9** | Test 9 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **10** | Test 10 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **11** | Test 11 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
-| **12** | Device name is reported after attach | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **12** | Test 12 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **13** | Attach shows completion message | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
 | **14** | Test 14 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **15** | Test 15 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
