@@ -6,7 +6,7 @@
       "tests_run": 10,
       "tests_passed": 10,
       "tests_failed": 0,
-      "duration": "123s",
+      "duration": "10s",
       "test_results": [
         {
           "number": 1,
@@ -61,32 +61,32 @@
       ]
     },
     "test_mount.sh": {
-      "last_run": "2025-11-22",
-      "status": "✗ FAILED",
+      "last_run": "2025-11-23",
+      "status": "✓ PASSED",
       "tests_run": 10,
-      "tests_passed": 2,
-      "tests_failed": 8,
-      "duration": "12s",
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "18s",
       "test_results": [
         {
           "number": 1,
-          "name": "Mount VHD with default configuration",
-          "status": "FAILED"
+          "name": "Test 1",
+          "status": "PASSED"
         },
         {
           "number": 2,
-          "name": "Mount already-mounted VHD (idempotency)",
-          "status": "FAILED"
+          "name": "Test 2",
+          "status": "PASSED"
         },
         {
           "number": 3,
-          "name": "Mount with explicit path parameter",
-          "status": "FAILED"
+          "name": "Test 3",
+          "status": "PASSED"
         },
         {
           "number": 4,
-          "name": "Mount with custom mount point",
-          "status": "FAILED"
+          "name": "Test 4",
+          "status": "PASSED"
         },
         {
           "number": 5,
@@ -95,8 +95,8 @@
         },
         {
           "number": 6,
-          "name": "Mount creates mount point directory",
-          "status": "FAILED"
+          "name": "Test 6",
+          "status": "PASSED"
         },
         {
           "number": 7,
@@ -105,33 +105,33 @@
         },
         {
           "number": 8,
-          "name": "Mount point is accessible after mounting",
-          "status": "FAILED"
+          "name": "Test 8",
+          "status": "PASSED"
         },
         {
           "number": 9,
-          "name": "Mounted filesystem has correct permissions",
-          "status": "FAILED"
+          "name": "Test 9",
+          "status": "PASSED"
         },
         {
           "number": 10,
-          "name": "Status shows VHD as mounted after mount",
-          "status": "FAILED"
+          "name": "Test 10",
+          "status": "PASSED"
         }
       ]
     },
     "test_umount.sh": {
-      "last_run": "2025-11-22",
+      "last_run": "2025-11-23",
       "status": "✗ FAILED",
       "tests_run": 10,
-      "tests_passed": 2,
-      "tests_failed": 8,
-      "duration": "14s",
+      "tests_passed": 9,
+      "tests_failed": 1,
+      "duration": "45s",
       "test_results": [
         {
           "number": 1,
-          "name": "Umount mounted VHD with default configuration",
-          "status": "FAILED"
+          "name": "Test 1",
+          "status": "PASSED"
         },
         {
           "number": 2,
@@ -140,23 +140,23 @@
         },
         {
           "number": 3,
-          "name": "Umount with UUID parameter",
-          "status": "FAILED"
+          "name": "Test 3",
+          "status": "PASSED"
         },
         {
           "number": 4,
-          "name": "Umount with path parameter",
-          "status": "FAILED"
+          "name": "Test 4",
+          "status": "PASSED"
         },
         {
           "number": 5,
-          "name": "Umount with mount point parameter",
-          "status": "FAILED"
+          "name": "Test 5",
+          "status": "PASSED"
         },
         {
           "number": 6,
-          "name": "Mount point not accessible after umount",
-          "status": "FAILED"
+          "name": "Test 6",
+          "status": "PASSED"
         },
         {
           "number": 7,
@@ -165,13 +165,13 @@
         },
         {
           "number": 8,
-          "name": "Umount command completes successfully",
-          "status": "FAILED"
+          "name": "Test 8",
+          "status": "PASSED"
         },
         {
           "number": 9,
-          "name": "Umount reports successful completion",
-          "status": "FAILED"
+          "name": "Test 9",
+          "status": "PASSED"
         },
         {
           "number": 10,
@@ -181,62 +181,62 @@
       ]
     },
     "test_create.sh": {
-      "last_run": "2025-11-22",
-      "status": "✗ FAILED",
+      "last_run": "2025-11-23",
+      "status": "✓ PASSED",
       "tests_run": 10,
-      "tests_passed": 1,
-      "tests_failed": 9,
-      "duration": "1s",
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "176s",
       "test_results": [
         {
           "number": 1,
           "name": "Create VHD with default settings",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 2,
           "name": "Verify created VHD file exists",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 3,
           "name": "Verify created VHD file can be found",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 4,
           "name": "Create VHD with custom size (500M)",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 5,
           "name": "Verify custom size VHD exists",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 6,
           "name": "Create VHD in quiet mode",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 7,
-          "name": "Test 7",
+          "name": "Attempt to create existing VHD (should fail)",
           "status": "PASSED"
         },
         {
           "number": 8,
           "name": "Create VHD with 2G size",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 9,
           "name": "Verify custom VHD file exists",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 10,
           "name": "Attach created VHD",
-          "status": "FAILED"
+          "status": "PASSED"
         }
       ]
     },
@@ -301,12 +301,12 @@
       ]
     },
     "test_attach.sh": {
-      "last_run": "2025-11-22",
+      "last_run": "2025-11-23",
       "status": "✗ FAILED",
       "tests_run": 15,
-      "tests_passed": 9,
-      "tests_failed": 6,
-      "duration": "14s",
+      "tests_passed": 11,
+      "tests_failed": 4,
+      "duration": "16s",
       "test_results": [
         {
           "number": 1,
@@ -340,8 +340,8 @@
         },
         {
           "number": 7,
-          "name": "Attach in debug mode shows commands",
-          "status": "FAILED"
+          "name": "Test 7",
+          "status": "PASSED"
         },
         {
           "number": 8,
@@ -360,8 +360,8 @@
         },
         {
           "number": 11,
-          "name": "UUID is detected and reported after attach",
-          "status": "FAILED"
+          "name": "Test 11",
+          "status": "PASSED"
         },
         {
           "number": 12,

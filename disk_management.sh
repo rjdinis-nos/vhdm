@@ -19,10 +19,12 @@ SCRIPT_DIR="$ORIGINAL_SCRIPT_DIR"
 # Initialize runtime flags (can be overridden by command-line options)
 QUIET="${QUIET:-false}"
 DEBUG="${DEBUG:-false}"
+YES="${YES:-false}"
 
 # Export flags for child scripts
 export QUIET
 export DEBUG
+export YES
 
 # Initialize resource cleanup system (for automatic cleanup on exit/interrupt)
 # Note: This must be called after SCRIPT_DIR is restored to avoid path issues
@@ -35,6 +37,7 @@ show_usage() {
     echo "Options:"
     echo "  -q, --quiet  - Run in quiet mode (minimal output)"
     echo "  -d, --debug  - Run in debug mode (show all commands before execution)"
+    echo "  -y, --yes    - Automatically answer 'yes' to all confirmation prompts"
     echo
     echo "Commands:"
     echo "  attach [OPTIONS]         - Attach a VHD to WSL (without mounting to filesystem)"
@@ -1010,8 +1013,8 @@ Then try the delete command again."
     log_info "  (WSL path: $vhd_path_wsl)"
     log_info ""
     
-    # Confirmation prompt unless --force is used
-    if [[ "$force" == "false" ]] && [[ "$QUIET" == "false" ]]; then
+    # Confirmation prompt unless --force is used or YES flag is set
+    if [[ "$force" == "false" ]] && [[ "$QUIET" == "false" ]] && [[ "$YES" == "false" ]]; then
         log_warn "WARNING: This operation cannot be undone!"
         echo -n "Are you sure you want to delete this VHD? (yes/no): "
         read -r confirmation
@@ -1111,13 +1114,32 @@ create_vhd() {
             existing_uuid=$(wsl_find_uuid_by_path "$create_path" 2>&1)
             discovery_result=$?
             
-            # Only check attachment if we have a UUID (skip if multiple VHDs or not found)
+            # If UUID discovery failed due to multiple VHDs, try tracking file directly
+            if [[ $discovery_result -eq 2 ]]; then
+                # Multiple VHDs attached - try tracking file lookup
+                local tracked_uuid=$(lookup_vhd_uuid "$create_path")
+                if [[ -n "$tracked_uuid" ]] && wsl_is_vhd_attached "$tracked_uuid"; then
+                    existing_uuid="$tracked_uuid"
+                    discovery_result=0
+                fi
+            fi
+            
+            # Check if VHD needs to be unmounted/detached
+            local needs_unmount=false
             if [[ $discovery_result -eq 0 && -n "$existing_uuid" ]] && wsl_is_vhd_attached "$existing_uuid"; then
+                needs_unmount=true
+            elif [[ $discovery_result -eq 2 ]]; then
+                # Multiple VHDs - try to unmount by path directly using wsl.exe
+                # This works even when UUID discovery fails
+                needs_unmount=true
+            fi
+            
+            if [[ "$needs_unmount" == "true" ]]; then
                 log_warn "VHD is currently attached to WSL"
                 log_info ""
                 
-                # Ask for permission to unmount in non-quiet mode
-                if [[ "$QUIET" == "false" ]]; then
+                # Ask for permission to unmount in non-quiet mode (unless YES flag is set)
+                if [[ "$QUIET" == "false" ]] && [[ "$YES" == "false" ]]; then
                     log_warn "The VHD must be unmounted before overwriting."
                     echo -n "Do you want to unmount it now? (yes/no): "
                     read -r unmount_confirmation
@@ -1130,51 +1152,67 @@ create_vhd() {
                         exit 0
                     fi
                     log_info ""
+                elif [[ "$YES" == "true" ]]; then
+                    log_info "Auto-unmounting VHD (--yes flag set)..."
+                    log_info ""
                 fi
                 
                 # Perform unmount operation
                 log_info "Unmounting VHD..."
                 
-                # Check if mounted and unmount from filesystem first
-                if wsl_is_vhd_mounted "$existing_uuid"; then
-                    local existing_mount_point=$(wsl_get_vhd_mount_point "$existing_uuid")
-                    if [[ -n "$existing_mount_point" ]]; then
-                        if wsl_umount_vhd "$existing_mount_point"; then
-                            log_success "VHD unmounted from filesystem"
-                        else
-                            log_error "Failed to unmount VHD from filesystem"
-                            log_info "Checking for processes using the mount point:"
-                            # Use safe_sudo for lsof (non-critical diagnostic command)
-                            if check_sudo_permissions; then
-                                safe_sudo lsof +D "$existing_mount_point" 2>/dev/null || log_info "  No processes found"
+                if [[ $discovery_result -eq 0 && -n "$existing_uuid" ]]; then
+                    # We have a UUID - use normal unmount flow
+                    # Check if mounted and unmount from filesystem first
+                    if wsl_is_vhd_mounted "$existing_uuid"; then
+                        local existing_mount_point=$(wsl_get_vhd_mount_point "$existing_uuid")
+                        if [[ -n "$existing_mount_point" ]]; then
+                            if wsl_umount_vhd "$existing_mount_point"; then
+                                log_success "VHD unmounted from filesystem"
                             else
-                                log_info "  Cannot check processes (sudo permissions required)"
+                                log_error "Failed to unmount VHD from filesystem"
+                                log_info "Checking for processes using the mount point:"
+                                # Use safe_sudo for lsof (non-critical diagnostic command)
+                                if check_sudo_permissions; then
+                                    safe_sudo lsof +D "$existing_mount_point" 2>/dev/null || log_info "  No processes found"
+                                else
+                                    log_info "  Cannot check processes (sudo permissions required)"
+                                fi
+                                error_exit "Failed to unmount VHD from filesystem"
                             fi
-                            error_exit "Failed to unmount VHD from filesystem"
                         fi
+                    fi
+                    
+                    # Detach from WSL
+                    # Get VHD name from tracking file for history
+                    local existing_name=""
+                    if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                        local normalized_path=$(normalize_vhd_path "$create_path")
+                        existing_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
+                    fi
+                    if wsl_detach_vhd "$create_path" "$existing_uuid" "$existing_name"; then
+                        log_success "VHD detached from WSL"
+                        log_info ""
+                    else
+                        error_exit "Failed to detach VHD from WSL"
+                    fi
+                else
+                    # Multiple VHDs or UUID not found - try direct unmount by path
+                    log_info "Attempting to unmount by path (UUID discovery ambiguous)..."
+                    if wsl.exe --unmount "$create_path" 2>/dev/null; then
+                        log_success "VHD detached from WSL (via direct unmount)"
+                        log_info ""
+                    else
+                        log_warn "Direct unmount failed - file may still be locked"
+                        log_info "Attempting to continue with file deletion..."
                     fi
                 fi
                 
-                # Detach from WSL
-                # Get VHD name from tracking file for history
-                local existing_name=""
-                if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
-                    local normalized_path=$(normalize_vhd_path "$create_path")
-                    existing_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
-                fi
-                if wsl_detach_vhd "$create_path" "$existing_uuid" "$existing_name"; then
-                    log_success "VHD detached from WSL"
-                    log_info ""
-                else
-                    error_exit "Failed to detach VHD from WSL"
-                fi
-                
                 # Small delay to ensure detachment is complete
-                sleep 1
+                sleep 2
             fi
             
-            # Confirmation prompt in non-quiet mode
-            if [[ "$QUIET" == "false" ]]; then
+            # Confirmation prompt in non-quiet mode (unless YES flag is set)
+            if [[ "$QUIET" == "false" ]] && [[ "$YES" == "false" ]]; then
                 log_warn "WARNING: This will permanently delete the existing VHD file!"
                 echo -n "Are you sure you want to overwrite $create_path? (yes/no): "
                 read -r confirmation
@@ -1183,6 +1221,9 @@ create_vhd() {
                     log_info "Operation cancelled."
                     exit 0
                 fi
+                log_info ""
+            elif [[ "$YES" == "true" ]]; then
+                log_info "Auto-confirming overwrite (--yes flag set)..."
                 log_info ""
             fi
             
@@ -1707,7 +1748,7 @@ This is a security check to prevent command injection."
         log_info ""
         log_info "Formatting will destroy all existing data and generate a new UUID."
         
-        if [[ "$QUIET" == "false" ]]; then
+        if [[ "$QUIET" == "false" ]] && [[ "$YES" == "false" ]]; then
             echo -n "Are you sure you want to format /dev/$device_name? (yes/no): "
             read -r confirmation
             
@@ -1715,6 +1756,9 @@ This is a security check to prevent command injection."
                 log_info "Format operation cancelled."
                 exit 0
             fi
+            log_info ""
+        elif [[ "$YES" == "true" ]]; then
+            log_info "Auto-confirming format (--yes flag set)..."
             log_info ""
         fi
         
@@ -2035,6 +2079,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         -d|--debug)
             DEBUG=true
+            shift
+            ;;
+        -y|--yes)
+            YES=true
             shift
             ;;
         -h|--help|help)

@@ -1,20 +1,20 @@
 # WSL VHD Disk Management - Test Report
 
-Last Updated: 2025-11-23 14:27:54
+Last Updated: 2025-11-23 15:17:28
 
 <a id="test-suite-summary"></a>
 ## Test Suite Summary
 
 | Test Suite | Last Run | Status | Tests Run | Passed | Failed | Duration |
 |------------|----------|--------|-----------|--------|--------|----------|
-| [test_attach.sh](#test-attach) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 15 | 9 | 6 | 14s |
-| [test_create.sh](#test-create) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 1 | 9 | 1s |
+| [test_attach.sh](#test-attach) | 2025-11-23 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 15 | 11 | 4 | 16s |
+| [test_create.sh](#test-create) | 2025-11-23 | <span style="color: green; font-weight: bold;">✓ PASSED</span> | 10 | 10 | 0 | 176s |
 | [test_delete.sh](#test-delete) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 6 | 4 | 3s |
 | [test_detach.sh](#test-detach) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 3 | 7 | 11s |
-| [test_mount.sh](#test-mount) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 2 | 8 | 12s |
+| [test_mount.sh](#test-mount) | 2025-11-23 | <span style="color: green; font-weight: bold;">✓ PASSED</span> | 10 | 10 | 0 | 18s |
 | [test_resize.sh](#test-resize) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 20 | 4 | 16 | 2s |
-| [test_status.sh](#test-status) | 2025-11-23 | <span style="color: green; font-weight: bold;">✓ PASSED</span> | 10 | 10 | 0 | 123s |
-| [test_umount.sh](#test-umount) | 2025-11-22 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 2 | 8 | 14s |
+| [test_status.sh](#test-status) | 2025-11-23 | <span style="color: green; font-weight: bold;">✓ PASSED</span> | 10 | 10 | 0 | 10s |
+| [test_umount.sh](#test-umount) | 2025-11-23 | <span style="color: red; font-weight: bold;">✗ FAILED</span> | 10 | 9 | 1 | 45s |
 
 <a id="test-attach"></a>
 ### test_attach.sh ![FAILED](https://img.shields.io/badge/status-FAILED-red)
@@ -23,12 +23,12 @@ Last Updated: 2025-11-23 14:27:54
 
 | Metric | Value |
 |--------|-------|
-| **Last Run** | 2025-11-22 |
+| **Last Run** | 2025-11-23 |
 | **Status** | ✗ FAILED |
 | **Tests Run** | 15 |
-| **Passed** | <span style="color: green;">9</span> |
-| **Failed** | <span style="color: red;">6</span> |
-| **Duration** | 14s |
+| **Passed** | <span style="color: green;">11</span> |
+| **Failed** | <span style="color: red;">4</span> |
+| **Duration** | 16s |
 
 #### Test Results
 
@@ -40,44 +40,44 @@ Last Updated: 2025-11-23 14:27:54
 | **4** | Verify attached VHD appears in status | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
 | **5** | Verify VHD is not mounted after attach | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
 | **6** | Test 6 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
-| **7** | Attach in debug mode shows commands | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **7** | Test 7 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **8** | Test 8 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **9** | Test 9 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **10** | Test 10 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
-| **11** | UUID is detected and reported after attach | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **11** | Test 11 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **12** | Device name is reported after attach | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
 | **13** | Attach shows completion message | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
 | **14** | Test 14 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **15** | Test 15 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 
 <a id="test-create"></a>
-### test_create.sh ![FAILED](https://img.shields.io/badge/status-FAILED-red)
+### test_create.sh ![PASSED](https://img.shields.io/badge/status-PASSED-brightgreen)
 
 [↑ Back to Summary](#test-suite-summary)
 
 | Metric | Value |
 |--------|-------|
-| **Last Run** | 2025-11-22 |
-| **Status** | ✗ FAILED |
+| **Last Run** | 2025-11-23 |
+| **Status** | ✓ PASSED |
 | **Tests Run** | 10 |
-| **Passed** | <span style="color: green;">1</span> |
-| **Failed** | <span style="color: red;">9</span> |
-| **Duration** | 1s |
+| **Passed** | <span style="color: green;">10</span> |
+| **Failed** | <span style="color: red;">0</span> |
+| **Duration** | 176s |
 
 #### Test Results
 
 | # | Test Name | Status |
 |---|-----------|--------|
-| **1** | Create VHD with default settings | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **2** | Verify created VHD file exists | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **3** | Verify created VHD file can be found | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **4** | Create VHD with custom size (500M) | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **5** | Verify custom size VHD exists | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **6** | Create VHD in quiet mode | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **7** | Test 7 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
-| **8** | Create VHD with 2G size | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **9** | Verify custom VHD file exists | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **10** | Attach created VHD | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **1** | Create VHD with default settings | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **2** | Verify created VHD file exists | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **3** | Verify created VHD file can be found | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **4** | Create VHD with custom size (500M) | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **5** | Verify custom size VHD exists | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **6** | Create VHD in quiet mode | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **7** | Attempt to create existing VHD (should fail) | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **8** | Create VHD with 2G size | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **9** | Verify custom VHD file exists | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **10** | Attach created VHD | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 
 <a id="test-delete"></a>
 ### test_delete.sh ![FAILED](https://img.shields.io/badge/status-FAILED-red)
@@ -138,33 +138,33 @@ Last Updated: 2025-11-23 14:27:54
 | **10** | Detach command completes successfully | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
 
 <a id="test-mount"></a>
-### test_mount.sh ![FAILED](https://img.shields.io/badge/status-FAILED-red)
+### test_mount.sh ![PASSED](https://img.shields.io/badge/status-PASSED-brightgreen)
 
 [↑ Back to Summary](#test-suite-summary)
 
 | Metric | Value |
 |--------|-------|
-| **Last Run** | 2025-11-22 |
-| **Status** | ✗ FAILED |
+| **Last Run** | 2025-11-23 |
+| **Status** | ✓ PASSED |
 | **Tests Run** | 10 |
-| **Passed** | <span style="color: green;">2</span> |
-| **Failed** | <span style="color: red;">8</span> |
-| **Duration** | 12s |
+| **Passed** | <span style="color: green;">10</span> |
+| **Failed** | <span style="color: red;">0</span> |
+| **Duration** | 18s |
 
 #### Test Results
 
 | # | Test Name | Status |
 |---|-----------|--------|
-| **1** | Mount VHD with default configuration | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **2** | Mount already-mounted VHD (idempotency) | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **3** | Mount with explicit path parameter | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **4** | Mount with custom mount point | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **1** | Test 1 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **2** | Test 2 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **3** | Test 3 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **4** | Test 4 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **5** | Test 5 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
-| **6** | Mount creates mount point directory | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **6** | Test 6 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **7** | Test 7 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
-| **8** | Mount point is accessible after mounting | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **9** | Mounted filesystem has correct permissions | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **10** | Status shows VHD as mounted after mount | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **8** | Test 8 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **9** | Test 9 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **10** | Test 10 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 
 <a id="test-resize"></a>
 ### test_resize.sh ![FAILED](https://img.shields.io/badge/status-FAILED-red)
@@ -217,7 +217,7 @@ Last Updated: 2025-11-23 14:27:54
 | **Tests Run** | 10 |
 | **Passed** | <span style="color: green;">10</span> |
 | **Failed** | <span style="color: red;">0</span> |
-| **Duration** | 123s |
+| **Duration** | 10s |
 
 #### Test Results
 
@@ -241,26 +241,26 @@ Last Updated: 2025-11-23 14:27:54
 
 | Metric | Value |
 |--------|-------|
-| **Last Run** | 2025-11-22 |
+| **Last Run** | 2025-11-23 |
 | **Status** | ✗ FAILED |
 | **Tests Run** | 10 |
-| **Passed** | <span style="color: green;">2</span> |
-| **Failed** | <span style="color: red;">8</span> |
-| **Duration** | 14s |
+| **Passed** | <span style="color: green;">9</span> |
+| **Failed** | <span style="color: red;">1</span> |
+| **Duration** | 45s |
 
 #### Test Results
 
 | # | Test Name | Status |
 |---|-----------|--------|
-| **1** | Umount mounted VHD with default configuration | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **1** | Test 1 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **2** | Umount already-unmounted VHD (idempotency) | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **3** | Umount with UUID parameter | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **4** | Umount with path parameter | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **5** | Umount with mount point parameter | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **6** | Mount point not accessible after umount | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **3** | Test 3 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **4** | Test 4 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **5** | Test 5 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **6** | Test 6 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **7** | Test 7 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
-| **8** | Umount command completes successfully | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
-| **9** | Umount reports successful completion | <span style="color: red; font-weight: bold;">✗ FAILED</span> |
+| **8** | Test 8 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
+| **9** | Test 9 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 | **10** | Test 10 | <span style="color: green; font-weight: bold;">✓ PASSED</span> |
 
 ---

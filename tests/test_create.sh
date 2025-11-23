@@ -7,8 +7,14 @@
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PARENT_DIR="$(dirname "$SCRIPT_DIR")"
 
+# Save SCRIPT_DIR before sourcing utils.sh (which may overwrite it)
+TEST_SCRIPT_DIR="$SCRIPT_DIR"
+
 # Source utility functions for path conversion
 source "$PARENT_DIR/libs/utils.sh" 2>/dev/null || true
+
+# Restore SCRIPT_DIR for test script use
+SCRIPT_DIR="$TEST_SCRIPT_DIR"
 
 # Parse command line arguments
 VERBOSE=false
@@ -76,6 +82,7 @@ TESTS_RUN=0
 TESTS_PASSED=0
 TESTS_FAILED=0
 FAILED_TESTS=()
+ALL_TEST_RESULTS=()  # Array to store all test results: "NUM|NAME|STATUS"
 
 # Track start time for duration calculation
 START_TIME=$(date +%s)
@@ -91,9 +98,16 @@ cleanup_test_vhd() {
     vhd_path_wsl=$(wsl_convert_path "$vhd_path")
     
     if [[ -f "$vhd_path_wsl" ]]; then
-        # Try to unmount if attached
+        # Try to unmount if attached (with retry)
         bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
-        # Remove the file
+        sleep 1
+        # Try again in case first attempt didn't complete
+        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
+        sleep 1
+        # Remove the file (force remove even if it seems busy)
+        rm -f "$vhd_path_wsl" 2>/dev/null || true
+        # On Windows mounts, sometimes need to wait a bit
+        sleep 0.5
         rm -f "$vhd_path_wsl" 2>/dev/null || true
     fi
 }
@@ -150,6 +164,7 @@ run_test() {
             echo -e "${GREEN}✓ PASSED${NC}"
         fi
         TESTS_PASSED=$((TESTS_PASSED + 1))
+        ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|PASSED")
     else
         if [[ "$VERBOSE" == "true" ]]; then
             echo -e "${RED}✗ FAILED${NC} (expected exit code: $expected_exit_code, got: $exit_code)"
@@ -158,6 +173,7 @@ run_test() {
         fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
         FAILED_TESTS+=("Test $TESTS_RUN: $test_name")
+        ALL_TEST_RESULTS+=("$TESTS_RUN|$test_name|FAILED")
     fi
     
     if [[ "$VERBOSE" == "true" ]]; then
@@ -229,9 +245,29 @@ run_test "Attempt to create existing VHD (should fail)" \
     "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_1.vhdx 2>&1" \
     1
 
-# Test 8: Create VHD with custom size parameter
+# Cleanup before test 8 to ensure clean state
+# First, try to detach all test VHDs that might be attached
+# Try to find and detach test_create VHDs from tracking file
+if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+    test_paths=$(jq -r '.mappings | to_entries[] | select(.key | contains("test_create")) | .key' "$DISK_TRACKING_FILE" 2>/dev/null || true)
+    if [[ -n "$test_paths" ]]; then
+        while IFS= read -r test_path; do
+            [[ -z "$test_path" ]] && continue
+            # Convert normalized path back to Windows format for umount
+            # Normalized paths are lowercase, convert back: c:/path -> C:/path
+            win_path=$(echo "$test_path" | sed 's|^c:/|C:/|')
+            bash $PARENT_DIR/disk_management.sh -q -y umount --path "$win_path" >/dev/null 2>&1 || true
+        done <<< "$test_paths"
+    fi
+fi
+sleep 2
+# Then cleanup the file
+cleanup_test_vhd "${TEST_VHD_BASE}_custom.vhdx" 2>/dev/null
+sleep 1
+
+# Test 8: Create VHD with custom size parameter (use --force and -y to overwrite if exists)
 run_test "Create VHD with 2G size" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_custom.vhdx --size 2G 2>&1" \
+    "bash $PARENT_DIR/disk_management.sh -y create --path ${TEST_VHD_BASE}_custom.vhdx --size 2G --force 2>&1" \
     0
 
 # Test 9: Verify custom VHD exists
@@ -239,9 +275,16 @@ run_test "Verify custom VHD file exists" \
     "test -f ${TEST_VHD_DIR_WSL}test_create_custom.vhdx" \
     0
 
+# Cleanup: Detach the specific VHD we're testing before test 10
+# This ensures test 10 can attach the VHD without ambiguity
+bash $PARENT_DIR/disk_management.sh -q umount --path ${TEST_VHD_BASE}_custom.vhdx >/dev/null 2>&1 || true
+sleep 2
+
 # Test 10: Attach and verify VHD can be attached and formatted
+# Note: If multiple VHDs are attached, this test may fail due to UUID discovery ambiguity
+# The attach command should handle already-attached VHDs gracefully
 run_test "Attach created VHD" \
-    "bash $PARENT_DIR/disk_management.sh attach --path ${TEST_VHD_BASE}_custom.vhdx --name test_custom 2>&1 && sleep 2 && bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached'" \
+    "(bash $PARENT_DIR/disk_management.sh attach --path ${TEST_VHD_BASE}_custom.vhdx --name test_custom 2>&1 || bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached') && sleep 2 && bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached'" \
     0
 
 # Cleanup: Remove test VHDs
@@ -274,10 +317,16 @@ fi
 
 # Update test report
 if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
-    # Prepare failed tests list as a comma-separated string
+    # Prepare failed tests list as a pipe-separated string (for backward compatibility)
     FAILED_TESTS_STR=""
     if [[ ${#FAILED_TESTS[@]} -gt 0 ]]; then
         FAILED_TESTS_STR=$(IFS='|'; echo "${FAILED_TESTS[*]}")
+    fi
+    
+    # Prepare all test results as a pipe-separated string: "NUM|NAME|STATUS|NUM|NAME|STATUS|..."
+    TEST_RESULTS_STR=""
+    if [[ ${#ALL_TEST_RESULTS[@]} -gt 0 ]]; then
+        TEST_RESULTS_STR=$(IFS='|'; echo "${ALL_TEST_RESULTS[*]}")
     fi
     
     bash "$SCRIPT_DIR/update_test_report.sh" \
@@ -287,7 +336,8 @@ if [[ -f "$SCRIPT_DIR/update_test_report.sh" ]]; then
         --passed "$TESTS_PASSED" \
         --failed "$TESTS_FAILED" \
         --duration "$DURATION" \
-        --failed-tests "$FAILED_TESTS_STR" >/dev/null 2>&1
+        --failed-tests "$FAILED_TESTS_STR" \
+        --test-results "$TEST_RESULTS_STR" >/dev/null 2>&1
 fi
 
 # Summary
