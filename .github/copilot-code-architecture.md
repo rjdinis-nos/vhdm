@@ -199,6 +199,12 @@ All tests involving UUID discovery must:
 | `log_error()` | `$@: message` | Log error message (always shown) | utils.sh | Structured logging |
 | `log_success()` | `$@: message` | Log success message (unless QUIET=true) | utils.sh | Structured logging |
 | `debug_cmd()` | `$@: command and args` | Wrapper to log and execute commands in debug mode | wsl_helpers.sh | Debug support (uses log_debug) |
+| `init_resource_cleanup()` | None | Initialize resource cleanup system with trap handlers | utils.sh | Resource management |
+| `register_vhd_cleanup()` | `$1: path, $2: uuid, $3: name` | Register VHD for automatic cleanup | utils.sh | Resource management |
+| `unregister_vhd_cleanup()` | `$1: path` | Unregister VHD from cleanup tracking | utils.sh | Resource management |
+| `register_file_cleanup()` | `$1: file_path` | Register temporary file for cleanup | utils.sh | Resource management |
+| `unregister_file_cleanup()` | `$1: file_path` | Unregister file from cleanup tracking | utils.sh | Resource management |
+| `cleanup_on_exit()` | None | Automatic cleanup handler (called on EXIT/INT/TERM) | utils.sh | Resource management |
 
 ## Function Flow Diagrams
 
@@ -685,6 +691,81 @@ fi
 - `update_vhd_mount_points()` - Updates mount points for existing VHD
 - `remove_vhd_mapping()` - Removes VHD from tracking file
 - `save_detach_history()` - Adds detach events to history
+
+### 10. Resource Cleanup Pattern
+
+Used in: All operations that attach VHDs or create temporary resources that need cleanup on script failure/interrupt
+
+```bash
+# Initialize cleanup system at script startup (disk_management.sh)
+init_resource_cleanup
+
+# Register VHD for cleanup when attaching
+register_vhd_cleanup "$vhd_path" "" "$vhd_name"
+
+# Update registration with UUID when detected
+unregister_vhd_cleanup "$vhd_path"
+register_vhd_cleanup "$vhd_path" "$uuid" "$vhd_name"
+
+# Unregister when operation completes successfully
+unregister_vhd_cleanup "$vhd_path"
+```
+
+**Purpose**:
+- **Reliability**: Ensures VHDs are automatically detached on script failure or interruption (Ctrl+C)
+- **Resource Management**: Prevents orphaned VHD attachments that remain after script errors
+- **Cleanup Guarantee**: Trap handlers (EXIT, INT, TERM) ensure cleanup even if script is killed
+- **Best-Effort**: Cleanup errors are suppressed to prevent masking original errors
+
+**Key Components** (in `libs/utils.sh`):
+- `init_resource_cleanup()` - Initializes cleanup system with trap handlers
+- `register_vhd_cleanup(path, uuid, name)` - Registers VHD for automatic cleanup
+- `unregister_vhd_cleanup(path)` - Unregisters VHD when operation succeeds
+- `register_file_cleanup(path)` - Registers temporary files for cleanup
+- `unregister_file_cleanup(path)` - Unregisters files when no longer needed
+- `cleanup_on_exit()` - Automatic cleanup function called on exit/interrupt
+- Global arrays: `CLEANUP_VHDS` and `CLEANUP_FILES`
+
+**Key Requirements**:
+1. ✅ Initialize cleanup system at script startup with `init_resource_cleanup()`
+2. ✅ Register VHDs immediately after attachment (before any operations that might fail)
+3. ✅ Update registration with UUID when detected (for better cleanup)
+4. ✅ Unregister VHDs when operations complete successfully
+5. ✅ Cleanup function handles errors gracefully (best-effort, suppresses errors)
+
+**Registration Points**:
+- `mount_vhd()` - Registers when VHD is attached, unregisters on successful mount
+- `attach_vhd()` - Registers when VHD is attached, unregisters on successful completion
+- `resize_vhd()` - Registers new VHD when created, unregisters on successful completion
+
+**Cleanup Behavior**:
+- On script exit (normal or error): All registered VHDs are detached, all registered files are removed
+- On script interrupt (Ctrl+C): Same cleanup as exit
+- On script termination (kill): Same cleanup as exit
+- Cleanup messages shown unless in quiet mode
+- Errors during cleanup are suppressed (best-effort approach)
+
+**Example Flow**:
+```bash
+# In mount_vhd() function
+if wsl_attach_vhd "$mount_path" "$mount_name"; then
+    # Register immediately after successful attach
+    register_vhd_cleanup "$mount_path" "" "$mount_name"
+    
+    # ... detect UUID ...
+    
+    # Update registration with UUID
+    unregister_vhd_cleanup "$mount_path"
+    register_vhd_cleanup "$mount_path" "$mount_uuid" "$mount_name"
+    
+    # ... mount operation ...
+    
+    if wsl_mount_vhd "$mount_uuid" "$mount_point"; then
+        # Unregister on success - operation completed, no cleanup needed
+        unregister_vhd_cleanup "$mount_path"
+    fi
+fi
+```
 
 ## State Machine: VHD Lifecycle
 

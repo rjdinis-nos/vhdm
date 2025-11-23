@@ -20,6 +20,9 @@ DEBUG="${DEBUG:-false}"
 export QUIET
 export DEBUG
 
+# Initialize resource cleanup system (for automatic cleanup on exit/interrupt)
+init_resource_cleanup
+
 # Function to show usage
 show_usage() {
     echo "Usage: $0 [OPTIONS] COMMAND [COMMAND_OPTIONS]"
@@ -479,6 +482,8 @@ mount_vhd() {
     
     if wsl_attach_vhd "$mount_path" "$mount_name" 2>/dev/null; then
         newly_attached=true
+        # Register VHD for cleanup (will be unregistered on successful mount)
+        register_vhd_cleanup "$mount_path" "" "$mount_name"
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD attached successfully${NC}"
         sleep 2  # Give the system time to recognize the device
         
@@ -500,6 +505,9 @@ mount_vhd() {
         for uuid in "${new_uuids[@]}"; do
             if [[ -z "${seen_uuid[$uuid]}" ]]; then
                 mount_uuid="$uuid"
+                # Update cleanup registration with UUID
+                unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
+                register_vhd_cleanup "$mount_path" "$mount_uuid" "$mount_name"
                 break
             fi
         done
@@ -580,9 +588,15 @@ Or use a different filesystem type (ext3, xfs, etc.):
             
             # Update mount point in tracking file
             update_vhd_mount_points "$mount_path" "$mount_point"
+            
+            # Unregister from cleanup tracking - operation completed successfully
+            unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
         else
             error_exit "Failed to mount VHD"
         fi
+    else
+        # Already mounted - unregister from cleanup tracking
+        unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
     fi
 
     [[ "$QUIET" == "false" ]] && echo
@@ -1426,6 +1440,8 @@ resize_vhd() {
     if new_uuid=$(wsl_create_vhd "$new_vhd_path" "$actual_size_str" "ext4" "${target_vhd_basename}_temp" 2>&1); then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] New VHD created${NC}"
         [[ "$QUIET" == "false" ]] && echo "  New UUID: $new_uuid"
+        # Register new VHD for cleanup (will be unregistered on successful completion)
+        register_vhd_cleanup "$new_vhd_path" "$new_uuid" "${target_vhd_basename}_temp"
     else
         echo -e "${RED}[✗] Failed to create new VHD${NC}"
         echo "$new_uuid"  # Print error message
@@ -1580,6 +1596,9 @@ resize_vhd() {
     [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] New disk detached${NC}"
     [[ "$QUIET" == "false" ]] && echo
     
+    # Unregister new VHD from cleanup tracking (detached successfully, will be renamed)
+    unregister_vhd_cleanup "$new_vhd_path" 2>/dev/null || true
+    
     # Rename new VHD to target name
     local new_vhd_path_wsl
     new_vhd_path_wsl=$(wsl_convert_path "$new_vhd_path")
@@ -1633,6 +1652,9 @@ resize_vhd() {
     # Mount the resized VHD
     if wsl_mount_vhd "$final_uuid" "$target_mount_point"; then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Resized VHD mounted${NC}"
+        
+        # Unregister from cleanup tracking - operation completed successfully
+        unregister_vhd_cleanup "$target_vhd_path" 2>/dev/null || true
     else
         echo -e "${RED}[✗] Failed to mount resized VHD${NC}"
         exit 1
@@ -1911,6 +1933,8 @@ attach_vhd() {
     
     if wsl_attach_vhd "$attach_path" "$attach_name" 2>/dev/null; then
         newly_attached=true
+        # Register VHD for cleanup (will be unregistered on successful completion)
+        register_vhd_cleanup "$attach_path" "" "$attach_name"
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD attached to WSL${NC}"
         [[ "$QUIET" == "false" ]] && echo "  Path: $attach_path"
         [[ "$QUIET" == "false" ]] && echo "  Name: $attach_name"
@@ -1933,6 +1957,9 @@ attach_vhd() {
         for uuid in "${new_uuids[@]}"; do
             if [[ -z "${seen_uuid[$uuid]}" ]]; then
                 attach_uuid="$uuid"
+                # Update cleanup registration with UUID
+                unregister_vhd_cleanup "$attach_path" 2>/dev/null || true
+                register_vhd_cleanup "$attach_path" "$attach_uuid" "$attach_name"
                 break
             fi
         done
@@ -1954,6 +1981,9 @@ attach_vhd() {
             
             # Save mapping to tracking file with VHD name
             save_vhd_mapping "$attach_path" "$attach_uuid" "" "$attach_name"
+            
+            # Unregister from cleanup tracking - operation completed successfully
+            unregister_vhd_cleanup "$attach_path" 2>/dev/null || true
         fi
     else
         # Attachment failed - VHD might already be attached
@@ -1984,6 +2014,9 @@ attach_vhd() {
             
             # Save mapping to tracking file (idempotent - updates if exists) with VHD name
             save_vhd_mapping "$attach_path" "$attach_uuid" "" "$attach_name"
+            
+            # Unregister from cleanup tracking - operation completed successfully
+            unregister_vhd_cleanup "$attach_path" 2>/dev/null || true
         else
             echo -e "${RED}[✗] Failed to attach VHD${NC}" >&2
             echo "  The VHD might already be attached with a different name or path." >&2

@@ -635,3 +635,253 @@ safe_sudo_capture() {
     echo "$output"
     return 0
 }
+
+# ============================================================================
+# RESOURCE CLEANUP FUNCTIONS - Automatic cleanup on script failure/interrupt
+# ============================================================================
+
+# Global cleanup tracking arrays
+# These track resources that need cleanup on script exit/interrupt
+declare -a CLEANUP_VHDS  # Format: "path|uuid|name" for each VHD
+declare -a CLEANUP_FILES  # Format: file paths
+
+# Flag to track if cleanup system is initialized
+CLEANUP_INITIALIZED="${CLEANUP_INITIALIZED:-false}"
+
+# Initialize resource cleanup system
+# Sets up trap handlers for EXIT, INT, and TERM signals
+# Should be called once at the start of main scripts
+init_resource_cleanup() {
+    if [[ "$CLEANUP_INITIALIZED" == "true" ]]; then
+        return 0  # Already initialized
+    fi
+    
+    # Set trap handler for cleanup on exit/interrupt
+    trap cleanup_on_exit EXIT INT TERM
+    
+    CLEANUP_INITIALIZED="true"
+    log_debug "Resource cleanup system initialized"
+    return 0
+}
+
+# Register a VHD for cleanup tracking
+# Args: $1 - VHD path (Windows format)
+#       $2 - UUID (optional, for detach operations)
+#       $3 - VHD name (optional, for detach operations)
+# Returns: 0 on success, 1 on failure
+register_vhd_cleanup() {
+    local vhd_path="$1"
+    local uuid="${2:-}"
+    local vhd_name="${3:-}"
+    
+    if [[ -z "$vhd_path" ]]; then
+        log_debug "register_vhd_cleanup: vhd_path is empty"
+        return 1
+    fi
+    
+    # Validate path format for security
+    if ! validate_windows_path "$vhd_path"; then
+        log_debug "register_vhd_cleanup: invalid path format"
+        return 1
+    fi
+    
+    # Validate UUID if provided
+    if [[ -n "$uuid" ]] && ! validate_uuid "$uuid"; then
+        log_debug "register_vhd_cleanup: invalid UUID format"
+        return 1
+    fi
+    
+    # Check if already registered (avoid duplicates)
+    local entry="$vhd_path|$uuid|$vhd_name"
+    for existing in "${CLEANUP_VHDS[@]}"; do
+        if [[ "$existing" == "$entry" ]]; then
+            log_debug "VHD already registered for cleanup: $vhd_path"
+            return 0  # Already registered
+        fi
+    done
+    
+    # Add to cleanup array
+    CLEANUP_VHDS+=("$entry")
+    log_debug "Registered VHD for cleanup: $vhd_path (UUID: ${uuid:-<none>}, Name: ${vhd_name:-<none>})"
+    return 0
+}
+
+# Unregister a VHD from cleanup tracking
+# Args: $1 - VHD path (Windows format)
+# Returns: 0 on success, 1 if not found
+unregister_vhd_cleanup() {
+    local vhd_path="$1"
+    
+    if [[ -z "$vhd_path" ]]; then
+        return 1
+    fi
+    
+    # Validate path format for security
+    if ! validate_windows_path "$vhd_path"; then
+        return 1
+    fi
+    
+    # Find and remove from array
+    local new_array=()
+    local found=0
+    for entry in "${CLEANUP_VHDS[@]}"; do
+        if [[ "$entry" =~ ^"$vhd_path"\| ]]; then
+            found=1
+            log_debug "Unregistered VHD from cleanup: $vhd_path"
+        else
+            new_array+=("$entry")
+        fi
+    done
+    
+    CLEANUP_VHDS=("${new_array[@]}")
+    
+    if [[ $found -eq 1 ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Register a file for cleanup tracking
+# Args: $1 - File path
+# Returns: 0 on success, 1 on failure
+register_file_cleanup() {
+    local file_path="$1"
+    
+    if [[ -z "$file_path" ]]; then
+        log_debug "register_file_cleanup: file_path is empty"
+        return 1
+    fi
+    
+    # Check if already registered (avoid duplicates)
+    for existing in "${CLEANUP_FILES[@]}"; do
+        if [[ "$existing" == "$file_path" ]]; then
+            log_debug "File already registered for cleanup: $file_path"
+            return 0  # Already registered
+        fi
+    done
+    
+    # Add to cleanup array
+    CLEANUP_FILES+=("$file_path")
+    log_debug "Registered file for cleanup: $file_path"
+    return 0
+}
+
+# Unregister a file from cleanup tracking
+# Args: $1 - File path
+# Returns: 0 on success, 1 if not found
+unregister_file_cleanup() {
+    local file_path="$1"
+    
+    if [[ -z "$file_path" ]]; then
+        return 1
+    fi
+    
+    # Find and remove from array
+    local new_array=()
+    local found=0
+    for entry in "${CLEANUP_FILES[@]}"; do
+        if [[ "$entry" == "$file_path" ]]; then
+            found=1
+            log_debug "Unregistered file from cleanup: $file_path"
+        else
+            new_array+=("$entry")
+        fi
+    done
+    
+    CLEANUP_FILES=("${new_array[@]}")
+    
+    if [[ $found -eq 1 ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Cleanup function called on script exit/interrupt
+# Detaches VHDs and removes temporary files that were registered for cleanup
+cleanup_on_exit() {
+    local exit_code=$?
+    local cleanup_needed=0
+    
+    # Check if there are any resources to clean up
+    if [[ ${#CLEANUP_VHDS[@]} -gt 0 ]] || [[ ${#CLEANUP_FILES[@]} -gt 0 ]]; then
+        cleanup_needed=1
+    fi
+    
+    if [[ $cleanup_needed -eq 0 ]]; then
+        return $exit_code  # Nothing to clean up
+    fi
+    
+    # Only show cleanup messages if not in quiet mode or if DEBUG is enabled
+    if [[ "$QUIET" != "true" ]] || [[ "$DEBUG" == "true" ]]; then
+        echo >&2
+        echo -e "${YELLOW}[!] Cleaning up resources on exit...${NC}" >&2
+    fi
+    
+    # Clean up VHDs (detach from WSL)
+    for entry in "${CLEANUP_VHDS[@]}"; do
+        if [[ -z "$entry" ]]; then
+            continue
+        fi
+        
+        # Parse entry: "path|uuid|name"
+        IFS='|' read -r vhd_path uuid vhd_name <<< "$entry"
+        
+        if [[ -z "$vhd_path" ]]; then
+            continue
+        fi
+        
+        # Validate path before using
+        if ! validate_windows_path "$vhd_path"; then
+            log_debug "Skipping invalid VHD path in cleanup: $vhd_path"
+            continue
+        fi
+        
+        # Attempt to detach VHD (suppress errors in cleanup)
+        if [[ "$QUIET" != "true" ]] || [[ "$DEBUG" == "true" ]]; then
+            echo -e "${YELLOW}  Detaching VHD: $vhd_path${NC}" >&2
+        fi
+        
+        # Source wsl_helpers.sh if available (for wsl_detach_vhd function)
+        if ! command -v wsl_detach_vhd &>/dev/null; then
+            # Try to source wsl_helpers.sh
+            local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+            if [[ -f "$script_dir/wsl_helpers.sh" ]]; then
+                source "$script_dir/wsl_helpers.sh" 2>/dev/null || true
+            fi
+        fi
+        
+        # Attempt detach (suppress errors - cleanup should be best-effort)
+        if command -v wsl_detach_vhd &>/dev/null; then
+            wsl_detach_vhd "$vhd_path" "$uuid" "$vhd_name" >/dev/null 2>&1 || true
+        else
+            # Fallback: try wsl.exe directly
+            wsl.exe --unmount "$vhd_path" >/dev/null 2>&1 || true
+        fi
+    done
+    
+    # Clean up temporary files
+    for file_path in "${CLEANUP_FILES[@]}"; do
+        if [[ -z "$file_path" ]]; then
+            continue
+        fi
+        
+        if [[ -f "$file_path" ]]; then
+            if [[ "$QUIET" != "true" ]] || [[ "$DEBUG" == "true" ]]; then
+                echo -e "${YELLOW}  Removing file: $file_path${NC}" >&2
+            fi
+            rm -f "$file_path" 2>/dev/null || true
+        fi
+    done
+    
+    # Clear cleanup arrays
+    CLEANUP_VHDS=()
+    CLEANUP_FILES=()
+    
+    if [[ "$QUIET" != "true" ]] || [[ "$DEBUG" == "true" ]]; then
+        echo -e "${GREEN}[✓] Cleanup complete${NC}" >&2
+    fi
+    
+    return $exit_code
+}

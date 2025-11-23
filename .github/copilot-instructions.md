@@ -240,6 +240,53 @@ fi
 - `remove_vhd_mapping()` - Removes VHD mappings
 - `save_detach_history()` - Adds detach events
 
+### Resource Cleanup System
+
+All operations that attach VHDs or create temporary resources must register them for automatic cleanup on script failure or interruption:
+
+**Requirements:**
+1. ✅ Initialize cleanup system at script startup with `init_resource_cleanup()`
+2. ✅ Register VHDs immediately after attachment (before operations that might fail)
+3. ✅ Update registration with UUID when detected (for better cleanup)
+4. ✅ Unregister VHDs when operations complete successfully
+5. ✅ Cleanup function handles errors gracefully (best-effort, suppresses errors)
+
+**Pattern:**
+```bash
+# Initialize cleanup system at script startup (disk_management.sh)
+init_resource_cleanup
+
+# Register VHD for cleanup when attaching
+register_vhd_cleanup "$vhd_path" "" "$vhd_name"
+
+# Update registration with UUID when detected
+unregister_vhd_cleanup "$vhd_path"
+register_vhd_cleanup "$vhd_path" "$uuid" "$vhd_name"
+
+# Unregister when operation completes successfully
+unregister_vhd_cleanup "$vhd_path"
+```
+
+**Functions:**
+- `init_resource_cleanup()` - Initialize cleanup system with trap handlers (EXIT, INT, TERM)
+- `register_vhd_cleanup(path, uuid, name)` - Register VHD for automatic cleanup
+- `unregister_vhd_cleanup(path)` - Unregister VHD from cleanup tracking
+- `register_file_cleanup(path)` - Register temporary file for cleanup
+- `unregister_file_cleanup(path)` - Unregister file from cleanup tracking
+- `cleanup_on_exit()` - Automatic cleanup handler (called on script exit/interrupt)
+
+**Registration Points:**
+- `mount_vhd()` - Registers when VHD is attached, unregisters on successful mount
+- `attach_vhd()` - Registers when VHD is attached, unregisters on successful completion
+- `resize_vhd()` - Registers new VHD when created, unregisters on successful completion
+
+**Cleanup Behavior:**
+- On script exit (normal or error): All registered VHDs are detached, all registered files are removed
+- On script interrupt (Ctrl+C): Same cleanup as exit
+- On script termination (kill): Same cleanup as exit
+- Cleanup messages shown unless in quiet mode
+- Errors during cleanup are suppressed (best-effort approach)
+
 ## Key Implementation Details
 
 ### Configuration

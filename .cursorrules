@@ -155,6 +155,24 @@ fi
 ```
 **Requirements**: Use `mktemp` with `XXXXXX`, trap handlers for cleanup, explicit cleanup in all paths, atomic `mv` operations.
 
+### Resource Cleanup Pattern
+All operations that attach VHDs must register them for automatic cleanup on script failure/interrupt:
+```bash
+# Initialize cleanup system at script startup
+init_resource_cleanup
+
+# Register VHD for cleanup when attaching
+register_vhd_cleanup "$vhd_path" "" "$vhd_name"
+
+# Update registration with UUID when detected
+unregister_vhd_cleanup "$vhd_path"
+register_vhd_cleanup "$vhd_path" "$uuid" "$vhd_name"
+
+# Unregister when operation completes successfully
+unregister_vhd_cleanup "$vhd_path"
+```
+**Requirements**: Initialize cleanup system at startup, register VHDs immediately after attachment, update with UUID when detected, unregister on successful completion. Cleanup automatically detaches VHDs on EXIT/INT/TERM signals.
+
 ## Command Behaviors
 
 **Attach** - Single operation: Only attaches VHD to WSL as block device. Does NOT mount to filesystem.

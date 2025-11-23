@@ -279,37 +279,62 @@ wsl_convert_path() {
 
 **See**: `COMMAND_INJECTION_FIX.md` for detailed validation rules and implementation
 
-### 4. **Resource Cleanup**
+### 4. **Resource Cleanup** ✅ RESOLVED
 
-**Issue**: Missing cleanup in error paths
+**Status**: ✅ **FIXED** - Comprehensive resource cleanup system implemented
+
+**Location**: `libs/utils.sh` - Resource cleanup functions, `disk_management.sh` - Cleanup registration
+
+**Original Issues**:
 - Temp files may not be cleaned up on errors
 - VHDs may remain attached on script failure
 - No trap handlers for cleanup
 
-**Recommendation**:
-- Add trap handlers for cleanup
-- Ensure cleanup in all error paths
-- Track resources that need cleanup
+**Resolution**:
+- ✅ **Resource cleanup system** added in `libs/utils.sh`:
+  - `init_resource_cleanup()` - Initializes cleanup system with trap handlers for EXIT, INT, TERM signals
+  - `register_vhd_cleanup()` - Registers VHDs (path, UUID, name) for automatic cleanup
+  - `unregister_vhd_cleanup()` - Unregisters VHDs when operations complete successfully
+  - `register_file_cleanup()` - Registers temporary files for cleanup
+  - `unregister_file_cleanup()` - Unregisters files when no longer needed
+  - `cleanup_on_exit()` - Automatic cleanup function called on script exit/interrupt
+  - Global cleanup tracking arrays: `CLEANUP_VHDS` and `CLEANUP_FILES`
 
-**Example**:
+- ✅ **Cleanup system initialized** in `disk_management.sh`:
+  - `init_resource_cleanup()` called at script startup
+  - Trap handlers set up for EXIT, INT, TERM signals
+
+- ✅ **VHD cleanup registration** added in critical operations:
+  - `mount_vhd()` - Registers VHD when attached, unregisters on successful mount
+  - `attach_vhd()` - Registers VHD when attached, unregisters on successful completion
+  - `resize_vhd()` - Registers new VHD when created, unregisters on successful completion
+  - All registrations include path, UUID (when available), and VHD name
+
+- ✅ **Automatic cleanup on failure**:
+  - VHDs registered for cleanup are automatically detached on script exit/interrupt
+  - Temporary files registered for cleanup are automatically removed
+  - Cleanup messages shown (unless in quiet mode)
+  - Best-effort cleanup (errors suppressed to prevent cleanup failures from masking original errors)
+
+**Implementation**:
 ```bash
-# Add cleanup tracking
-declare -a CLEANUP_FILES
-declare -a CLEANUP_VHDS
+# Initialize cleanup system at script startup
+init_resource_cleanup
 
-cleanup_on_exit() {
-    # Clean up temp files
-    for file in "${CLEANUP_FILES[@]}"; do
-        [[ -f "$file" ]] && rm -f "$file"
-    done
-    # Detach VHDs if needed
-    for vhd in "${CLEANUP_VHDS[@]}"; do
-        wsl_detach_vhd "$vhd" "" "" 2>/dev/null || true
-    done
-}
+# Register VHD for cleanup when attaching
+register_vhd_cleanup "$vhd_path" "$uuid" "$vhd_name"
 
-trap cleanup_on_exit EXIT INT TERM
+# Update registration with UUID when detected
+unregister_vhd_cleanup "$vhd_path"
+register_vhd_cleanup "$vhd_path" "$uuid" "$vhd_name"
+
+# Unregister when operation completes successfully
+unregister_vhd_cleanup "$vhd_path"
 ```
+
+**Files Updated**:
+- `libs/utils.sh` - Added complete resource cleanup system (200+ lines)
+- `disk_management.sh` - Initialized cleanup system and added registration calls in `mount_vhd()`, `attach_vhd()`, and `resize_vhd()`
 
 ### 5. **Race Conditions**
 
@@ -447,7 +472,11 @@ get_lsblk_cached() {
    - Path conversion centralized in `wsl_convert_path()` function
    - All 20+ instances of duplicated path conversion logic replaced
    - See section 2 above for detailed implementation
-3. ✅ Add resource cleanup handlers
+3. ✅ **COMPLETED** - Add resource cleanup handlers
+   - Comprehensive resource cleanup system implemented in `libs/utils.sh`
+   - Automatic cleanup of VHDs and temporary files on script exit/interrupt
+   - Cleanup registration/unregistration in all critical operations
+   - See section 4 above for detailed implementation
 4. ✅ Add file locking for concurrent operations
 
 ### Low Priority (Enhancements)

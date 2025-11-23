@@ -39,6 +39,7 @@ The system automatically tracks VHD path→UUID associations in a persistent JSO
 - Use path-based or name-based commands even with multiple VHDs attached
 - Faster UUID discovery (no device scanning required)
 - Automatic cleanup when VHDs are deleted
+- **Automatic resource cleanup**: VHDs are automatically detached on script failure or interruption (Ctrl+C), preventing orphaned attachments
 
 **Usage:**
 Simply use path-based or name-based commands as normal - tracking works automatically:
