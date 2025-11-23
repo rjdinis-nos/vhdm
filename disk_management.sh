@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Get the directory where this script is located
+# Get the absolute path to the directory where this script is located
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Source configuration file
