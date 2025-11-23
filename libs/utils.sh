@@ -846,9 +846,12 @@ cleanup_on_exit() {
         # Source wsl_helpers.sh if available (for wsl_detach_vhd function)
         if ! command -v wsl_detach_vhd &>/dev/null; then
             # Try to source wsl_helpers.sh
+            # Use BASH_SOURCE to get the actual file location, not SCRIPT_DIR which may be overwritten
             local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-            if [[ -f "$script_dir/wsl_helpers.sh" ]]; then
-                source "$script_dir/wsl_helpers.sh" 2>/dev/null || true
+            local wsl_helpers_path="$script_dir/wsl_helpers.sh"
+            # Double-check the path is correct (should be libs/wsl_helpers.sh)
+            if [[ -f "$wsl_helpers_path" ]] && [[ "$wsl_helpers_path" == */libs/wsl_helpers.sh ]]; then
+                source "$wsl_helpers_path" 2>/dev/null || true
             fi
         fi
         

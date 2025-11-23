@@ -9,8 +9,12 @@ if [[ -f "$SCRIPT_DIR/config.sh" ]]; then
 fi
 
 # Source helper functions (utils.sh first for validation functions)
-source "$SCRIPT_DIR/libs/utils.sh"
-source "$SCRIPT_DIR/libs/wsl_helpers.sh"
+# Preserve original SCRIPT_DIR before sourcing (libs may overwrite it)
+ORIGINAL_SCRIPT_DIR="$SCRIPT_DIR"
+source "$ORIGINAL_SCRIPT_DIR/libs/utils.sh"
+source "$ORIGINAL_SCRIPT_DIR/libs/wsl_helpers.sh"
+# Restore SCRIPT_DIR for this script's use (must be done before init_resource_cleanup)
+SCRIPT_DIR="$ORIGINAL_SCRIPT_DIR"
 
 # Initialize runtime flags (can be overridden by command-line options)
 QUIET="${QUIET:-false}"
@@ -21,6 +25,7 @@ export QUIET
 export DEBUG
 
 # Initialize resource cleanup system (for automatic cleanup on exit/interrupt)
+# Note: This must be called after SCRIPT_DIR is restored to avoid path issues
 init_resource_cleanup
 
 # Function to show usage
@@ -571,6 +576,8 @@ Or use a different filesystem type (ext3, xfs, etc.):
     if wsl_is_vhd_mounted "$mount_uuid"; then
         [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD is already mounted${NC}"
         [[ "$QUIET" == "false" ]] && echo "Nothing to do."
+        # Already mounted - unregister from cleanup tracking
+        unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
     else
         [[ "$QUIET" == "false" ]] && echo -e "${YELLOW}[!] VHD is attached but not mounted${NC}"
         
@@ -594,9 +601,6 @@ Or use a different filesystem type (ext3, xfs, etc.):
         else
             error_exit "Failed to mount VHD"
         fi
-    else
-        # Already mounted - unregister from cleanup tracking
-        unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
     fi
 
     [[ "$QUIET" == "false" ]] && echo
