@@ -160,7 +160,7 @@ save_vhd_mapping() {
           --arg mp "$mount_points" \
           --arg name "$vhd_name" \
           --arg ts "$timestamp" \
-          '.mappings[$path] = {uuid: $uuid, last_attached: $ts, mount_points: $mp, name: $name}' \
+          "$JQ_SAVE_MAPPING" \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
         trap - EXIT INT TERM
@@ -200,7 +200,7 @@ lookup_vhd_uuid() {
     
     log_debug "jq -r --arg path '$normalized' '.mappings[\$path].uuid // empty' $DISK_TRACKING_FILE"
     
-    local uuid=$(jq -r --arg path "$normalized" '.mappings[$path].uuid // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    local uuid=$(jq -r --arg path "$normalized" "$JQ_GET_UUID_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
     
     if [[ -n "$uuid" && "$uuid" != "null" ]]; then
         echo "$uuid"
@@ -234,7 +234,7 @@ lookup_vhd_uuid_by_name() {
     
     log_debug "jq -r --arg name '$vhd_name' '.mappings[] | select(.name == \$name) | .uuid' $DISK_TRACKING_FILE"
     
-    local uuid=$(jq -r --arg name "$vhd_name" '.mappings[] | select(.name == $name) | .uuid' "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+    local uuid=$(jq -r --arg name "$vhd_name" "$JQ_GET_UUID_BY_NAME" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
     
     if [[ -n "$uuid" && "$uuid" != "null" && "$uuid" != "" ]]; then
         echo "$uuid"
@@ -285,7 +285,7 @@ update_vhd_mount_points() {
     fi
     
     # Check if mapping exists
-    local exists=$(jq -r --arg path "$normalized" '.mappings[$path] // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    local exists=$(jq -r --arg path "$normalized" "$JQ_CHECK_MAPPING_EXISTS" "$DISK_TRACKING_FILE" 2>/dev/null)
     if [[ -z "$exists" || "$exists" == "null" ]]; then
         log_debug "No mapping found for $normalized to update"
         rm -f "$temp_file"
@@ -297,7 +297,7 @@ update_vhd_mount_points() {
     
     if jq --arg path "$normalized" \
           --arg mp "$mount_points" \
-          '.mappings[$path].mount_points = $mp' \
+          "$JQ_UPDATE_MOUNT_POINTS" \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
         trap - EXIT INT TERM
@@ -343,7 +343,7 @@ remove_vhd_mapping() {
     
     log_debug "Removing mapping for $normalized"
     
-    if jq --arg path "$normalized" 'del(.mappings[$path])' \
+    if jq --arg path "$normalized" "$JQ_DELETE_MAPPING" \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
         trap - EXIT INT TERM
@@ -408,7 +408,7 @@ save_detach_history() {
           --arg uuid "$uuid" \
           --arg name "$vhd_name" \
           --arg ts "$timestamp" \
-          '.detach_history = ([{path: $path, uuid: $uuid, name: $name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]' \
+          "$JQ_SAVE_DETACH_HISTORY" \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
         trap - EXIT INT TERM
@@ -444,7 +444,7 @@ get_detach_history() {
     
     log_debug "jq -r '.detach_history // [] | .[0:$limit]' $DISK_TRACKING_FILE"
     
-    jq -r ".detach_history // [] | .[0:$limit]" "$DISK_TRACKING_FILE" 2>/dev/null || echo "[]"
+    jq -r --argjson limit "$limit" "$JQ_GET_DETACH_HISTORY" "$DISK_TRACKING_FILE" 2>/dev/null || echo "[]"
 }
 
 # Find most recent detach event for a VHD path
@@ -468,7 +468,7 @@ get_last_detach_for_path() {
     log_debug "Looking for last detach event for: $normalized"
     
     local result=$(jq -r --arg path "$normalized" \
-        '.detach_history // [] | map(select(.path == $path)) | .[0] // empty' \
+        "$JQ_GET_LAST_DETACH_BY_PATH" \
         "$DISK_TRACKING_FILE" 2>/dev/null)
     
     if [[ -n "$result" && "$result" != "null" ]]; then
@@ -508,7 +508,7 @@ wsl_is_vhd_attached() {
     
     # Note: For pipelines, we show the first command for debug visibility
     log_debug "lsblk -f -J | jq --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .uuid'"
-    uuid_check=$(lsblk -f -J | jq --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .uuid' 2>/dev/null)
+    uuid_check=$(lsblk -f -J | jq --arg UUID "$uuid" "$JQ_CHECK_UUID_EXISTS" 2>/dev/null)
     
     if [[ -n "$uuid_check" ]]; then
         return 0  # VHD is attached
@@ -536,7 +536,7 @@ wsl_is_vhd_mounted() {
     fi
     
     log_debug "lsblk -f -J | jq --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .mountpoints[]' | grep -v 'null'"
-    mountpoint_check=$(lsblk -f -J | jq --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .mountpoints[]' 2>/dev/null | grep -v "null")
+    mountpoint_check=$(lsblk -f -J | jq --arg UUID "$uuid" "$JQ_GET_MOUNTPOINTS_BY_UUID" 2>/dev/null | grep -v "null")
     
     if [[ -n "$mountpoint_check" ]]; then
         return 0  # VHD is mounted
@@ -558,10 +558,10 @@ wsl_get_vhd_info() {
     fi
     
     log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
-    device_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
-    fsavail=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .fsavail' 2>/dev/null)
-    fsuse=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | ."fsuse%"' 2>/dev/null)
-    mountpoints=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .mountpoints[]' 2>/dev/null)
+    device_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
+    fsavail=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_FSAVAIL_BY_UUID" 2>/dev/null)
+    fsuse=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_FSUSE_BY_UUID" 2>/dev/null)
+    mountpoints=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_MOUNTPOINTS_BY_UUID" 2>/dev/null)
     
     if [[ -n "$device_name" ]]; then
         echo "  Device: /dev/$device_name"
@@ -588,7 +588,7 @@ wsl_get_vhd_mount_point() {
     
     log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .mountpoints[]' | grep -v 'null' | head -n 1"
     
-    local mount_point=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .mountpoints[]' 2>/dev/null | grep -v "null" | head -n 1)
+    local mount_point=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_MOUNTPOINTS_BY_UUID" 2>/dev/null | grep -v "null" | head -n 1)
     
     echo "$mount_point"
     return 0
@@ -897,7 +897,7 @@ wsl_complete_unmount() {
     local vhd_name=""
     if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
         local normalized_path=$(normalize_vhd_path "$vhd_path")
-        vhd_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+        vhd_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
     fi
     
     # Detach from WSL
@@ -919,7 +919,7 @@ wsl_get_block_devices() {
         log_error "Failed to get block device list: sudo permissions required"
         return 1
     fi
-    echo "$output" | jq -r '.blockdevices[].name'
+    echo "$output" | jq -r "$JQ_GET_ALL_DEVICE_NAMES"
 }
 
 # Get list of all disk UUIDs
@@ -952,7 +952,7 @@ wsl_find_uuid_by_mountpoint() {
     
     # Get UUID for the device mounted at the specified mount point
     log_debug "lsblk -f -J | jq -r --arg MP '$mount_point' '.blockdevices[] | select(.mountpoints != null and .mountpoints != []) | select(.mountpoints[] == \$MP) | .uuid' | grep -v 'null' | head -n 1"
-    local uuid=$(lsblk -f -J | jq -r --arg MP "$mount_point" '.blockdevices[] | select(.mountpoints != null and .mountpoints != []) | select(.mountpoints[] == $MP) | .uuid' 2>/dev/null | grep -v "null" | head -n 1)
+    local uuid=$(lsblk -f -J | jq -r --arg MP "$mount_point" "$JQ_GET_UUID_BY_MOUNTPOINT" 2>/dev/null | grep -v "null" | head -n 1)
     
     if [[ -n "$uuid" ]]; then
         echo "$uuid"
@@ -974,7 +974,7 @@ wsl_count_dynamic_vhds() {
         [[ -z "$uuid" ]] && continue
         
         log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
-        local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+        local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
         
         if [[ -n "$dev_name" ]]; then
             # Count dynamically attached disks (usually sd[d-z] and multi-character variants like sdaa, sdab)
@@ -1003,7 +1003,7 @@ wsl_find_dynamic_vhd_uuid() {
         [[ -z "$uuid" ]] && continue
         
         log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
-        local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+        local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
         
         if [[ -n "$dev_name" ]]; then
             # Look for dynamically attached disks (usually sd[d-z] and multi-character variants like sdaa, sdab)
@@ -1050,7 +1050,7 @@ wsl_find_uuid_by_path() {
     
     # Second, try to lookup UUID by name (extract name from tracking file first)
     local normalized_path=$(normalize_vhd_path "$vhd_path_win")
-    local tracked_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    local tracked_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
     if [[ -n "$tracked_name" ]]; then
         local uuid_by_name=$(lookup_vhd_uuid_by_name "$tracked_name")
         if [[ -n "$uuid_by_name" ]]; then

@@ -748,7 +748,7 @@ To find UUID, run: $0 status --all"
         local umount_name=""
         if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
             local normalized_path=$(normalize_vhd_path "$umount_path")
-            umount_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+            umount_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
         fi
         if wsl_detach_vhd "$umount_path" "$umount_uuid" "$umount_name"; then
             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached successfully${NC}"
@@ -876,7 +876,7 @@ detach_vhd() {
         local detach_name=""
         if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
             local normalized_path=$(normalize_vhd_path "$detach_path")
-            detach_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+            detach_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
         fi
         
         # Use path if we have it, pass UUID and name for history tracking
@@ -1181,7 +1181,7 @@ create_vhd() {
                 local existing_name=""
                 if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
                     local normalized_path=$(normalize_vhd_path "$create_path")
-                    existing_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+                    existing_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
                 fi
                 if wsl_detach_vhd "$create_path" "$existing_uuid" "$existing_name"; then
                     [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] VHD detached from WSL${NC}"
@@ -1343,7 +1343,7 @@ resize_vhd() {
     if [[ "$DEBUG" == "true" ]]; then
         echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$target_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
     fi
-    local target_device=$(lsblk -f -J | jq -r --arg UUID "$target_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+    local target_device=$(lsblk -f -J | jq -r --arg UUID "$target_uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
     
     if [[ -z "$target_device" ]]; then
         error_exit "Could not find device for UUID $target_uuid"
@@ -1394,7 +1394,7 @@ resize_vhd() {
             echo -e "${BLUE}[DEBUG]${NC} jq -r --arg uuid '$target_uuid' '.mappings[] | select(.uuid == \$uuid) | path(.) | .[-1]' $DISK_TRACKING_FILE" >&2
         fi
         # Find the path (key) that has this UUID
-        local normalized_path=$(jq -r --arg uuid "$target_uuid" '.mappings | to_entries[] | select(.value.uuid == $uuid) | .key' "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+        local normalized_path=$(jq -r --arg uuid "$target_uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
         
         if [[ -n "$normalized_path" && "$normalized_path" != "null" ]]; then
             # Convert normalized path back to Windows format (uppercase drive letter)
@@ -1402,7 +1402,7 @@ resize_vhd() {
             # Windows format should be: C:/VMs/disk.vhdx (but we'll use as-is since tracking uses lowercase)
             target_vhd_path="$normalized_path"
             # Extract name from tracking file if available
-            target_vhd_name=$(jq -r --arg uuid "$target_uuid" '.mappings | to_entries[] | select(.value.uuid == $uuid) | .value.name // empty' "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+            target_vhd_name=$(jq -r --arg uuid "$target_uuid" "$JQ_GET_NAME_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
         fi
     fi
     
@@ -1547,8 +1547,8 @@ resize_vhd() {
     if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
         local normalized_target=$(normalize_vhd_path "$target_vhd_path")
         local normalized_new=$(normalize_vhd_path "$new_vhd_path")
-        target_name=$(jq -r --arg path "$normalized_target" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
-        new_name=$(jq -r --arg path "$normalized_new" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+        target_name=$(jq -r --arg path "$normalized_target" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
+        new_name=$(jq -r --arg path "$normalized_new" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
     fi
     
     if ! wsl_detach_vhd "$target_vhd_path" "$target_uuid" "$target_name"; then
@@ -1763,7 +1763,7 @@ format_vhd_command() {
         if [[ "$DEBUG" == "true" ]]; then
             echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$format_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
         fi
-        device_name=$(lsblk -f -J | jq -r --arg UUID "$format_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+        device_name=$(lsblk -f -J | jq -r --arg UUID "$format_uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
         
         if [[ -z "$device_name" ]]; then
             echo -e "${RED}[✗] No device found with UUID: $format_uuid${NC}"
@@ -1973,7 +1973,7 @@ attach_vhd() {
             if [[ "$DEBUG" == "true" ]]; then
                 echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$attach_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
             fi
-            local new_dev=$(lsblk -f -J | jq -r --arg UUID "$attach_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+            local new_dev=$(lsblk -f -J | jq -r --arg UUID "$attach_uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
             
             [[ "$QUIET" == "false" ]] && echo -e "${GREEN}[✓] Device detected${NC}"
             [[ "$QUIET" == "false" ]] && echo "  UUID: $attach_uuid"
@@ -2009,7 +2009,7 @@ attach_vhd() {
             if [[ "$DEBUG" == "true" ]]; then
                 echo -e "${BLUE}[DEBUG]${NC} lsblk -f -J | jq -r --arg UUID '$attach_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'" >&2
             fi
-            local dev_name=$(lsblk -f -J | jq -r --arg UUID "$attach_uuid" '.blockdevices[] | select(.uuid == $UUID) | .name' 2>/dev/null)
+            local dev_name=$(lsblk -f -J | jq -r --arg UUID "$attach_uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
             [[ "$QUIET" == "false" ]] && [[ -n "$dev_name" ]] && echo "  Device: /dev/$dev_name"
             
             # Save mapping to tracking file (idempotent - updates if exists) with VHD name
@@ -2116,11 +2116,7 @@ history_vhd() {
                 echo "Showing last $count detach events:"
                 echo
                 
-                echo "$history_json" | jq -r '.[] | 
-                    "Path: \(.path)\n" +
-                    "UUID: \(.uuid)\n" +
-                    (if .name and .name != "" then "Name: \(.name)\n" else "" end) +
-                    "Timestamp: \(.timestamp)\n"'
+                echo "$history_json" | jq -r "$JQ_FORMAT_HISTORY_ENTRY"
             fi
         fi
     fi

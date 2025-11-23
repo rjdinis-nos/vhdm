@@ -121,3 +121,39 @@ export QUIET="${QUIET:-false}"
 
 # Debug mode flag (show all commands before execution)
 export DEBUG="${DEBUG:-false}"
+
+# ============================================================================
+# JQ QUERY TEMPLATES
+# ============================================================================
+# Complex jq query expressions used for JSON processing
+# These are stored as strings and used with jq --arg parameters at runtime
+
+# Mapping operations (tracking file)
+export JQ_SAVE_MAPPING='.mappings[$path] = {uuid: $uuid, last_attached: $ts, mount_points: $mp, name: $name}'
+export JQ_GET_UUID_BY_PATH='.mappings[$path].uuid // empty'
+export JQ_GET_UUID_BY_NAME='.mappings[] | select(.name == $name) | .uuid'
+export JQ_CHECK_MAPPING_EXISTS='.mappings[$path] // empty'
+export JQ_UPDATE_MOUNT_POINTS='.mappings[$path].mount_points = $mp'
+export JQ_DELETE_MAPPING='del(.mappings[$path])'
+export JQ_GET_NAME_BY_PATH='.mappings[$path].name // empty'
+export JQ_GET_PATH_BY_UUID='.mappings | to_entries[] | select(.value.uuid == $uuid) | .key'
+export JQ_GET_NAME_BY_UUID='.mappings | to_entries[] | select(.value.uuid == $uuid) | .value.name // empty'
+
+# Detach history operations
+export JQ_SAVE_DETACH_HISTORY='.detach_history = ([{path: $path, uuid: $uuid, name: $name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]'
+export JQ_GET_DETACH_HISTORY='.detach_history // [] | .[0:$limit]'
+export JQ_GET_LAST_DETACH_BY_PATH='.detach_history // [] | map(select(.path == $path)) | .[0] // empty'
+
+# Block device operations (lsblk)
+export JQ_CHECK_UUID_EXISTS='.blockdevices[] | select(.uuid == $UUID) | .uuid'
+export JQ_GET_MOUNTPOINTS_BY_UUID='.blockdevices[] | select(.uuid == $UUID) | .mountpoints[]'
+export JQ_GET_DEVICE_NAME_BY_UUID='.blockdevices[] | select(.uuid == $UUID) | .name'
+export JQ_GET_FSAVAIL_BY_UUID='.blockdevices[] | select(.uuid == $UUID) | .fsavail'
+export JQ_GET_FSUSE_BY_UUID='.blockdevices[] | select(.uuid == $UUID) | ."fsuse%"'
+export JQ_GET_UUID_BY_MOUNTPOINT='.blockdevices[] | select(.mountpoints != null and .mountpoints != []) | select(.mountpoints[] == $MP) | .uuid'
+
+# Block device list operations
+export JQ_GET_ALL_DEVICE_NAMES='.blockdevices[].name'
+
+# History display operations
+export JQ_FORMAT_HISTORY_ENTRY='.[] | "Path: \(.path)\n" + "UUID: \(.uuid)\n" + (if .name and .name != "" then "Name: \(.name)\n" else "" end) + "Timestamp: \(.timestamp)\n"'
