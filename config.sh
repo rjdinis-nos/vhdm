@@ -111,6 +111,16 @@ export LSBLK_CACHE_TTL="${LSBLK_CACHE_TTL:-2}"
 # Example: export LOG_FILE="/var/log/wsl-disk-management.log"
 export LOG_FILE="${LOG_FILE:-}"
 
+# Sleep delay after attaching VHD (in seconds)
+# Gives the kernel time to recognize the newly attached device
+# Default: 2 seconds
+export SLEEP_AFTER_ATTACH="${SLEEP_AFTER_ATTACH:-2}"
+
+# Timeout for VHD detach operations (in seconds)
+# Used when unmounting VHDs to prevent hanging operations
+# Default: 30 seconds
+export DETACH_TIMEOUT="${DETACH_TIMEOUT:-30}"
+
 # ============================================================================
 # RUNTIME BEHAVIOR
 # ============================================================================

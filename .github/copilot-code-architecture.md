@@ -24,6 +24,7 @@ The system is organized into three architectural layers:
 │  - wsl_is_vhd_attached(), wsl_is_vhd_mounted()             │
 │  - wsl_get_vhd_info(), wsl_find_uuid_*()                   │
 │  - format_vhd(), wsl_create_vhd(), wsl_delete_vhd()        │
+│  - handle_uuid_discovery_result(), detect_new_uuid_after_attach() │
 └─────────────────────────────────────────────────────────────┘
                             │
                             ↓
@@ -198,6 +199,7 @@ All tests involving UUID discovery must:
 | `log_warn()` | `$@: message` | Log warning message (unless QUIET=true) | utils.sh | Structured logging |
 | `log_error()` | `$@: message` | Log error message (always shown) | utils.sh | Structured logging |
 | `log_success()` | `$@: message` | Log success message (unless QUIET=true) | utils.sh | Structured logging |
+| `print_section_header()` | `$1: title` (optional) | Print standardized section header with separator lines | utils.sh | Output formatting |
 | `debug_cmd()` | `$@: command and args` | Wrapper to log and execute commands in debug mode | wsl_helpers.sh | Debug support (uses log_debug) |
 | `init_resource_cleanup()` | None | Initialize resource cleanup system with trap handlers | utils.sh | Resource management |
 | `register_vhd_cleanup()` | `$1: path, $2: uuid, $3: name` | Register VHD for automatic cleanup | utils.sh | Resource management |
@@ -217,9 +219,7 @@ attach_vhd()
 ├─→ Take snapshot: wsl_get_disk_uuids(), wsl_get_block_devices()
 ├─→ wsl_attach_vhd(path, name)
 │   └─→ wsl.exe --mount --vhd --bare
-├─→ sleep 2 (kernel recognition)
-├─→ Take new snapshot
-├─→ Compare snapshots to detect new UUID
+├─→ Detect UUID: detect_new_uuid_after_attach("old_uuids")
 ├─→ Detect device name (via lsblk + jq)
 └─→ Report status (UUID, device name)
 ```
@@ -235,7 +235,9 @@ mount_vhd()
 ├─→ Take snapshot: wsl_get_disk_uuids(), wsl_get_block_devices()
 ├─→ wsl_attach_vhd(path, name)  [may fail if already attached]
 │   └─→ wsl.exe --mount --vhd --bare
-├─→ Detect UUID (snapshot comparison or fallback search)
+├─→ Detect UUID: detect_new_uuid_after_attach("old_uuids")
+├─→ If UUID not found, try path-based discovery: wsl_find_uuid_by_path()
+│   └─→ handle_uuid_discovery_result() for consistent error handling
 ├─→ Check if UUID found
 │   ├─→ Yes: Verify filesystem exists
 │   └─→ No: Error - VHD is unformatted
@@ -280,6 +282,7 @@ umount_vhd()
 ├─→ Parse arguments (--path, --uuid, --mount-point)
 ├─→ Discover UUID if not provided
 │   ├─→ From path: wsl_find_uuid_by_path()
+│   │   └─→ handle_uuid_discovery_result() for consistent error handling
 │   └─→ From mount point: wsl_find_uuid_by_mountpoint()
 ├─→ wsl_is_vhd_attached(uuid)
 │   └─→ Not attached: Return (nothing to do)
@@ -422,7 +425,7 @@ resize_vhd()
 - `wsl_is_vhd_mounted()` → `lsblk -f -J` + `jq`
 - `wsl_get_vhd_info()` → `lsblk -f -J` + `jq`
 - `wsl_get_vhd_mount_point()` → `lsblk -f -J` + `jq`
-- `wsl_find_uuid_by_path()` → `wsl_find_dynamic_vhd_uuid()`
+- `wsl_find_uuid_by_path()` → `lookup_vhd_uuid()` → `wsl_find_dynamic_vhd_uuid()` (with multi-VHD safety)
 - `wsl_find_uuid_by_mountpoint()` → `lsblk -f -J` + `jq`
 - `wsl_get_block_devices()` → `lsblk -J` + `jq`
 - `wsl_get_disk_uuids()` → `sudo blkid`
@@ -470,31 +473,57 @@ fi
 
 ### 2. Snapshot-Based Detection Pattern
 
-Used in: `attach_vhd()`, `mount_vhd()`, `wsl_create_vhd()` (as fallback)
+Used in: `attach_vhd()`, `mount_vhd()`, `resize_vhd()`, `wsl_create_vhd()` (as fallback)
+
+**Centralized Implementation**: Use `detect_new_uuid_after_attach()` helper function
 
 ```bash
 # Before operation
-old_uuids=($(wsl_get_disk_uuids))
-old_devs=($(wsl_get_block_devices))
+local old_uuids=($(wsl_get_disk_uuids))
 
 # Perform operation (attach/create)
 wsl_attach_vhd "$path" "$name"
 
-# After operation
-new_uuids=($(wsl_get_disk_uuids))
-
-# Compare to find new UUID
-for uuid in "${new_uuids[@]}"; do
-    if [[ -z "${seen_uuid[$uuid]}" ]]; then
-        detected_uuid="$uuid"
-        break
-    fi
-done
+# Detect new UUID using centralized helper
+local detected_uuid
+detected_uuid=$(detect_new_uuid_after_attach "old_uuids")
 ```
 
-**Purpose**: Identify newly attached/created disks when UUID is not in tracking file. Used as fallback when tracking lookup fails.
+**Helper Function**: `detect_new_uuid_after_attach()` in `libs/wsl_helpers.sh`
+- Accepts array name containing old UUIDs (or captures current state if not provided)
+- Includes sleep delay for kernel device recognition (configurable via `SLEEP_AFTER_ATTACH`)
+- Returns UUID via stdout, empty string if not found
+- Returns exit code 0 if UUID found, 1 if not found
 
-### 3. State-Check-Then-Operate Pattern
+**Purpose**: Identify newly attached/created disks when UUID is not in tracking file. Used as fallback when tracking lookup fails. Centralized implementation eliminates code duplication.
+
+### 3. UUID Discovery Error Handling Pattern
+
+Used in: `mount_vhd()`, `umount_vhd()`, `attach_vhd()`, `show_status()`
+
+**Centralized Implementation**: Use `handle_uuid_discovery_result()` helper function
+
+```bash
+# Discover UUID with multi-VHD safety
+local discovery_result
+uuid=$(wsl_find_uuid_by_path "$path" 2>&1)
+discovery_result=$?
+
+# Handle discovery result with consistent error handling
+handle_uuid_discovery_result "$discovery_result" "$uuid" "mount" "$path"
+```
+
+**Helper Function**: `handle_uuid_discovery_result()` in `libs/wsl_helpers.sh`
+- Args: `$1` - Discovery result (exit code from `wsl_find_uuid_by_path`: 0=found, 1=not found, 2=multiple VHDs)
+- Args: `$2` - Discovered UUID (may be empty)
+- Args: `$3` - Context message (e.g., "mount", "umount") for error messages
+- Args: `$4` - Path (for error messages, optional)
+- Returns: 0 if UUID is valid, exits with error otherwise
+- Note: This function EXITS on errors (for use in command functions)
+
+**Purpose**: Standardize UUID discovery error handling across all commands. Provides consistent error messages with helpful suggestions. Handles multiple VHDs and UUID not found cases uniformly.
+
+### 4. State-Check-Then-Operate Pattern
 
 Used in: All operation functions
 
@@ -510,7 +539,7 @@ fi
 
 **Purpose**: Idempotent operations - don't fail if already in desired state.
 
-### 4. Path Format Conversion Pattern
+### 5. Path Format Conversion Pattern
 
 Used in: All commands handling paths
 
@@ -531,7 +560,7 @@ vhd_path_wsl=$(wsl_convert_path "$path")
 - **Always use `wsl_convert_path()` instead of inline sed commands** for consistency and maintainability
 - Persistent tracking uses normalized paths (lowercase, forward slashes) for case-insensitive matching
 
-### 5. Structured Logging Pattern
+### 6. Structured Logging Pattern
 
 Used in: All functions throughout the codebase
 
@@ -567,7 +596,15 @@ export LOG_FILE="/var/log/wsl-disk-management.log"
 # All messages (except debug when DEBUG=false) written to file
 ```
 
-### 6. Dual Output Mode Pattern
+**Configuration Variables:**
+All configuration is centralized in `config.sh` and can be overridden via environment variables:
+- `SLEEP_AFTER_ATTACH` - Sleep delay after attaching VHD (default: 2 seconds) for kernel device recognition
+- `DETACH_TIMEOUT` - Timeout for VHD detach operations (default: 30 seconds) to prevent hanging
+- `LOG_FILE` - Optional log file path for persistent logging
+- `QUIET` - Quiet mode flag (minimal output, machine-readable format)
+- `DEBUG` - Debug mode flag (show all commands before execution)
+
+### 7. Dual Output Mode Pattern
 
 Used in: All user commands (for machine-readable output in quiet mode)
 
@@ -578,7 +615,7 @@ Used in: All user commands (for machine-readable output in quiet mode)
 
 **Purpose**: Support both human-readable (via logging) and script-parseable output (quiet mode).
 
-### 7. Debug Command Wrapper Pattern
+### 8. Debug Command Wrapper Pattern
 
 Used in: All system command invocations
 
@@ -593,7 +630,7 @@ lsblk -f -J | jq ...
 
 **Purpose**: Show all commands before execution when debugging. The `debug_cmd()` wrapper automatically calls `log_debug()` with the command string, providing consistent timestamped output.
 
-### 8. Input Validation Pattern
+### 9. Input Validation Pattern
 
 Used in: All functions that receive user input
 
@@ -641,7 +678,7 @@ fi
 3. Validation before command execution
 4. Safe command execution (jq uses `--arg` for safe parameter passing)
 
-### 9. Secure Temporary File Handling Pattern
+### 10. Secure Temporary File Handling Pattern
 
 Used in: All functions that create temporary files for atomic file operations (e.g., JSON tracking file updates)
 
@@ -692,7 +729,7 @@ fi
 - `remove_vhd_mapping()` - Removes VHD from tracking file
 - `save_detach_history()` - Adds detach events to history
 
-### 10. Resource Cleanup Pattern
+### 11. Resource Cleanup Pattern
 
 Used in: All operations that attach VHDs or create temporary resources that need cleanup on script failure/interrupt
 

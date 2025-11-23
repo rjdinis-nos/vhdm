@@ -649,7 +649,7 @@ wsl_detach_vhd() {
     # Use timeout to prevent hanging (30 seconds max)
     local error_output
     if command -v timeout >/dev/null 2>&1; then
-        error_output=$(timeout 30 wsl.exe --unmount "$vhd_path" 2>&1)
+        error_output=$(timeout "${DETACH_TIMEOUT:-30}" wsl.exe --unmount "$vhd_path" 2>&1)
         local exit_code=$?
         
         if [[ $exit_code -eq 0 ]]; then
@@ -852,7 +852,7 @@ wsl_complete_mount() {
         if ! wsl_attach_vhd "$vhd_path" "$vhd_name"; then
             return 1
         fi
-        sleep 2  # Give system time to recognize the device
+        sleep "${SLEEP_AFTER_ATTACH:-2}"  # Give system time to recognize the device
     fi
     
     # Check if already mounted
@@ -1087,6 +1087,106 @@ wsl_find_uuid_by_path() {
         # Safe: exactly one dynamic VHD attached
         wsl_find_dynamic_vhd_uuid
     fi
+}
+
+# Handle UUID discovery result with consistent error handling
+# This function standardizes the error handling pattern used across command functions
+# when discovering UUIDs via wsl_find_uuid_by_path()
+# Args: $1 - Discovery result (exit code from wsl_find_uuid_by_path: 0=found, 1=not found, 2=multiple VHDs)
+#       $2 - Discovered UUID (may be empty)
+#       $3 - Context message (e.g., "mount", "umount", "attach") for error messages
+#       $4 - Path (for error messages, optional)
+# Returns: 0 if UUID is valid, exits with error otherwise
+# Note: This function EXITS on errors (for use in command functions)
+#       For helper functions that need to return error codes, handle discovery results manually
+handle_uuid_discovery_result() {
+    local discovery_result="$1"
+    local uuid="$2"
+    local context="$3"
+    local path="${4:-}"
+    
+    if [[ $discovery_result -eq 2 ]]; then
+        # Multiple VHDs detected - cannot safely determine which one
+        local script_name="${0##*/}"
+        local multi_vhd_help="Multiple VHDs are attached. Use one of:
+  1. View all attached VHDs: $script_name status --all
+  2. Detach other VHDs first, then retry
+  3. Use explicit UUID if known: $script_name $context --path $path --uuid <UUID>"
+        
+        if [[ "$QUIET" == "true" ]]; then
+            echo "ambiguous: multiple VHDs"
+        fi
+        
+        error_exit "Cannot determine UUID: Multiple VHDs are attached" 1 "$multi_vhd_help"
+    elif [[ $discovery_result -ne 0 ]] || [[ -z "$uuid" ]]; then
+        # UUID not found or discovery failed
+        local script_name="${0##*/}"
+        local not_found_help="Could not detect UUID for $context operation.
+The VHD file exists but is not attached to WSL.
+
+Suggestions:
+  1. Attach the VHD first: $script_name attach --path $path
+  2. Check if VHD is attached: $script_name status --all
+  3. Verify the path is correct"
+        
+        if [[ "$QUIET" == "true" ]]; then
+            echo "uuid not found"
+        fi
+        
+        error_exit "Could not detect UUID of VHD" 1 "$not_found_help"
+    else
+        # UUID found and valid
+        log_info "Discovered UUID: $uuid"
+        return 0
+    fi
+}
+
+# Detect newly attached UUID by comparing before/after snapshots
+# This function is used after attaching a VHD to identify the newly attached disk
+# Args: $1 - Array name containing old UUIDs (optional, will capture if not provided)
+#       Note: If array name is provided, it should be passed without the $ prefix
+#             Example: detect_new_uuid_after_attach "old_uuids" (not "$old_uuids")
+# Returns: UUID of newly attached disk via stdout, empty string if not found
+# Exit code: 0 if UUID found, 1 if not found
+# Note: This function includes a sleep delay to allow kernel to recognize the device
+detect_new_uuid_after_attach() {
+    local old_uuids_array_name="$1"
+    local old_uuids=()
+    
+    # Get old UUIDs from provided array or capture current state
+    if [[ -n "$old_uuids_array_name" ]]; then
+        # Use provided array (indirect reference)
+        # Note: This requires the array to be passed by name, not by value
+        local array_ref="${old_uuids_array_name}[@]"
+        old_uuids=("${!array_ref}")
+    else
+        # Capture current state (should be called before attach)
+        old_uuids=($(wsl_get_disk_uuids))
+    fi
+    
+    # Give kernel time to recognize the newly attached device
+    sleep "${SLEEP_AFTER_ATTACH:-2}"
+    
+    # Get new UUIDs after attach
+    local new_uuids=($(wsl_get_disk_uuids))
+    
+    # Build lookup table for old UUIDs
+    declare -A seen_uuid
+    local uuid
+    for uuid in "${old_uuids[@]}"; do
+        [[ -n "$uuid" ]] && seen_uuid["$uuid"]=1
+    done
+    
+    # Find the new UUID (one that wasn't in the old list)
+    for uuid in "${new_uuids[@]}"; do
+        if [[ -n "$uuid" ]] && [[ -z "${seen_uuid[$uuid]:-}" ]]; then
+            echo "$uuid"
+            return 0
+        fi
+    done
+    
+    # No new UUID found
+    return 1
 }
 
 # Format an attached VHD with a filesystem

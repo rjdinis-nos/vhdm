@@ -412,6 +412,23 @@ error_return() {
     return "$code"
 }
 
+# Print a standardized section header
+# Args: $1 - Section title (optional, defaults to empty)
+# Note: Respects QUIET mode - only prints in non-quiet mode
+# Example: print_section_header "VHD Disk Mount Operation"
+print_section_header() {
+    local title="${1:-}"
+    
+    # Only print in non-quiet mode
+    if [[ "$QUIET" != "true" ]]; then
+        log_info "========================================"
+        if [[ -n "$title" ]]; then
+            log_info "  $title"
+            log_info "========================================"
+        fi
+    fi
+}
+
 # Helper function to calculate total size of files in directory (in bytes)
 # Args: $1 - Directory path
 # Returns: Size in bytes

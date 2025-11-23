@@ -130,58 +130,55 @@ log_info "Disk not mounted. Checking attachment status..."
 # Try to find UUID by path (if already attached)
 # Use Windows path format (DISK_PATH) not WSL path format (WSL_DISK_PATH)
 # because wsl_find_uuid_by_path expects Windows path format for tracking file lookup
-UUID=$(wsl_find_uuid_by_path "$DISK_PATH" 2>/dev/null || true)
+local discovery_result
+UUID=$(wsl_find_uuid_by_path "$DISK_PATH" 2>&1)
+discovery_result=$?
 
 # If not attached, attach it now
-if [[ -z "$UUID" ]]; then
+if [[ $discovery_result -ne 0 ]] || [[ -z "$UUID" ]]; then
     log_info "Attaching VHD: $DISK_PATH"
     
     # Generate a name for the attachment
     VHD_NAME=$(basename "$DISK_PATH" .vhdx)
     VHD_NAME=$(basename "$VHD_NAME" .vhd)
     
-    # Capture state before attach
-    old_uuids=($(wsl_get_disk_uuids))
+    # Capture state before attach for snapshot-based detection
+    local old_uuids=($(wsl_get_disk_uuids))
     
     # Attach the VHD
-    if ! debug_cmd wsl.exe --mount --vhd "$DISK_PATH" --bare --name "$VHD_NAME" 2>&1 | grep -a -v "is already attached" >&2; then
+    if ! wsl_attach_vhd "$DISK_PATH" "$VHD_NAME" 2>/dev/null; then
         log_info "Note: VHD may already be attached, continuing..."
     fi
     
-    # Wait for kernel to recognize the device
-    sleep 2
+    # Detect new UUID using snapshot-based detection
+    UUID=$(detect_new_uuid_after_attach "old_uuids")
     
-    # Find the newly attached UUID
-    new_uuids=($(wsl_get_disk_uuids))
-    for uuid in "${new_uuids[@]}"; do
-        if [[ ! " ${old_uuids[@]} " =~ " ${uuid} " ]]; then
-            UUID="$uuid"
-            break
-        fi
-    done
-    
-    # Fallback: search for dynamic VHD if UUID not found
+    # If still not found, try path-based discovery again (VHD might have been attached)
     if [[ -z "$UUID" ]]; then
-        # Safe fallback: check how many VHDs are attached
-        local vhd_count=$(wsl_count_dynamic_vhds)
+        UUID=$(wsl_find_uuid_by_path "$DISK_PATH" 2>&1)
+        discovery_result=$?
         
-        if [[ $vhd_count -gt 1 ]]; then
-            log_error "Multiple VHDs attached ($vhd_count found). Cannot determine which one to mount."
+        # Handle discovery result with consistent error handling
+        # Note: We use handle_uuid_discovery_result for consistent error messages,
+        # but mount_disk.sh is a standalone script, so we need to handle exit ourselves
+        if [[ $discovery_result -eq 2 ]]; then
+            log_error "Multiple VHDs attached. Cannot determine which one to mount."
             log_info "Please detach other VHDs first or use disk_management.sh with explicit --uuid."
             exit 1
-        elif [[ $vhd_count -eq 1 ]]; then
-            # Safe: exactly one VHD attached
-            UUID=$(wsl_find_dynamic_vhd_uuid 2>/dev/null || true)
+        elif [[ -z "$UUID" ]]; then
+            log_error "Failed to detect UUID after attaching VHD"
+            exit 1
         fi
-    fi
-    
-    if [[ -z "$UUID" ]]; then
-        log_error "Failed to detect UUID after attaching VHD"
-        exit 1
     fi
     
     log_success "VHD attached (UUID: $UUID)"
 else
+    # VHD already attached - verify UUID is valid
+    if [[ $discovery_result -eq 2 ]]; then
+        log_error "Multiple VHDs attached. Cannot determine which one to mount."
+        log_info "Please detach other VHDs first or use disk_management.sh with explicit --uuid."
+        exit 1
+    fi
     log_success "VHD already attached (UUID: $UUID)"
 fi
 

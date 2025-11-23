@@ -78,15 +78,19 @@ WSL does not provide a direct path→UUID mapping after attachment. These approa
 - Operations that save/update tracking: `attach_vhd()`, `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `wsl_create_vhd()`
 
 ### Snapshot-Based Device Detection
-When attaching VHDs, capture before/after snapshots:
+When attaching VHDs, use the centralized `detect_new_uuid_after_attach()` helper:
 ```bash
+# Capture snapshot before attach
 local old_uuids=($(wsl_get_disk_uuids))
-local old_devs=($(wsl_get_block_devices))
-# ... attach operation ...
-local new_uuids=($(wsl_get_disk_uuids))
-# Compare to find the new UUID
+
+# Perform attach operation
+wsl_attach_vhd "$path" "$name"
+
+# Detect new UUID using centralized helper
+local detected_uuid
+detected_uuid=$(detect_new_uuid_after_attach "old_uuids")
 ```
-Include `sleep 2` after attach/create operations for kernel device recognition.
+The helper function includes sleep delay (configurable via `SLEEP_AFTER_ATTACH`) for kernel device recognition.
 
 ### Path Format Handling
 - **User input**: Windows format with forward slashes: `C:/VMs/disk.vhdx`
@@ -97,9 +101,15 @@ Include `sleep 2` after attach/create operations for kernel device recognition.
 - **Mount operations**: Standard Linux paths `/mnt/...` or `/home/...`
 
 ### Dual Output Modes
-Functions must support both verbose and quiet modes:
+Functions must use structured logging functions that automatically handle quiet mode:
 ```bash
-[[ "$QUIET" == "false" ]] && echo "User-friendly message"
+# Use structured logging functions (automatically respect QUIET flag)
+log_info "User-friendly message"
+log_success "Success message"
+log_warn "Warning message"
+log_error "Error message (always shown, even in quiet mode)"
+
+# For quiet mode machine-readable output:
 [[ "$QUIET" == "true" ]] && echo "machine-readable: status"
 ```
 Quiet mode outputs parseable status strings like `path (uuid): attached,mounted`.
@@ -116,6 +126,19 @@ if [[ "$DEBUG" == "true" ]]; then
 fi
 ```
 Debug messages go to stderr. Works with quiet mode (`-q -d` shows commands but minimal user output).
+
+### UUID Discovery Error Handling Pattern
+When discovering UUIDs from paths, use the centralized `handle_uuid_discovery_result()` helper:
+```bash
+# Discover UUID with multi-VHD safety
+local discovery_result
+uuid=$(wsl_find_uuid_by_path "$path" 2>&1)
+discovery_result=$?
+
+# Handle discovery result with consistent error handling
+handle_uuid_discovery_result "$discovery_result" "$uuid" "mount" "$path"
+```
+This provides consistent error messages and handles multiple VHDs uniformly.
 
 ### State-Check-Then-Operate Pattern
 Always check state before operations for idempotent behavior:
@@ -176,7 +199,7 @@ unregister_vhd_cleanup "$vhd_path"
 ## Command Behaviors
 
 **Attach** - Single operation: Only attaches VHD to WSL as block device. Does NOT mount to filesystem.
-- Uses snapshot-based UUID detection
+- Uses `detect_new_uuid_after_attach()` for snapshot-based UUID detection
 - Idempotent (detects already-attached VHDs)
 
 **Mount** - Orchestration: Attach + mount workflow for user convenience
@@ -228,7 +251,8 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 ### Error Handling Strategy
 - **Primitives**: Return 0 on success, 1 on failure. Minimal error messages.
 - **WSL Helpers**: Return 0 on success, 1 on failure. Comprehensive error messages with context and diagnostics.
-- **Commands**: Exit on errors (exit 1). User-friendly error messages with suggestions.
+- **Commands**: Exit on errors using `error_exit()` function (not direct `exit 1`). User-friendly error messages with suggestions.
+- **Centralized Error Functions**: Use `error_exit()` for command functions, `error_return()` for helper functions (if needed)
 
 ### Dependencies
 - `qemu-img` - VHD creation and resize
@@ -238,14 +262,17 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 
 ## Critical Gotchas
 
-1. **Snapshot timing**: Take snapshots immediately before/after attach operations, not earlier
+1. **Snapshot timing**: Take snapshots immediately before/after attach operations, not earlier. Use `detect_new_uuid_after_attach()` helper.
 2. **Windows path format**: `wsl.exe` commands require Windows paths; filesystem checks require WSL paths
-3. **Quiet mode completeness**: Every user-facing echo must have a quiet mode alternative
-4. **Debug mode implementation**: All command executions must use `debug_cmd` wrapper or manual debug output
-5. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
-6. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
-7. **Mount does not format**: Mount command will error if VHD is unformatted, directing user to use format command first
-8. **Flag exports**: QUIET and DEBUG flags must be exported at script initialization for child script access
+3. **Structured logging**: Use `log_info()`, `log_success()`, `log_warn()`, `log_error()` instead of echo statements. These automatically handle QUIET mode.
+4. **UUID discovery error handling**: Always use `handle_uuid_discovery_result()` for consistent error messages when discovering UUIDs from paths.
+5. **Debug mode implementation**: All command executions must use `debug_cmd` wrapper or manual debug output
+6. **UUID invalidation**: Formatting a VHD generates a new UUID; document this in user messages
+7. **Sudo requirements**: Mount/umount operations require sudo; helper functions assume this
+8. **Mount does not format**: Mount command will error if VHD is unformatted, directing user to use format command first
+9. **Flag exports**: QUIET and DEBUG flags must be exported at script initialization for child script access
+10. **Configuration variables**: Use `SLEEP_AFTER_ATTACH` (default: 2) and `DETACH_TIMEOUT` (default: 30) instead of hardcoded values
+11. **Error handling**: Command functions must use `error_exit()`, not direct `exit 1` or `return 1`
 
 ## Testing
 
@@ -278,10 +305,13 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 ### Adding Helper Functions
 1. Add clear doc comment describing purpose, parameters, return values
 2. Follow naming convention for appropriate layer (Primitive/WSL Helper/Command)
-3. Respect `DEBUG` and `QUIET` flags
+3. Respect `DEBUG` and `QUIET` flags (use structured logging functions)
 4. Primitives: Minimal error handling, single operation
 5. WSL Helpers: Comprehensive error handling, may call primitives
-6. Commands: May orchestrate multiple operations, user-friendly output
+6. Commands: May orchestrate multiple operations, user-friendly output, use `error_exit()` for errors
+7. **UUID Discovery**: Use `handle_uuid_discovery_result()` for consistent error handling
+8. **Snapshot Detection**: Use `detect_new_uuid_after_attach()` for post-attach UUID detection
+9. **Configuration**: Use `SLEEP_AFTER_ATTACH` and `DETACH_TIMEOUT` instead of hardcoded values
 
 ## References
 
