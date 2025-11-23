@@ -1,12 +1,12 @@
 {
   "suites": {
     "test_status.sh": {
-      "last_run": "2025-11-22",
-      "status": "✗ FAILED",
+      "last_run": "2025-11-23",
+      "status": "✓ PASSED",
       "tests_run": 10,
-      "tests_passed": 7,
-      "tests_failed": 3,
-      "duration": "11s",
+      "tests_passed": 10,
+      "tests_failed": 0,
+      "duration": "123s",
       "test_results": [
         {
           "number": 1,
@@ -16,7 +16,7 @@
         {
           "number": 2,
           "name": "Status with specific UUID",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 3,
@@ -26,12 +26,12 @@
         {
           "number": 4,
           "name": "Status with specific mount point",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 5,
           "name": "Status shows attached but not mounted",
-          "status": "FAILED"
+          "status": "PASSED"
         },
         {
           "number": 6,

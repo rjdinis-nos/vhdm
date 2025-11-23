@@ -553,14 +553,22 @@ Or use a different filesystem type (ext3, xfs, etc.):
     [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$mount_uuid"
     log_info ""
     
-    # Check if already mounted
-    if wsl_is_vhd_mounted "$mount_uuid"; then
-        log_success "VHD is already mounted"
+    # Check if already mounted at the specific mount point
+    local current_mount_point
+    current_mount_point=$(wsl_get_vhd_mount_point "$mount_uuid")
+    
+    if [[ -n "$current_mount_point" ]] && [[ "$current_mount_point" == "$mount_point" ]]; then
+        log_success "VHD is already mounted at $mount_point"
         log_info "Nothing to do."
         # Already mounted - unregister from cleanup tracking
         unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
     else
-        log_warn "VHD is attached but not mounted"
+        if [[ -n "$current_mount_point" ]]; then
+            log_warn "VHD is mounted at a different location: $current_mount_point"
+            log_info "Mounting to requested location: $mount_point"
+        else
+            log_warn "VHD is attached but not mounted"
+        fi
         
         # Create mount point if it doesn't exist
         if [[ ! -d "$mount_point" ]]; then
