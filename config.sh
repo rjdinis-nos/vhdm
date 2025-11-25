@@ -150,6 +150,7 @@ export JQ_GET_DEV_NAME_BY_UUID='.mappings | to_entries[] | select(.value.uuid ==
 export JQ_SAVE_DETACH_HISTORY='.detach_history = ([{path: $path, uuid: $uuid, dev_name: $dev_name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]'
 export JQ_GET_DETACH_HISTORY='.detach_history // [] | .[0:$limit]'
 export JQ_GET_LAST_DETACH_BY_PATH='.detach_history // [] | map(select(.path == $path)) | .[0] // empty'
+export JQ_REMOVE_DETACH_HISTORY_BY_PATH='.detach_history = (.detach_history // [] | map(select(.path != $path)))'
 
 # Block device operations (lsblk)
 export JQ_CHECK_UUID_EXISTS='.blockdevices[] | select(.uuid == $UUID) | .uuid'

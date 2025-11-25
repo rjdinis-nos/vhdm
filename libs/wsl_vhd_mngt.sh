@@ -103,7 +103,7 @@ wsl_is_vhd_mounted() {
 wsl_get_vhd_info() {
     local uuid="$1"
     local device_name fsavail fsuse mountpoints
-    +
+    
     if [[ -z "$uuid" ]]; then
         log_error "UUID is required"
         return 1
@@ -213,10 +213,21 @@ wsl_detach_vhd() {
     # WSL unmounts by the VHD file path that was originally used to mount
     # Use timeout to prevent hanging (30 seconds max)
     # Filter out null bytes from wsl.exe output to avoid bash warnings
+    #
+    # Note: We check error output for specific error patterns because wsl.exe
+    # may return exit code 0 even on failure in some cases (WSL bug/behavior)
     local error_output
+    local exit_code
     if command -v timeout >/dev/null 2>&1; then
-        error_output=$(timeout "${DETACH_TIMEOUT:-30}" wsl.exe --unmount "$vhd_path" 2>&1 | tr -d '\0')
-        local exit_code=${PIPESTATUS[0]}
+        # Use set -o pipefail to capture the first non-zero exit code in pipeline
+        error_output=$(set -o pipefail; timeout "${DETACH_TIMEOUT:-30}" wsl.exe --unmount "$vhd_path" 2>&1 | tr -d '\0')
+        exit_code=$?
+        
+        # Check for error patterns in output (wsl.exe may return 0 even on failure)
+        if [[ "$error_output" == *"ERROR_FILE_NOT_FOUND"* ]]; then
+            log_warn "VHD was not attached (or path incorrect)"
+            return 1
+        fi
         
         if [[ $exit_code -eq 0 ]]; then
             return 0
@@ -233,15 +244,19 @@ wsl_detach_vhd() {
     else
         # No timeout command available, try without it
         # Filter null bytes from output to avoid bash warnings
-        # Capture exit code separately to avoid pipeline exit code issues
-        local temp_output
-        temp_output=$(wsl.exe --unmount "$vhd_path" 2>&1 | tr -d '\0')
-        local exit_code=${PIPESTATUS[0]}
+        error_output=$(set -o pipefail; wsl.exe --unmount "$vhd_path" 2>&1 | tr -d '\0')
+        exit_code=$?
+        
+        # Check for error patterns in output
+        if [[ "$error_output" == *"ERROR_FILE_NOT_FOUND"* ]]; then
+            log_warn "VHD was not attached (or path incorrect)"
+            return 1
+        fi
         
         if [[ $exit_code -eq 0 ]]; then
             return 0
         else
-            log_debug "WSL unmount failed: $temp_output"
+            log_debug "WSL unmount failed: $error_output"
             return 1
         fi
     fi
@@ -521,6 +536,9 @@ wsl_find_uuid_by_mountpoint() {
     if ! validate_mount_point "$mount_point"; then
         return 1
     fi
+    
+    # Strip trailing slash for consistent comparison (lsblk doesn't include trailing slashes)
+    mount_point="${mount_point%/}"
     
     # Get UUID for the device mounted at the specified mount point
     log_debug "lsblk -f -J | jq -r --arg MP '$mount_point' '.blockdevices[] | select(.mountpoints != null and .mountpoints != []) | select(.mountpoints[] == \$MP) | .uuid' | grep -v 'null' | head -n 1"

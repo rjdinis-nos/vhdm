@@ -32,6 +32,8 @@ The system is organized into three architectural layers:
 │  - tracking_file_lookup_uuid_by_path()                     │
 │  - tracking_file_update_mount_point()                      │
 │  - tracking_file_remove_mount_point()                      │
+│  - tracking_file_save_detach_history()                     │
+│  - tracking_file_remove_detach_history()                   │
 │  - All tracking_file_*() functions                         │
 └─────────────────────────────────────────────────────────────┘
                             │
@@ -192,6 +194,7 @@ All tests involving UUID discovery must:
 | `tracking_file_remove_mount_point()` | `$1: vhd_path` (optional), `$2: dev_name` (optional), `$3: uuid`, `$4: mount_point` (optional), `$5: found_path` (optional) | Remove/clear mount point from tracking file (handles UUID, mount point, vhd_path, or dev_name cases) | No | Minimal |
 | `tracking_file_remove_mapping()` | `$1: path` (Windows format) | Remove mapping from tracking file | No | Minimal |
 | `tracking_file_save_detach_history()` | `$1: path`, `$2: uuid`, `$3: dev_name` (optional) | Save detach event to history | No | Minimal |
+| `tracking_file_remove_detach_history()` | `$1: path` (Windows format) | Remove detach history entries for a path (called on attach) | No | Minimal |
 | `tracking_file_get_detach_history()` | `$1: limit` (optional) | Get detach history from tracking file | No | None (query only) |
 | `tracking_file_get_last_detach_for_path()` | `$1: path` | Get last detach event for a VHD path | No | None (query only) |
 
@@ -418,14 +421,14 @@ resize_vhd()
 ## Function Invocation Hierarchy
 
 ### Level 1: User Commands (Entry Points)
-- `attach_vhd()` → `wsl_attach_vhd()` → `tracking_file_save_mapping()`
+- `attach_vhd()` → `wsl_attach_vhd()` → `tracking_file_save_mapping()` → `tracking_file_remove_detach_history()`
 - `format_vhd_command()` → `format_vhd()`
-- `mount_vhd()` → `wsl_attach_vhd()` → `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()` → `tracking_file_update_mount_point()`
+- `mount_vhd()` → `wsl_attach_vhd()` → `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()` → `tracking_file_update_mount_point()` → `tracking_file_remove_detach_history()`
 - `umount_vhd()` → `wsl_umount_vhd()` → `umount_filesystem()` + `wsl_detach_vhd()` → `tracking_file_remove_mount_point()`
-- `detach_vhd()` → `wsl_umount_vhd()` + `wsl_detach_vhd()` → `tracking_file_remove_mount_point()`
+- `detach_vhd()` → `wsl_umount_vhd()` + `wsl_detach_vhd()` → `tracking_file_remove_mount_point()` → `tracking_file_save_detach_history()`
 - `create_vhd()` → `qemu-img` (direct)
 - `delete_vhd()` → `wsl_delete_vhd()` → `rm` → `tracking_file_remove_mapping()`
-- `resize_vhd()` → orchestrates multiple operations
+- `resize_vhd()` → orchestrates multiple operations → `tracking_file_remove_detach_history()`
 
 ### Level 2: WSL Helpers (Business Logic)
 - `wsl_attach_vhd()` → `wsl.exe --mount`
@@ -440,6 +443,8 @@ resize_vhd()
 - `tracking_file_lookup_uuid_by_path()` → JSON file queries (jq)
 - `tracking_file_update_mount_point()` → JSON file updates (jq)
 - `tracking_file_remove_mount_point()` → JSON file updates (jq)
+- `tracking_file_save_detach_history()` → JSON file operations (jq)
+- `tracking_file_remove_detach_history()` → JSON file operations (jq)
 - All tracking file functions are in `libs/wsl_vhd_tracking.sh`
 
 ### Level 3: Primitives (Direct Operations)
@@ -494,12 +499,13 @@ fi
 **Purpose**: Fast, deterministic UUID lookup without device scanning. Automatically handles multi-VHD scenarios with path and name-based discovery.
 
 **Operations that save/update tracking:**
-- `attach_vhd()` - Saves path→UUID + dev_name after successful attach using `tracking_file_save_mapping()`
-- `mount_vhd()` - Updates mount_points after mount (or when already mounted, ensuring tracking file stays in sync) using `tracking_file_update_mount_point()`
+- `attach_vhd()` - Saves path→UUID + dev_name after successful attach using `tracking_file_save_mapping()`, removes detach history using `tracking_file_remove_detach_history()`
+- `mount_vhd()` - Updates mount_points after mount (or when already mounted, ensuring tracking file stays in sync) using `tracking_file_update_mount_point()`, removes detach history when disk is confirmed attached using `tracking_file_remove_detach_history()`
 - `umount_vhd()` - Clears mount_points after unmount using `tracking_file_remove_mount_point()`
-- `detach_vhd()` - Clears mount_points when detaching using `tracking_file_remove_mount_point()`
+- `detach_vhd()` - Clears mount_points when detaching using `tracking_file_remove_mount_point()`, saves detach history using `tracking_file_save_detach_history()`
 - `delete_vhd()` - Removes mapping completely using `tracking_file_remove_mapping()`
 - `wsl_create_vhd()` - Saves mapping after creation and formatting using `tracking_file_save_mapping()`
+- `resize_vhd()` - Removes detach history after attaching resized VHD using `tracking_file_remove_detach_history()`
 
 **Note:** The `mount_vhd()` command uses the `tracking_file_update_mount_point()` helper function to update the tracking file. This helper handles both `--vhd-path` and `--dev-name` cases, and ensures the tracking file is updated even when the VHD is already mounted at the target mount point, keeping the tracking file in sync with the actual mount state.
 
@@ -523,6 +529,7 @@ All tracking file management functions follow the consistent pattern `tracking_f
 - `tracking_file_remove_mount_point()` - Remove/clear mount point (handles multiple input types)
 - `tracking_file_remove_mapping()` - Remove VHD mapping completely
 - `tracking_file_save_detach_history()` - Save detach event to history
+- `tracking_file_remove_detach_history()` - Remove detach history entries for a path (called on attach)
 - `tracking_file_get_detach_history()` - Get detach history entries
 - `tracking_file_get_last_detach_for_path()` - Get last detach event for a specific VHD path
 
@@ -801,6 +808,7 @@ fi
 - `tracking_file_update_mount_points()` - Updates mount points for existing VHD
 - `tracking_file_remove_mapping()` - Removes VHD from tracking file
 - `tracking_file_save_detach_history()` - Adds detach events to history
+- `tracking_file_remove_detach_history()` - Removes detach history entries for a path
 
 ### 11. Resource Cleanup Pattern
 

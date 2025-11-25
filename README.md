@@ -448,6 +448,7 @@ All tracking file operations follow the standardized naming pattern `tracking_fi
 - `tracking_file_remove_mount_point()` - Remove mount point from tracking file
 - `tracking_file_remove_mapping()` - Remove VHD mapping completely
 - `tracking_file_save_detach_history()` - Save detach event to history
+- `tracking_file_remove_detach_history()` - Remove detach history entries for a path (called on attach)
 - `tracking_file_get_detach_history()` - Get detach history entries
 - `tracking_file_get_last_detach_for_path()` - Get last detach event for a path
 

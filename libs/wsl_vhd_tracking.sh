@@ -546,6 +546,65 @@ tracking_file_save_detach_history() {
     fi
 }
 
+# Remove detach history entry for a VHD path
+# Called when a VHD is re-attached to clean up stale history
+# Args: $1 - VHD path (Windows format)
+# Returns: 0 on success, 1 on failure
+tracking_file_remove_detach_history() {
+    local path="$1"
+    
+    if [[ -z "$path" ]]; then
+        log_debug "tracking_file_remove_detach_history: path is empty"
+        return 1
+    fi
+    
+    # Skip tracking for test-related VHDs
+    if is_test_vhd "$path"; then
+        log_debug "Skipping detach history removal for test VHD: $path"
+        return 0
+    fi
+    
+    tracking_file_init || return 1
+    
+    local normalized=$(normalize_vhd_path "$path")
+    
+    # Create secure temporary file using mktemp
+    local temp_file
+    temp_file=$(mktemp "${DISK_TRACKING_FILE}.tmp.XXXXXX" 2>/dev/null)
+    if [[ $? -ne 0 || -z "$temp_file" ]]; then
+        log_debug "Failed to create temporary file"
+        return 1
+    fi
+    
+    # Set up trap handler to clean up temp file on exit/interrupt
+    trap "rm -f '$temp_file'" EXIT INT TERM
+    
+    # Ensure jq is available
+    if ! command -v jq &> /dev/null; then
+        log_debug "jq not available, skipping detach history removal"
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
+        return 1
+    fi
+    
+    # Remove all detach history entries for this path
+    log_debug "Removing detach history entries for: $normalized"
+    
+    if jq --arg path "$normalized" \
+          "$JQ_REMOVE_DETACH_HISTORY_BY_PATH" \
+          "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
+        mv "$temp_file" "$DISK_TRACKING_FILE"
+        trap - EXIT INT TERM
+        log_debug "Removed detach history entries for: $normalized"
+        return 0
+    else
+        rm -f "$temp_file"
+        trap - EXIT INT TERM
+        log_debug "Failed to remove detach history entries"
+        return 1
+    fi
+}
+
 # Get detach history from tracking file
 # Args: $1 - Number of entries to retrieve (optional, default: 10, max: 50)
 # Returns: JSON array of detach events, most recent first

@@ -40,20 +40,23 @@ Tracking file structure:
 **Key Functions:**
 - `init_disk_tracking_file()` - Creates directory and initial JSON structure
 - `normalize_vhd_path()` - Normalizes Windows paths for consistent tracking
-- `save_vhd_mapping()` - Saves/updates path→UUID→mount_points association
-- `lookup_vhd_uuid()` - Retrieves UUID from tracking file by path
-- `update_vhd_mount_points()` - Updates mount point list for existing mapping
-- `update_tracking_file_mount_point()` - Helper function that updates tracking file with mount point (handles both --vhd-path and --dev-name cases, including lookup of path from UUID when needed)
-- `remove_vhd_mapping()` - Removes mapping when VHD is deleted
+- `tracking_file_save_mapping()` - Saves/updates path→UUID→mount_points association
+- `tracking_file_lookup_uuid_by_path()` - Retrieves UUID from tracking file by path
+- `tracking_file_update_mount_points()` - Updates mount point list for existing mapping
+- `tracking_file_update_mount_point()` - Helper function that updates tracking file with mount point (handles both --vhd-path and --dev-name cases, including lookup of path from UUID when needed)
+- `tracking_file_remove_mapping()` - Removes mapping when VHD is deleted
+- `tracking_file_save_detach_history()` - Saves detach event to history
+- `tracking_file_remove_detach_history()` - Removes detach history entries for a path (called on attach)
 
 **Integration Points:**
-- `attach_vhd()` - Saves mapping after successful attach
-- `mount_vhd()` - Updates mount points after mount (or when already mounted, ensuring tracking file stays in sync)
+- `attach_vhd()` - Saves mapping after successful attach, removes detach history entries
+- `mount_vhd()` - Updates mount points after mount (or when already mounted, ensuring tracking file stays in sync), removes detach history entries when disk is confirmed attached
 - `umount_vhd()` - Clears mount points after unmount
-- `detach_vhd()` - Clears mount points when detaching
+- `detach_vhd()` - Clears mount points when detaching, saves detach history entry
 - `delete_vhd()` - Removes mapping when VHD file is deleted
 - `wsl_create_vhd()` - Saves mapping after VHD creation and formatting
 - `wsl_find_uuid_by_path()` - Checks tracking file first, then falls back to device discovery
+- `resize_vhd()` - Removes detach history entries after attaching resized VHD
 
 **Note:** The `mount_vhd()` command uses `update_tracking_file_mount_point()` helper function to update the tracking file. This ensures the tracking file is updated even when the VHD is already mounted at the target mount point, keeping the tracking file in sync with the actual mount state.
 

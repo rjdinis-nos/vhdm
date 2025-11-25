@@ -542,6 +542,9 @@ mount_vhd() {
                     # This preserves existing mount points and updates the name field
                     if tracking_file_save_mapping "$found_path" "$uuid" "$current_mount_points" "$dev_name"; then
                         log_debug "Updated tracking file: $found_path → UUID: $uuid, Device: $dev_name"
+                        
+                        # Clean up detach history for this path since disk is attached
+                        tracking_file_remove_detach_history "$found_path"
                     else
                         log_debug "Failed to update tracking file with device name"
                     fi
@@ -628,6 +631,9 @@ Or use a different filesystem type (ext3, xfs, etc.):
             log_info "  Detected UUID: $uuid"
             [[ -n "$dev_name" ]] && log_info "  Detected Device: /dev/$dev_name"
             
+            # Clean up detach history for this path since disk is now attached
+            tracking_file_remove_detach_history "$vhd_path"
+            
         elif [[ "$attach_output" == *"WSL_E_USER_VHD_ALREADY_ATTACHED"* ]] || [[ "$attach_output" == *"already attached"* ]] || [[ "$attach_output" == *"already mounted"* ]]; then
             # ================================================================
             # SCENARIO 3: VHD already attached
@@ -657,6 +663,9 @@ Or use a different filesystem type (ext3, xfs, etc.):
             
             # Get device name from UUID for tracking file updates
             dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
+            
+            # Clean up detach history for this path since disk is attached
+            tracking_file_remove_detach_history "$vhd_path"
             
         else
             # Other attach error (not "already attached")
@@ -1160,7 +1169,9 @@ detach_vhd() {
     # ========================================================================
     # SCENARIO 3: --vhd-path provided
     # ========================================================================
-    # Discover UUID from path with multi-VHD safety
+    # Try to discover UUID from tracking file or device detection
+    # If UUID can't be discovered (e.g., multiple VHDs), proceed anyway
+    # since wsl.exe --unmount works directly with the path
     # ========================================================================
     elif [[ -n "$vhd_path" ]]; then
         log_info "Using VHD path: $vhd_path"
@@ -1170,74 +1181,89 @@ detach_vhd() {
         uuid=$(wsl_find_uuid_by_path "$vhd_path" 2>&1)
         discovery_result=$?
         
-        # Handle discovery result with consistent error handling
-        handle_uuid_discovery_result "$discovery_result" "$uuid" "detach" "$vhd_path"
-        
-        if [[ -z "$uuid" ]]; then
-            error_exit "Cannot detach VHD: UUID not found for $vhd_path" 1 "The VHD may not be attached, or there may be multiple VHDs attached. Use '$0 status --all' to see all attached VHDs."
-        fi
-        
-        # Get device name from UUID for display
-        dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
-        if [[ -n "$dev_name" ]]; then
-            log_info "Device: /dev/$dev_name"
+        if [[ $discovery_result -eq 0 && -n "$uuid" ]]; then
+            # UUID found successfully
+            log_info "Discovered UUID: $uuid"
+            
+            # Get device name from UUID for display
+            dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
+            if [[ -n "$dev_name" ]]; then
+                log_info "Device: /dev/$dev_name"
+            fi
+        elif [[ $discovery_result -eq 2 ]]; then
+            # Multiple VHDs attached - can't discover UUID, but can still detach by path
+            log_warn "Multiple VHDs attached - cannot verify mount status"
+            log_info "Proceeding with path-based detach..."
+            uuid=""  # Clear - will skip mount check
+        else
+            # UUID not found - VHD may not be attached
+            log_warn "Could not discover UUID - VHD may not be attached"
+            uuid=""
         fi
         log_info ""
     fi
     
-    # Check if VHD is attached
-    if ! wsl_is_vhd_attached "$uuid"; then
-        log_warn "VHD is not attached to WSL"
-        log_info "Nothing to do."
-        [[ "$QUIET" == "true" ]] && echo "${uuid:-$dev_name}: not attached"
-        log_info "========================================"
-        exit 0
-    fi
-    
-    log_info "VHD is attached to WSL"
-    log_info "  UUID: $uuid"
-    [[ -n "$dev_name" ]] && log_info "  Device: /dev/$dev_name"
-    log_info ""
-    
-    # Look up VHD path from tracking file using UUID
-    # This enables path-based operations (mount point clearing, history tracking)
-    if [[ -z "$vhd_path" ]]; then
-        if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
-            # Look up path from tracking file using UUID
-            local found_path
-            found_path=$(jq -r --arg uuid "$uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
-            
-            if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
-                vhd_path="$found_path"
-                log_debug "Found VHD path in tracking file: $vhd_path"
-            else
-                log_debug "UUID $uuid not found in tracking file"
+    # Check if VHD is attached (only if we have UUID)
+    # When UUID is unknown but path is provided, skip this check and try detach directly
+    if [[ -n "$uuid" ]]; then
+        if ! wsl_is_vhd_attached "$uuid"; then
+            log_warn "VHD is not attached to WSL"
+            log_info "Nothing to do."
+            [[ "$QUIET" == "true" ]] && echo "${uuid:-$dev_name}: not attached"
+            log_info "========================================"
+            exit 0
+        fi
+        
+        log_info "VHD is attached to WSL"
+        log_info "  UUID: $uuid"
+        [[ -n "$dev_name" ]] && log_info "  Device: /dev/$dev_name"
+        log_info ""
+        
+        # Look up VHD path from tracking file using UUID
+        # This enables path-based operations (mount point clearing, history tracking)
+        if [[ -z "$vhd_path" ]]; then
+            if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                # Look up path from tracking file using UUID
+                local found_path
+                found_path=$(jq -r --arg uuid "$uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+                
+                if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
+                    vhd_path="$found_path"
+                    log_debug "Found VHD path in tracking file: $vhd_path"
+                else
+                    log_debug "UUID $uuid not found in tracking file"
+                fi
             fi
         fi
-    fi
-    
-    # Show current VHD info
-    [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$uuid"
-    log_info ""
-    
-    # Check if mounted and unmount first
-    if wsl_is_vhd_mounted "$uuid"; then
-        local mount_point=$(wsl_get_vhd_mount_point "$uuid")
-        log_info "VHD is mounted at: $mount_point"
-        log_info "Unmounting VHD first..."
         
-        if wsl_umount_vhd "$mount_point"; then
-            log_success "VHD unmounted successfully"
-            
-            # Clear mount point in tracking file using the new helper function
-            # This works with UUID, mount point, vhd_path, or dev_name
-            tracking_file_remove_mount_point "$vhd_path" "$dev_name" "$uuid" "$mount_point" ""
-        else
-            error_exit "Failed to unmount VHD"
-        fi
+        # Show current VHD info
+        [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$uuid"
         log_info ""
+        
+        # Check if mounted and unmount first
+        if wsl_is_vhd_mounted "$uuid"; then
+            local mount_point=$(wsl_get_vhd_mount_point "$uuid")
+            log_info "VHD is mounted at: $mount_point"
+            log_info "Unmounting VHD first..."
+            
+            if wsl_umount_vhd "$mount_point"; then
+                log_success "VHD unmounted successfully"
+                
+                # Clear mount point in tracking file using the new helper function
+                # This works with UUID, mount point, vhd_path, or dev_name
+                tracking_file_remove_mount_point "$vhd_path" "$dev_name" "$uuid" "$mount_point" ""
+            else
+                error_exit "Failed to unmount VHD"
+            fi
+            log_info ""
+        else
+            log_info "VHD is not mounted to filesystem"
+            log_info ""
+        fi
     else
-        log_info "VHD is not mounted to filesystem"
+        # UUID unknown - proceeding with path-based detach only
+        # Cannot check mount status, wsl.exe will fail if still mounted
+        log_info "Attempting path-based detach (mount status unknown)..."
         log_info ""
     fi
     
@@ -2088,6 +2114,9 @@ Aborting resize operation"
     if wsl_mount_vhd "$final_uuid" "$target_mount_point"; then
         log_success "Resized VHD mounted"
         
+        # Clean up detach history for this path since disk is now attached
+        tracking_file_remove_detach_history "$target_vhd_path"
+        
         # Unregister from cleanup tracking - operation completed successfully
         unregister_vhd_cleanup "$target_vhd_path" 2>/dev/null || true
     else
@@ -2417,6 +2446,9 @@ attach_vhd() {
                 
                 # Save mapping to tracking file with device name
                 tracking_file_save_mapping "$vhd_path" "$uuid" "" "$dev_name"
+                
+                # Clean up detach history for this path since disk is now attached
+                tracking_file_remove_detach_history "$vhd_path"
             else
                 # Device detected but no UUID - VHD is unformatted
                 log_warn "Warning: VHD attached but has no filesystem UUID (unformatted)"
@@ -2459,6 +2491,9 @@ attach_vhd() {
             
             # Save mapping to tracking file (idempotent - updates if exists) with device name
             tracking_file_save_mapping "$vhd_path" "$uuid" "" "$dev_name"
+            
+            # Clean up detach history for this path since disk is now attached
+            tracking_file_remove_detach_history "$vhd_path"
             
             # Unregister from cleanup tracking - operation completed successfully
             unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
