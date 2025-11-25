@@ -2167,6 +2167,7 @@ format_vhd_command() {
     # Parse format command arguments
     local dev_name=""
     local uuid=""
+    local old_uuid=""  # Store original UUID for tracking file lookup when reformatting
     local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
     local format_type="$default_fs"
     
@@ -2275,6 +2276,7 @@ This is a security check to prevent command injection."
         fi
         
         target_identifier="UUID $uuid"
+        old_uuid="$uuid"  # Store for tracking file update after formatting
     else
         # Using device name directly
         target_identifier="device name $dev_name"
@@ -2327,9 +2329,33 @@ To find attached VHDs, run: $0 status --all"
     log_info "  New UUID: $new_uuid"
     log_info "  Filesystem: $format_type"
     
-    # Note: We cannot automatically update path→UUID mapping here because format
-    # command doesn't require path parameter. The mapping will be updated when
-    # attach/mount operations are performed with the new UUID.
+    # Try to update tracking file with new UUID
+    # Priority: 1) Look up by old UUID (reformatting), 2) Look up by device name (new format)
+    local tracked_path=""
+    
+    # First try to look up by old UUID (when reformatting a previously formatted VHD)
+    if [[ -n "$old_uuid" ]]; then
+        tracked_path=$(tracking_file_lookup_path_by_uuid "$old_uuid")
+        if [[ -n "$tracked_path" ]]; then
+            log_debug "Found tracked path by old UUID: $tracked_path"
+        fi
+    fi
+    
+    # Fall back to looking up by device name (for unformatted VHDs tracked during attach)
+    if [[ -z "$tracked_path" ]]; then
+        tracked_path=$(tracking_file_lookup_path_by_dev_name "$dev_name")
+        if [[ -n "$tracked_path" ]]; then
+            log_debug "Found tracked path by device name: $tracked_path"
+        fi
+    fi
+    
+    # Update tracking file if we found a tracked path
+    if [[ -n "$tracked_path" ]]; then
+        tracking_file_save_mapping "$tracked_path" "$new_uuid" "" "$dev_name"
+        log_debug "Updated tracking file: $tracked_path → $new_uuid"
+    else
+        log_debug "No tracked path found for device $dev_name (VHD may not be tracked)"
+    fi
     
     log_info ""
     [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$new_uuid"
@@ -2454,7 +2480,13 @@ attach_vhd() {
                 log_warn "Warning: VHD attached but has no filesystem UUID (unformatted)"
                 log_info "  To format the VHD, run:"
                 log_info "    $0 format --dev-name $dev_name --type ext4"
-                # Don't save to tracking file yet - wait until VHD is formatted and has a UUID
+                
+                # Save mapping to tracking file with empty UUID (will be updated after formatting)
+                # This allows format command to find the path by device name and update UUID
+                tracking_file_save_mapping "$vhd_path" "" "" "$dev_name"
+                
+                # Clean up detach history for this path since disk is now attached
+                tracking_file_remove_detach_history "$vhd_path"
             fi
             
             # Unregister from cleanup tracking - operation completed successfully

@@ -353,7 +353,7 @@ Suggestions:
     if [[ -n "$vhd_path" ]]; then
         log_info "  Path: $vhd_path"
     else
-        log_info "  Path: Unknown (use --path to query by path)"
+        log_info "  Path: Unknown (use --vhd-path to query by path)"
     fi
     [[ -n "$uuid" ]] && log_info "  UUID: $uuid"
     [[ -n "$mount_point" ]] && log_info "  Mount Point: $mount_point"
@@ -977,7 +977,7 @@ To find device name or UUID, run: $0 status --all"
         log_info "The VHD path is required to detach from WSL."
         log_info ""
         log_info "To fully detach the VHD, run:"
-        log_info "  $0 detach --path <VHD_PATH>"
+        log_info "  $0 detach --vhd-path <VHD_PATH>"
     fi
 
     log_info ""
@@ -1708,7 +1708,7 @@ create_vhd() {
     log_info "The VHD file has been created but is not attached or formatted."
     log_info "To use it, you need to:"
     log_info "  1. Attach the VHD:"
-    log_info "     $0 attach --path $vhd_path --name <name>"
+    log_info "     $0 attach --vhd-path $vhd_path"
     log_info "  2. Format the VHD:"
     log_info "     $0 format --dev-name <device_name> --type ext4"
     log_info "  3. Mount the formatted VHD:"

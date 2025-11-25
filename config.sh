@@ -97,8 +97,8 @@ export MAX_HISTORY_LIMIT="${MAX_HISTORY_LIMIT:-50}"
 # System-level settings for disk tracking, caching, and logging
 
 # Location of the persistent disk tracking file that stores VHD path→UUID mappings
-# Default: ~/.config/wsl-disk-management/vhd_mapping.json
-export DISK_TRACKING_FILE="${DISK_TRACKING_FILE:-$HOME/.config/wsl-disk-management/vhd_mapping.json}"
+# Default: ~/.config/vhdm/vhd_mapping.json
+export DISK_TRACKING_FILE="${DISK_TRACKING_FILE:-$HOME/.config/vhdm/vhd_tracking.json}"
 
 # lsblk cache TTL (time-to-live) in seconds
 # Used for caching lsblk output to reduce system calls
@@ -145,6 +145,7 @@ export JQ_DELETE_MAPPING='del(.mappings[$path])'
 export JQ_GET_DEV_NAME_BY_PATH='.mappings[$path].dev_name // empty'
 export JQ_GET_PATH_BY_UUID='.mappings | to_entries[] | select(.value.uuid == $uuid) | .key'
 export JQ_GET_DEV_NAME_BY_UUID='.mappings | to_entries[] | select(.value.uuid == $uuid) | .value.dev_name // empty'
+export JQ_GET_PATH_BY_DEV_NAME='.mappings | to_entries[] | select(.value.dev_name == $dev_name) | .key'
 
 # Detach history operations
 export JQ_SAVE_DETACH_HISTORY='.detach_history = ([{path: $path, uuid: $uuid, dev_name: $dev_name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]'

@@ -94,18 +94,20 @@ is_test_vhd() {
 
 # Save path→UUID mapping to tracking file
 # Args: $1 - VHD path (Windows format)
-#       $2 - UUID
+#       $2 - UUID (can be empty for unformatted VHDs)
 #       $3 - Mount point (optional, can be empty or comma-separated list)
 #       $4 - Device name (optional, e.g., sde, sdd)
 # Returns: 0 on success, 1 on failure
+# Note: UUID can be empty for unformatted VHDs. In this case, only path and
+#       device name are tracked. The UUID should be updated after formatting.
 tracking_file_save_mapping() {
     local path="$1"
     local uuid="$2"
     local mount_points="$3"
     local dev_name="${4:-}"
     
-    if [[ -z "$path" || -z "$uuid" ]]; then
-        log_debug "tracking_file_save_mapping: path or uuid is empty"
+    if [[ -z "$path" ]]; then
+        log_debug "tracking_file_save_mapping: path is empty"
         return 1
     fi
     
@@ -115,7 +117,8 @@ tracking_file_save_mapping() {
         return 1
     fi
     
-    if ! validate_uuid "$uuid"; then
+    # UUID validation: only validate if UUID is provided (can be empty for unformatted VHDs)
+    if [[ -n "$uuid" ]] && ! validate_uuid "$uuid"; then
         log_debug "tracking_file_save_mapping: invalid UUID format"
         return 1
     fi
@@ -236,6 +239,78 @@ tracking_file_lookup_uuid_by_dev_name() {
     
     if [[ -n "$uuid" && "$uuid" != "null" && "$uuid" != "" ]]; then
         echo "$uuid"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Lookup VHD path by device name from tracking file
+# Args: $1 - Device name (e.g., sde, sdd)
+# Returns: VHD path (normalized) if found, empty string if not found
+# Exit code: 0 if found, 1 if not found
+# Note: This is useful for format operations where we need to update tracking
+#       after formatting an unformatted VHD that was tracked by device name only.
+tracking_file_lookup_path_by_dev_name() {
+    local dev_name="$1"
+    
+    if [[ -z "$dev_name" ]]; then
+        return 1
+    fi
+    
+    # Validate device name format for security
+    if ! validate_device_name "$dev_name"; then
+        return 1
+    fi
+    
+    tracking_file_init || return 1
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    log_debug "jq -r --arg dev_name '$dev_name' '$JQ_GET_PATH_BY_DEV_NAME' $DISK_TRACKING_FILE"
+    
+    local path=$(jq -r --arg dev_name "$dev_name" "$JQ_GET_PATH_BY_DEV_NAME" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+    
+    if [[ -n "$path" && "$path" != "null" && "$path" != "" ]]; then
+        echo "$path"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Lookup VHD path by UUID from tracking file
+# Args: $1 - UUID
+# Returns: VHD path (normalized) if found, empty string if not found
+# Exit code: 0 if found, 1 if not found
+# Note: This is useful for format operations where we need to update tracking
+#       after reformatting a VHD that was tracked with its old UUID.
+tracking_file_lookup_path_by_uuid() {
+    local uuid="$1"
+    
+    if [[ -z "$uuid" ]]; then
+        return 1
+    fi
+    
+    # Validate UUID format for security
+    if ! validate_uuid "$uuid"; then
+        return 1
+    fi
+    
+    tracking_file_init || return 1
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    log_debug "jq -r --arg uuid '$uuid' '$JQ_GET_PATH_BY_UUID' $DISK_TRACKING_FILE"
+    
+    local path=$(jq -r --arg uuid "$uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+    
+    if [[ -n "$path" && "$path" != "null" && "$path" != "" ]]; then
+        echo "$path"
         return 0
     fi
     
