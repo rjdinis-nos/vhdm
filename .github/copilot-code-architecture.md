@@ -173,6 +173,7 @@ All tests involving UUID discovery must:
 | `save_vhd_mapping()` | `$1: path`, `$2: uuid`, `$3: mount_points` (optional) | Save/update path→UUID mapping | No | Minimal |
 | `lookup_vhd_uuid()` | `$1: path` (Windows format) | Retrieve UUID from tracking file | No | None (query only) |
 | `update_vhd_mount_points()` | `$1: path`, `$2: mount_points` (comma-separated) | Update mount points for existing mapping | No | Minimal |
+| `update_tracking_file_mount_point()` | `$1: vhd_path` (optional), `$2: dev_name` (optional), `$3: uuid`, `$4: mount_point`, `$5: found_path` (optional) | Update tracking file with mount point (handles both --vhd-path and --dev-name cases) | No | Minimal |
 | `remove_vhd_mapping()` | `$1: path` (Windows format) | Remove mapping from tracking file | No | Minimal |
 
 ### Primitive Functions (libs/wsl_helpers.sh & libs/utils.sh)
@@ -468,11 +469,13 @@ fi
 
 **Operations that save/update tracking:**
 - `attach_vhd()` - Saves path→UUID + dev_name after successful attach
-- `mount_vhd()` - Updates mount_points after mount
+- `mount_vhd()` - Updates mount_points after mount (or when already mounted, ensuring tracking file stays in sync)
 - `umount_vhd()` - Clears mount_points after unmount
 - `detach_vhd()` - Clears mount_points when detaching
 - `delete_vhd()` - Removes mapping completely
 - `wsl_create_vhd()` - Saves mapping after creation and formatting
+
+**Note:** The `mount_vhd()` command uses the `update_tracking_file_mount_point()` helper function to update the tracking file. This helper handles both `--vhd-path` and `--dev-name` cases, and ensures the tracking file is updated even when the VHD is already mounted at the target mount point, keeping the tracking file in sync with the actual mount state.
 
 ### 2. Snapshot-Based Detection Pattern
 

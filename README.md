@@ -150,6 +150,12 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Note:** Either `--vhd-path` or `--dev-name` must be provided (but not both).
 
+**Key Features:**
+- Idempotent - safe to run multiple times (detects already-mounted VHDs)
+- Automatically updates tracking file with mount point (even when already mounted)
+- Supports both `--vhd-path` and `--dev-name` for flexible mounting
+- Creates mount point directory if it doesn't exist
+
 **Examples:**
 ```bash
 # Mount using VHD path
@@ -160,6 +166,10 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 # Mount with all options specified
 ./disk_management.sh mount --vhd-path C:/aNOS/VMs/disk.vhdx --mount-point /home/user/disk
+
+# Idempotent - safe to run multiple times
+./disk_management.sh mount --dev-name sde --mount-point /mnt/data
+# Output: "VHD is already mounted at /mnt/data" (tracking file still updated)
 ```
 
 ---
@@ -700,7 +710,7 @@ The tracking file maintains mappings across sessions, enabling:
 3. **Snapshot-based device detection** - During attach/create operations (device-first, then UUID from device)
 4. **Explicit parameter** - User-provided `--uuid`
 
-The system automatically saves mappings when VHDs are attached/created and updates them when mounted/unmounted.
+The system automatically saves mappings when VHDs are attached/created and updates them when mounted/unmounted. The mount command updates the tracking file even when the VHD is already mounted, ensuring the tracking file stays in sync with the actual mount state.
 
 ---
 

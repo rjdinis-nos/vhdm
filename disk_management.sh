@@ -536,6 +536,7 @@ mount_vhd() {
                     # Get current mount points for this path
                     local current_mount_points
                     current_mount_points=$(jq -r --arg path "$found_path" '.mappings[$path].mount_points // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+                    log_debug "Current mount points for $found_path: '$current_mount_points'"
                     
                     # Update tracking file with device name using save_vhd_mapping
                     # This preserves existing mount points and updates the name field
@@ -685,6 +686,11 @@ Or use a different filesystem type (ext3, xfs, etc.):
         # Already mounted at target location - nothing to do
         log_success "VHD is already mounted at $mount_point"
         log_info "Nothing to do."
+        
+        # Still update tracking file with mount point (in case it's not recorded)
+        # This ensures the tracking file stays in sync with actual mount state
+        update_tracking_file_mount_point "$vhd_path" "$dev_name" "$uuid" "$mount_point" "$found_path"
+        
         # Unregister from cleanup tracking (operation complete, no cleanup needed)
         if [[ -n "$vhd_path" ]]; then
             unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
@@ -715,36 +721,19 @@ Or use a different filesystem type (ext3, xfs, etc.):
             
             # Update tracking file with mount point and device name
             # This enables future path-based operations without requiring UUID
-            if [[ -n "$vhd_path" ]]; then
-                # Update mount points list in tracking file
-                update_vhd_mount_points "$vhd_path" "$mount_point"
-                
-                # Save device name to tracking file if we detected it and it's not already stored
-                # Device name is useful for user reference and format operations
-                if [[ -n "$dev_name" ]]; then
-                    local normalized_path=$(normalize_vhd_path "$vhd_path")
-                    if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
-                        local current_dev_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_DEV_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
-                        # Only update if dev_name field is empty (preserve existing device names)
-                        if [[ -z "$current_dev_name" || "$current_dev_name" == "null" ]]; then
-                            # Save mapping with device name for future reference
-                            save_vhd_mapping "$vhd_path" "$uuid" "$mount_point" "$dev_name"
-                        fi
+            update_tracking_file_mount_point "$vhd_path" "$dev_name" "$uuid" "$mount_point" "$found_path"
+            
+            # Save device name to tracking file if we detected it and it's not already stored
+            # Device name is useful for user reference and format operations
+            if [[ -n "$vhd_path" ]] && [[ -n "$dev_name" ]]; then
+                local normalized_path=$(normalize_vhd_path "$vhd_path")
+                if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                    local current_dev_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_DEV_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
+                    # Only update if dev_name field is empty (preserve existing device names)
+                    if [[ -z "$current_dev_name" || "$current_dev_name" == "null" ]]; then
+                        # Save mapping with device name for future reference
+                        save_vhd_mapping "$vhd_path" "$uuid" "$mount_point" "$dev_name"
                     fi
-                fi
-            elif [[ -n "$dev_name" ]]; then
-                # vhd_path not provided, but we have device name
-                # Check if UUID exists in tracking file and update mount point
-                # Note: found_path was already determined in Scenario 2 if --dev-name was used
-                if [[ -z "$found_path" ]] && [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
-                    # Find VHD path associated with this UUID (for other scenarios)
-                    found_path=$(jq -r --arg uuid "$uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
-                fi
-                
-                if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
-                    # UUID exists in tracking file - update mount point
-                    log_debug "Updating tracking file for UUID $uuid: mount_point=$mount_point"
-                    update_vhd_mount_points "$found_path" "$mount_point"
                 fi
             fi
             

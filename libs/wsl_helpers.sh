@@ -65,8 +65,7 @@ normalize_vhd_path() {
 # Returns: 0 if test VHD, 1 if not
 # Test VHDs are identified by:
 #   - Path is within WSL_DISKS_DIR from .env.test (if set)
-#   - Path contains "test" (case-insensitive) in filename or directory (fallback)
-#   - Path contains "wsl_tests" directory (fallback)
+#   This ensures we only skip tracking when actually running tests
 is_test_vhd() {
     local path="$1"
     
@@ -76,19 +75,14 @@ is_test_vhd() {
     
     local normalized=$(normalize_vhd_path "$path")
     
-    # Check if WSL_DISKS_DIR is set (from .env.test) and path is within it
-    # This is the primary method when running tests
+    # Only skip tracking if WSL_DISKS_DIR is set (from .env.test) and path is within it
+    # This ensures we only skip tracking when actually running tests
+    # We don't use filename patterns because legitimate VHDs may have "test" in their names
     if [[ -n "${WSL_DISKS_DIR:-}" ]]; then
         local test_dir_normalized=$(normalize_vhd_path "$WSL_DISKS_DIR")
         if [[ "$normalized" == "$test_dir_normalized"* ]]; then
             return 0
         fi
-    fi
-    
-    # Fallback: Check if path contains "test" or "wsl_tests" (case-insensitive)
-    # This catches test VHDs even if WSL_DISKS_DIR is not set
-    if [[ "$normalized" == *"test"* ]] || [[ "$normalized" == *"wsl_tests"* ]]; then
-        return 0
     fi
     
     return 1
@@ -239,6 +233,65 @@ lookup_vhd_uuid_by_dev_name() {
     if [[ -n "$uuid" && "$uuid" != "null" && "$uuid" != "" ]]; then
         echo "$uuid"
         return 0
+    fi
+    
+    return 1
+}
+
+# Update tracking file with mount point (helper for mount operations)
+# This function handles both --vhd-path and --dev-name cases
+# Args: $1 - vhd_path (optional)
+#       $2 - dev_name (optional)
+#       $3 - uuid (required)
+#       $4 - mount_point (required)
+#       $5 - found_path (optional, will be looked up if not provided and dev_name is set)
+# Returns: 0 on success, 1 on failure
+update_tracking_file_mount_point() {
+    local vhd_path="$1"
+    local dev_name="$2"
+    local uuid="$3"
+    local mount_point="$4"
+    local found_path="$5"
+    
+    if [[ -z "$uuid" || -z "$mount_point" ]]; then
+        log_debug "update_tracking_file_mount_point: uuid and mount_point are required"
+        return 1
+    fi
+    
+    if [[ -n "$vhd_path" ]]; then
+        # Update mount points list in tracking file
+        if update_vhd_mount_points "$vhd_path" "$mount_point"; then
+            log_debug "Updated mount point in tracking file: $vhd_path → $mount_point"
+            return 0
+        else
+            log_debug "Failed to update mount point in tracking file for $vhd_path"
+            return 1
+        fi
+    elif [[ -n "$dev_name" ]]; then
+        # vhd_path not provided, but we have device name
+        # Check if UUID exists in tracking file and update mount point
+        # Note: found_path was already determined in Scenario 2 if --dev-name was used
+        log_debug "Checking for path in tracking file (found_path='$found_path')"
+        if [[ -z "$found_path" ]] && [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+            # Find VHD path associated with this UUID
+            found_path=$(jq -r --arg uuid "$uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+            log_debug "Looked up path from UUID: found_path='$found_path'"
+        fi
+        
+        if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
+            # UUID exists in tracking file - update mount point
+            log_debug "Updating tracking file for UUID $uuid (path: $found_path): mount_point=$mount_point"
+            if update_vhd_mount_points "$found_path" "$mount_point"; then
+                log_debug "Successfully updated mount point in tracking file: $found_path → $mount_point"
+                return 0
+            else
+                log_debug "Failed to update mount point in tracking file for $found_path"
+                return 1
+            fi
+        else
+            log_debug "No path found in tracking file for UUID $uuid - cannot update mount point"
+            return 1
+        fi
     fi
     
     return 1
