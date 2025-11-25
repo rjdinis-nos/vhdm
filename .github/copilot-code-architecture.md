@@ -124,7 +124,6 @@ wsl_find_uuid_safely_by_path() {
 **Functions affected (must be updated):**
 - `wsl_find_uuid_by_path()` - Currently blindly calls `wsl_find_dynamic_vhd_uuid()`
 - `mount_vhd()` fallback logic - Currently loops through all UUIDs
-- `mount_disk.sh` fallback - Currently uses unsafe heuristic
 
 ### Test Requirements
 All tests involving UUID discovery must:

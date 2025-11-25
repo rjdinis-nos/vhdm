@@ -4,11 +4,10 @@
 
 Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Multi-script architecture:
 - `disk_management.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
-- `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
 - `libs/wsl_helpers.sh` - Shared WSL-specific function library
 - `libs/utils.sh` - Shared utility functions for size calculations, conversions, and input validation
 
-Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
+The `disk_management.sh` script sources `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
 
 **📖 For comprehensive architecture details, function flows, and responsibility matrix, see [copilot-code-architecture.md](copilot-code-architecture.md)**
 
@@ -105,7 +104,6 @@ All user-provided inputs are validated to prevent command injection and path tra
 
 **Validation Points:**
 - All command argument parsing in `disk_management.sh` (status, mount, umount, detach, delete, create, resize, format, attach, history)
-- All input parameters in `mount_disk.sh` (`--mount-point`, `--disk-path`)
 - Helper functions in `libs/wsl_helpers.sh` that receive user input (`save_vhd_mapping()`, `lookup_vhd_uuid()`, `wsl_attach_vhd()`, `mount_filesystem()`, `format_vhd()`, etc.)
 
 **Defense in Depth:**
