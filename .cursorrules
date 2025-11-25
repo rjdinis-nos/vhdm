@@ -25,7 +25,7 @@ WSL does not provide a direct path→UUID mapping after attachment. These approa
 1. ✅ **Persistent tracking file by path**: `lookup_vhd_uuid()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
 2. ✅ **Persistent tracking file by name**: `lookup_vhd_uuid_by_name()` queries by WSL mount name
 3. ✅ **UUID from mount point**: `findmnt` or `lsblk` lookup of mounted filesystem
-4. ✅ **Snapshot-based detection during attach/create**: Compare before/after disk lists immediately after WSL attach operation
+4. ✅ **Snapshot-based device detection during attach/create**: Compare before/after device lists immediately after WSL attach operation, then get UUID from device if available
 5. ✅ **Explicit user-provided UUID**: User specifies `--uuid` parameter
 
 **When UUID is unknown:**
@@ -89,19 +89,25 @@ This ensures consistency across all functions. See `.github/copilot-code-archite
 - Operations that save/update tracking: `attach_vhd()`, `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `wsl_create_vhd()`
 
 ### Snapshot-Based Device Detection
-When attaching VHDs, use the centralized `detect_new_uuid_after_attach()` helper:
+When attaching VHDs, use the centralized `detect_new_device_after_attach()` helper with device-first detection:
 ```bash
-# Capture snapshot before attach
-local old_uuids=($(wsl_get_disk_uuids))
+# Capture snapshot before attach (block devices only)
+local old_devs=($(wsl_get_block_devices))
 
 # Perform attach operation
-wsl_attach_vhd "$path" "$name"
+wsl_attach_vhd "$path"
 
-# Detect new UUID using centralized helper
+# Detect new device using centralized helper (pass array elements directly)
+local detected_device
+detected_device=$(detect_new_device_after_attach "" "${old_devs[@]}")
+
+# Get UUID from device if available (VHD is formatted)
 local detected_uuid
-detected_uuid=$(detect_new_uuid_after_attach "old_uuids")
+if [[ -n "$detected_device" ]]; then
+    detected_uuid=$(wsl_get_uuid_by_device "$detected_device")
+fi
 ```
-The helper function includes sleep delay (configurable via `SLEEP_AFTER_ATTACH`) for kernel device recognition.
+The helper function filters old devices before sleep (only sd[d-z] pattern) and includes sleep delay (configurable via `SLEEP_AFTER_ATTACH`) for kernel device recognition.
 
 ### Path Format Handling
 - **User input**: Windows format with forward slashes: `C:/VMs/disk.vhdx`
@@ -210,7 +216,7 @@ unregister_vhd_cleanup "$vhd_path"
 ## Command Behaviors
 
 **Attach** - Single operation: Only attaches VHD to WSL as block device. Does NOT mount to filesystem.
-- Uses `detect_new_uuid_after_attach()` for snapshot-based UUID detection
+- Uses `detect_new_device_after_attach()` for snapshot-based device detection (device-first, then UUID from device)
 - Idempotent (detects already-attached VHDs)
 
 **Mount** - Orchestration: Attach + mount workflow for user convenience
@@ -273,7 +279,7 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 
 ## Critical Gotchas
 
-1. **Snapshot timing**: Take snapshots immediately before/after attach operations, not earlier. Use `detect_new_uuid_after_attach()` helper.
+1. **Snapshot timing**: Take snapshots immediately before attach operations. Filter old devices BEFORE sleep to ensure correct pre-attach state. Use `detect_new_device_after_attach()` helper with device-first detection.
 2. **Windows path format**: `wsl.exe` commands require Windows paths; filesystem checks require WSL paths
 3. **Structured logging**: Use `log_info()`, `log_success()`, `log_warn()`, `log_error()` instead of echo statements. These automatically handle QUIET mode.
 4. **UUID discovery error handling**: Always use `handle_uuid_discovery_result()` for consistent error messages when discovering UUIDs from paths.
@@ -321,7 +327,7 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 5. WSL Helpers: Comprehensive error handling, may call primitives
 6. Commands: May orchestrate multiple operations, user-friendly output, use `error_exit()` for errors
 7. **UUID Discovery**: Use `handle_uuid_discovery_result()` for consistent error handling
-8. **Snapshot Detection**: Use `detect_new_uuid_after_attach()` for post-attach UUID detection
+8. **Snapshot Detection**: Use `detect_new_device_after_attach()` for post-attach device detection. Pass array elements directly as arguments (`"${old_devs[@]}"`) for reliability. Get UUID from device if available.
 9. **Configuration**: Use `SLEEP_AFTER_ATTACH` and `DETACH_TIMEOUT` instead of hardcoded values
 
 ## References

@@ -24,7 +24,7 @@ The system is organized into three architectural layers:
 │  - wsl_is_vhd_attached(), wsl_is_vhd_mounted()             │
 │  - wsl_get_vhd_info(), wsl_find_uuid_*()                   │
 │  - format_vhd(), wsl_create_vhd(), wsl_delete_vhd()        │
-│  - handle_uuid_discovery_result(), detect_new_uuid_after_attach() │
+│  - handle_uuid_discovery_result(), detect_new_device_after_attach() │
 └─────────────────────────────────────────────────────────────┘
                             │
                             ↓
@@ -79,7 +79,7 @@ WSL does not provide a direct path→UUID mapping after attachment. This creates
 1. **Persistent tracking file by path**: `lookup_vhd_uuid()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
 2. **Persistent tracking file by device name**: `lookup_vhd_uuid_by_dev_name()` queries by device name
 3. **UUID from mount point**: `findmnt` or `lsblk` lookup of mounted filesystem
-4. **Snapshot-based detection during attach/create**: Compare before/after disk lists immediately after WSL attach operation
+4. **Snapshot-based device detection during attach/create**: Compare before/after device lists immediately after WSL attach operation, then get UUID from device if available
 5. **Explicit user-provided UUID**: User specifies `--uuid` parameter
 
 ❌ **FORBIDDEN - Non-Deterministic Methods:**
@@ -212,31 +212,36 @@ All tests involving UUID discovery must:
 
 ```
 attach_vhd()
-├─→ Parse arguments (--path, --name)
+├─→ Parse arguments (--vhd-path)
 ├─→ Validate VHD file exists
-├─→ Take snapshot: wsl_get_disk_uuids(), wsl_get_block_devices()
-├─→ wsl_attach_vhd(path, name)
+├─→ Take snapshot: wsl_get_block_devices()
+├─→ wsl_attach_vhd(path)
 │   └─→ wsl.exe --mount --vhd --bare
-├─→ Detect UUID: detect_new_uuid_after_attach("old_uuids")
-├─→ Detect device name (via lsblk + jq)
-└─→ Report status (UUID, device name)
+├─→ Detect device: detect_new_device_after_attach("" "${old_devs[@]}")
+│   └─→ Filters old devices before sleep (only sd[d-z] pattern)
+│   └─→ Compares before/after to find new device
+├─→ Get UUID from device: wsl_get_uuid_by_device(dev_name)
+└─→ Report status (device name, UUID if formatted)
 ```
 
-**Key Point**: Attach is a **single operation** - it only attaches VHD to WSL as a block device. UUID detection is reporting, not a separate operation.
+**Key Point**: Attach is a **single operation** - it only attaches VHD to WSL as a block device. Device detection identifies the newly attached device, then UUID is retrieved from the device if available (VHD is formatted).
 
 ### Mount Command Flow
 
 ```
 mount_vhd()
-├─→ Parse arguments (--path, --mount-point, --name)
+├─→ Parse arguments (--vhd-path, --mount-point, --dev-name)
 ├─→ Validate VHD file exists
-├─→ Take snapshot: wsl_get_disk_uuids(), wsl_get_block_devices()
-├─→ wsl_attach_vhd(path, name)  [may fail if already attached]
+├─→ Take snapshot: wsl_get_block_devices()
+├─→ wsl_attach_vhd(path)  [may fail if already attached]
 │   └─→ wsl.exe --mount --vhd --bare
-├─→ Detect UUID: detect_new_uuid_after_attach("old_uuids")
-├─→ If UUID not found, try path-based discovery: wsl_find_uuid_by_path()
+├─→ Detect device: detect_new_device_after_attach("" "${old_devs[@]}")
+│   └─→ Filters old devices before sleep (only sd[d-z] pattern)
+│   └─→ Compares before/after to find new device
+├─→ Get UUID from device: wsl_get_uuid_by_device(dev_name)
+├─→ If device not found, try path-based discovery: wsl_find_uuid_by_path()
 │   └─→ handle_uuid_discovery_result() for consistent error handling
-├─→ Check if UUID found
+├─→ Check if device/UUID found
 │   ├─→ Yes: Verify filesystem exists
 │   └─→ No: Error - VHD is unformatted
 ├─→ wsl_is_vhd_mounted(uuid)
@@ -473,27 +478,40 @@ fi
 
 Used in: `attach_vhd()`, `mount_vhd()`, `resize_vhd()`, `wsl_create_vhd()` (as fallback)
 
-**Centralized Implementation**: Use `detect_new_uuid_after_attach()` helper function
+**Centralized Implementation**: Use `detect_new_device_after_attach()` helper function with device-first detection
 
 ```bash
-# Before operation
-local old_uuids=($(wsl_get_disk_uuids))
+# Before operation - capture block devices snapshot
+local old_devs=($(wsl_get_block_devices))
 
 # Perform operation (attach/create)
-wsl_attach_vhd "$path" "$name"
+wsl_attach_vhd "$path"
 
-# Detect new UUID using centralized helper
+# Detect new device using centralized helper (pass array elements directly)
+local detected_device
+detected_device=$(detect_new_device_after_attach "" "${old_devs[@]}")
+
+# Get UUID from device if available (VHD is formatted)
 local detected_uuid
-detected_uuid=$(detect_new_uuid_after_attach "old_uuids")
+if [[ -n "$detected_device" ]]; then
+    detected_uuid=$(wsl_get_uuid_by_device "$detected_device")
+fi
 ```
 
-**Helper Function**: `detect_new_uuid_after_attach()` in `libs/wsl_helpers.sh`
-- Accepts array name containing old UUIDs (or captures current state if not provided)
+**Helper Function**: `detect_new_device_after_attach()` in `libs/wsl_helpers.sh`
+- Accepts array elements as direct arguments (more reliable than indirect reference)
+- Filters old devices to only include dynamically attached VHDs (sd[d-z] pattern) BEFORE sleep
 - Includes sleep delay for kernel device recognition (configurable via `SLEEP_AFTER_ATTACH`)
-- Returns UUID via stdout, empty string if not found
-- Returns exit code 0 if UUID found, 1 if not found
+- Returns device name via stdout, empty string if not found
+- Returns exit code 0 if device found, 1 if not found
 
-**Purpose**: Identify newly attached/created disks when UUID is not in tracking file. Used as fallback when tracking lookup fails. Centralized implementation eliminates code duplication.
+**Key Improvements**:
+- **Device-first detection**: Works for both formatted and unformatted VHDs
+- **Reliable array passing**: Uses direct arguments instead of indirect reference
+- **Pre-filtering**: Filters old devices before sleep to ensure correct pre-attach state
+- **System disk exclusion**: Only detects dynamically attached VHDs (sd[d-z]), excludes system disks (sda, sdb, sdc)
+
+**Purpose**: Identify newly attached/created disks deterministically. Device detection works regardless of formatting status, then UUID is derived from the device if available.
 
 ### 3. UUID Discovery Error Handling Pattern
 

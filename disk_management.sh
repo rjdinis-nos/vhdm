@@ -79,10 +79,10 @@ show_usage() {
     echo "  Note: Provide at least one option. UUID will be auto-discovered when possible."
     echo
     echo "Detach Command Options:"
-    echo "  --dev-name DEVICE        - [optional] VHD device name (e.g., sde) - alternative to --uuid"
-    echo "  --uuid UUID              - [optional] VHD UUID - alternative to --dev-name"
-    echo "  --vhd-path PATH          - [optional] VHD file path (auto-discovered from tracking file if not provided)"
-    echo "  Note: Either --dev-name or --uuid must be provided. If VHD is mounted, it will be unmounted first."
+    echo "  --dev-name DEVICE        - [optional] VHD device name (e.g., sde) - alternative to --uuid or --vhd-path"
+    echo "  --uuid UUID              - [optional] VHD UUID - alternative to --dev-name or --vhd-path"
+    echo "  --vhd-path PATH          - [optional] VHD file path - alternative to --dev-name or --uuid"
+    echo "  Note: Either --dev-name, --uuid, or --vhd-path must be provided. If VHD is mounted, it will be unmounted first."
     echo
     echo "Status Command Options:"
     echo "  --vhd-path PATH           - [optional] VHD file path (Windows format, UUID will be discovered)"
@@ -125,6 +125,7 @@ show_usage() {
     echo "  $0 umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293"
     echo "  $0 detach --uuid 72a3165c-f1be-4497-a1fb-2c55054ac472"
     echo "  $0 detach --dev-name sde"
+    echo "  $0 detach --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 status --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 status --all"
     echo "  $0 create --vhd-path C:/VMs/disk.vhdx --size 5G"
@@ -395,12 +396,16 @@ Suggestions:
 #
 #    SCENARIO 1: --vhd-path provided, disk NOT attached
 #    ---------------------------------------------------
-#    - Takes snapshot of current UUIDs and block devices
+#    - Takes snapshot of current block devices before attach
 #    - Attempts to attach VHD using wsl.exe --mount --bare
 #    - On success:
-#      * Detects new UUID using snapshot-based comparison (detect_new_uuid_after_attach)
-#      * Detects new device name using snapshot-based comparison (detect_new_device_after_attach)
-#      * Validates VHD is formatted (has filesystem UUID)
+#      * Detects new device using snapshot-based comparison (detect_new_device_after_attach)
+#        - Works for both formatted and unformatted VHDs
+#        - Filters old devices before sleep (only sd[d-z] pattern)
+#        - Excludes system disks (sda, sdb, sdc)
+#      * Gets UUID from device if available (wsl_get_uuid_by_device)
+#        - UUID will be empty if VHD is unformatted
+#      * Validates VHD is formatted (has filesystem UUID) - errors if not
 #    - Mounts filesystem using UUID (wsl_mount_vhd)
 #
 #    SCENARIO 2: --dev-name provided
@@ -490,7 +495,6 @@ mount_vhd() {
     log_info ""
     
     local uuid=""
-    local dev_name=""
     local found_path=""  # Path found in tracking file when vhd_path not provided
     
     # ========================================================================
@@ -562,9 +566,9 @@ mount_vhd() {
             error_exit "VHD file does not exist at $vhd_path"
         fi
         
-        # Take snapshot BEFORE attach attempt for deterministic UUID/device detection
-        # This allows us to identify which UUID/device was added by comparing before/after
-        local old_uuids=($(wsl_get_disk_uuids))
+        # Take snapshot BEFORE attach attempt for deterministic device detection
+        # This allows us to identify which device was added by comparing before/after
+        # Only need block devices snapshot (device-first detection, then UUID from device)
         local old_devs=($(wsl_get_block_devices))
         
         # Attempt attachment - capture both exit code and error output
@@ -577,8 +581,9 @@ mount_vhd() {
             # ================================================================
             # SCENARIO 1: Successfully attached (disk was NOT attached)
             # ================================================================
-            # VHD was successfully attached - use snapshot-based detection
-            # to find the new UUID and device name deterministically
+            # VHD was successfully attached - use snapshot-based device detection
+            # Device-first approach works for both formatted and unformatted VHDs
+            # UUID is then derived from the device if available
             # ================================================================
             log_success "VHD attached successfully"
             
@@ -586,21 +591,20 @@ mount_vhd() {
             # Will be unregistered on successful mount completion
             register_vhd_cleanup "$vhd_path" "" ""
             
-            # Detect new UUID by comparing before/after snapshots
-            # This is deterministic and safe with multiple VHDs (only detects the one we just attached)
-            uuid=$(detect_new_uuid_after_attach "old_uuids")
+            # Detect new device using snapshot-based detection
+            # This works for both formatted and unformatted VHDs
+            # Pass array elements directly to avoid indirect reference issues
+            dev_name=$(detect_new_device_after_attach "" "${old_devs[@]}")
             
-            # Detect new device name by comparing before/after snapshots
-            # Used for tracking file and user information
-            dev_name=$(detect_new_device_after_attach "old_devs")
+            if [[ -z "$dev_name" ]]; then
+                error_exit "Failed to detect device of attached VHD"
+            fi
+            
+            # Get UUID from device (will be empty if VHD is unformatted)
+            uuid=$(wsl_get_uuid_by_device "$dev_name")
             
             # Validate VHD has filesystem (is formatted)
-            # If no UUID detected, check if device was detected (means unformatted)
             if [[ -z "$uuid" ]]; then
-                if [[ -z "$dev_name" ]]; then
-                    error_exit "Failed to detect device of attached VHD"
-                fi
-                
                 # Provide helpful error message with format command
                 local format_help="The VHD is attached but not formatted.
   Device: /dev/$dev_name
@@ -1009,13 +1013,13 @@ To find device name or UUID, run: $0 status --all"
 
 # Function to detach VHD
 # Arguments:
-#   --dev-name DEVICE     Device name (e.g., sde) - alternative to --uuid
-#   --uuid UUID           VHD UUID - alternative to --dev-name
-#   --vhd-path PATH       VHD file path (Windows format, optional, auto-discovered if not provided)
+#   --dev-name DEVICE     Device name (e.g., sde) - alternative to --uuid or --vhd-path
+#   --uuid UUID           VHD UUID - alternative to --dev-name or --vhd-path
+#   --vhd-path PATH       VHD file path (Windows format) - alternative to --dev-name or --uuid
 #
 # Logic Flow:
 # ===========
-# 1. Two Detach Scenarios:
+# 1. Three Detach Scenarios:
 #
 #    SCENARIO 1: --dev-name provided
 #    ---------------------------------------------------
@@ -1041,10 +1045,22 @@ To find device name or UUID, run: $0 status --all"
 #    - Saves detach event to history
 #    - Keeps mapping in tracking file (for future re-attachment)
 #
-# Common Logic (both scenarios):
+#    SCENARIO 3: --vhd-path provided
+#    ---------------------------------------------------
+#    - Discovers UUID from path using wsl_find_uuid_by_path (with multi-VHD safety)
+#    - Handles discovery errors consistently (handle_uuid_discovery_result)
+#    - Gets device name from UUID using lsblk (JQ_GET_DEVICE_NAME_BY_UUID)
+#    - Validates VHD is attached to WSL (wsl_is_vhd_attached)
+#    - Unmounts filesystem from mount point if mounted (wsl_umount_vhd)
+#    - Clears mount points in tracking file (using provided path)
+#    - Detaches from WSL (wsl_detach_vhd)
+#    - Saves detach event to history
+#    - Keeps mapping in tracking file (for future re-attachment)
+#
+# Common Logic (all scenarios):
 #    - If --vhd-path is explicitly provided, it takes precedence over tracking file lookup
 #    - Path lookup from tracking file enables mount point clearing and history tracking
-#    - If path cannot be found, user must provide it explicitly
+#    - If path cannot be found in tracking file, user must provide it explicitly
 #
 # Note: Unlike delete_vhd(), this function does NOT remove the mapping from
 #       the tracking file. The mapping is preserved so the VHD can be easily
@@ -1093,13 +1109,19 @@ detach_vhd() {
         esac
     done
     
-    # Validate that either dev-name or uuid is provided (mutually exclusive)
-    if [[ -z "$uuid" ]] && [[ -z "$dev_name" ]]; then
-        error_exit "Either --dev-name or --uuid must be provided" 1 "Usage: $0 detach [--dev-name DEVICE | --uuid UUID] [--vhd-path PATH]"
+    # Validate that at least one identifier is provided (mutually exclusive)
+    if [[ -z "$uuid" ]] && [[ -z "$dev_name" ]] && [[ -z "$vhd_path" ]]; then
+        error_exit "Either --dev-name, --uuid, or --vhd-path must be provided" 1 "Usage: $0 detach [--dev-name DEVICE | --uuid UUID | --vhd-path PATH]"
     fi
     
-    if [[ -n "$uuid" ]] && [[ -n "$dev_name" ]]; then
-        error_exit "Cannot specify both --dev-name and --uuid" 1 "Usage: $0 detach [--dev-name DEVICE | --uuid UUID] [--vhd-path PATH]"
+    # Validate mutually exclusive options
+    local identifier_count=0
+    [[ -n "$uuid" ]] && ((identifier_count++))
+    [[ -n "$dev_name" ]] && ((identifier_count++))
+    [[ -n "$vhd_path" ]] && ((identifier_count++))
+    
+    if [[ $identifier_count -gt 1 ]]; then
+        error_exit "Cannot specify multiple identifiers. Use only one of: --dev-name, --uuid, or --vhd-path" 1 "Usage: $0 detach [--dev-name DEVICE | --uuid UUID | --vhd-path PATH]"
     fi
     
     log_info "========================================"
@@ -1141,6 +1163,33 @@ detach_vhd() {
         if [[ "$DEBUG" == "true" ]]; then
             log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
         fi
+        dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
+        if [[ -n "$dev_name" ]]; then
+            log_info "Device: /dev/$dev_name"
+        fi
+        log_info ""
+    
+    # ========================================================================
+    # SCENARIO 3: --vhd-path provided
+    # ========================================================================
+    # Discover UUID from path with multi-VHD safety
+    # ========================================================================
+    elif [[ -n "$vhd_path" ]]; then
+        log_info "Using VHD path: $vhd_path"
+        
+        # Try to find UUID by path with multi-VHD safety
+        local discovery_result
+        uuid=$(wsl_find_uuid_by_path "$vhd_path" 2>&1)
+        discovery_result=$?
+        
+        # Handle discovery result with consistent error handling
+        handle_uuid_discovery_result "$discovery_result" "$uuid" "detach" "$vhd_path"
+        
+        if [[ -z "$uuid" ]]; then
+            error_exit "Cannot detach VHD: UUID not found for $vhd_path" 1 "The VHD may not be attached, or there may be multiple VHDs attached. Use '$0 status --all' to see all attached VHDs."
+        fi
+        
+        # Get device name from UUID for display
         dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
         if [[ -n "$dev_name" ]]; then
             log_info "Device: /dev/$dev_name"
@@ -2021,18 +2070,28 @@ Aborting resize operation"
     log_info "Mounting resized VHD at $target_mount_point..."
     
     # Attach the VHD (it will get a new UUID since it was formatted)
-    local old_uuids=($(wsl_get_disk_uuids))
+    # Take snapshot of block devices before attach for device detection
+    local old_devs=($(wsl_get_block_devices))
     
     if ! wsl_attach_vhd "$target_vhd_path"; then
         error_exit "Failed to attach resized VHD"
     fi
     
-    # Detect new UUID using snapshot-based detection
+    # Detect new device using snapshot-based detection
+    # Pass array elements directly to avoid indirect reference issues
+    local final_dev_name
+    final_dev_name=$(detect_new_device_after_attach "" "${old_devs[@]}")
+    
+    if [[ -z "$final_dev_name" ]]; then
+        error_exit "Failed to detect device of resized VHD"
+    fi
+    
+    # Get UUID from device (VHD should be formatted, so UUID should exist)
     local final_uuid
-    final_uuid=$(detect_new_uuid_after_attach "old_uuids")
+    final_uuid=$(wsl_get_uuid_by_device "$final_dev_name")
     
     if [[ -z "$final_uuid" ]]; then
-        error_exit "Failed to detect UUID of resized VHD"
+        error_exit "Failed to detect UUID of resized VHD (device: /dev/$final_dev_name)"
     fi
     
     # Mount the resized VHD
@@ -2275,14 +2334,20 @@ To find attached VHDs, run: $0 status --all"
 # ===========
 # 1. Validate required parameters
 # 2. Convert Windows path to WSL path to check if VHD exists
-# 3. Take snapshot of current UUIDs and block devices before attaching
+# 3. Take snapshot of current block devices before attaching
+#    - Only block devices needed (device-first detection approach)
+#    - Snapshot is filtered to only include dynamically attached VHDs (sd[d-z] pattern)
 # 4. Attempt to attach the VHD (will succeed if not attached, fail silently if already attached)
-# 5. Detect new UUID using snapshot-based detection
-# 6. Update cleanup registration with UUID
-# 7. Find the device name
-# 8. Save mapping to tracking file with VHD name
-# 9. Unregister from cleanup tracking - operation completed successfully
-# 10. Report success or error
+# 5. Detect new device using snapshot-based detection (detect_new_device_after_attach)
+#    - Works for both formatted and unformatted VHDs
+#    - Filters old devices before sleep to ensure pre-attach state
+#    - Excludes system disks (sda, sdb, sdc) to avoid false positives
+# 6. Get UUID from device if available (wsl_get_uuid_by_device)
+#    - UUID will be empty if VHD is unformatted
+#    - UUID is only available for formatted VHDs
+# 7. Update cleanup registration and save mapping to tracking file
+#    - Mapping includes device name for future reference
+# 8. Report success or error
 #
 # Note: Unlike detach_vhd(), this function does NOT remove the mapping from
 #       the tracking file. The mapping is preserved so the VHD can be easily
@@ -2326,56 +2391,57 @@ attach_vhd() {
     log_info "========================================"
     log_info ""
     
-    # Take snapshot of current UUIDs and block devices before attaching
-    local old_uuids=($(wsl_get_disk_uuids))
+    # Take snapshot of current block devices before attaching
+    # This is used to detect the newly attached device after attach
     local old_devs=($(wsl_get_block_devices))
+    log_debug "Captured old_devs array (count: ${#old_devs[@]}): ${old_devs[*]}"
     
     # Try to attach the VHD (will succeed if not attached, fail silently if already attached)
     local uuid=""
-    local newly_attached=false
+    local dev_name=""
     
     if wsl_attach_vhd "$vhd_path" 2>/dev/null; then
-        newly_attached=true
         # Register VHD for cleanup (will be unregistered on successful completion)
         register_vhd_cleanup "$vhd_path" "" ""
         log_success "VHD attached to WSL"
         log_info "  Path: $vhd_path"
         log_info ""
         
-        # Detect new UUID using snapshot-based detection
-        uuid=$(detect_new_uuid_after_attach "old_uuids")
-        if [[ -n "$uuid" ]]; then
-            # Find the device name
-            if [[ "$DEBUG" == "true" ]]; then
-                log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
-            fi
-            local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
-            
-            # Update cleanup registration with UUID and device name
-            unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
-            register_vhd_cleanup "$vhd_path" "$uuid" "$dev_name"
-        fi
+        # Detect new device using snapshot-based detection
+        # This works for both formatted and unformatted VHDs
+        # Pass array elements directly to avoid indirect reference issues
+        dev_name=$(detect_new_device_after_attach "" "${old_devs[@]}")
         
-        if [[ -z "$uuid" ]]; then
-            log_warn "Warning: Could not automatically detect UUID"
-            log_info "  The VHD was attached successfully but UUID detection failed."
-            log_info "  You can find the UUID using: ./disk_management.sh status --all"
-        else
-            # Find the device name
-            if [[ "$DEBUG" == "true" ]]; then
-                log_debug "lsblk -f -J | jq -r --arg UUID '$uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
-            fi
-            local dev_name=$(lsblk -f -J | jq -r --arg UUID "$uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
+        if [[ -n "$dev_name" ]]; then
+            # Device detected - now try to get UUID from the device
+            # This will succeed if VHD is formatted, fail if unformatted
+            uuid=$(wsl_get_uuid_by_device "$dev_name")
             
+            # Report device detection
             log_success "Device detected"
-            log_info "  UUID: $uuid"
-            [[ -n "$dev_name" ]] && log_info "  Device: /dev/$dev_name"
+            log_info "  Device: /dev/$dev_name"
             
-            # Save mapping to tracking file with device name
-            save_vhd_mapping "$vhd_path" "$uuid" "" "$dev_name"
+            if [[ -n "$uuid" ]]; then
+                # UUID found - VHD is formatted
+                log_info "  UUID: $uuid"
+                
+                # Save mapping to tracking file with device name
+                save_vhd_mapping "$vhd_path" "$uuid" "" "$dev_name"
+            else
+                # Device detected but no UUID - VHD is unformatted
+                log_warn "Warning: VHD attached but has no filesystem UUID (unformatted)"
+                log_info "  To format the VHD, run:"
+                log_info "    $0 format --dev-name $dev_name --type ext4"
+                # Don't save to tracking file yet - wait until VHD is formatted and has a UUID
+            fi
             
             # Unregister from cleanup tracking - operation completed successfully
             unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
+        else
+            # Device detection failed
+            log_warn "Warning: Could not automatically detect device"
+            log_info "  The VHD was attached successfully but device detection failed."
+            log_info "  You can find the device using: ./disk_management.sh status --all"
         fi
     else
         # Attachment failed - VHD might already be attached

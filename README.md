@@ -106,8 +106,9 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Key Features:**
 - Idempotent - safe to run multiple times (detects already-attached VHDs)
-- Automatic UUID detection and reporting
+- Automatic device detection and UUID reporting (works for both formatted and unformatted VHDs)
 - Device name identification and tracking
+- Reliable snapshot-based detection (excludes system disks, only detects dynamically attached VHDs)
 - Supports quiet and debug modes
 
 **Examples:**
@@ -128,7 +129,8 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **After Attach:**
 - VHD is accessible as a block device (e.g., `/dev/sdd`)
-- UUID is reported for future operations
+- Device name is always reported
+- UUID is reported if VHD is formatted (unformatted VHDs will show a warning with format instructions)
 - VHD is NOT mounted to filesystem yet
 - Use `mount` command or manual `sudo mount UUID=<uuid> <mount-point>` to mount
 
@@ -695,7 +697,7 @@ The tracking file maintains mappings across sessions, enabling:
 **UUID Discovery Priority:**
 1. **Tracking file** - Fastest, checked first
 2. **Mount point** - For mounted filesystems
-3. **Snapshot detection** - During attach/create operations
+3. **Snapshot-based device detection** - During attach/create operations (device-first, then UUID from device)
 4. **Explicit parameter** - User-provided `--uuid`
 
 The system automatically saves mappings when VHDs are attached/created and updates them when mounted/unmounted.

@@ -1153,54 +1153,6 @@ Suggestions:
     fi
 }
 
-# Detect newly attached UUID by comparing before/after snapshots
-# This function is used after attaching a VHD to identify the newly attached disk
-# Args: $1 - Array name containing old UUIDs (optional, will capture if not provided)
-#       Note: If array name is provided, it should be passed without the $ prefix
-#             Example: detect_new_uuid_after_attach "old_uuids" (not "$old_uuids")
-# Returns: UUID of newly attached disk via stdout, empty string if not found
-# Exit code: 0 if UUID found, 1 if not found
-# Note: This function includes a sleep delay to allow kernel to recognize the device
-detect_new_uuid_after_attach() {
-    local old_uuids_array_name="$1"
-    local old_uuids=()
-    
-    # Get old UUIDs from provided array or capture current state
-    if [[ -n "$old_uuids_array_name" ]]; then
-        # Use provided array (indirect reference)
-        # Note: This requires the array to be passed by name, not by value
-        local array_ref="${old_uuids_array_name}[@]"
-        old_uuids=("${!array_ref}")
-    else
-        # Capture current state (should be called before attach)
-        old_uuids=($(wsl_get_disk_uuids))
-    fi
-    
-    # Give kernel time to recognize the newly attached device
-    sleep "${SLEEP_AFTER_ATTACH:-2}"
-    
-    # Get new UUIDs after attach
-    local new_uuids=($(wsl_get_disk_uuids))
-    
-    # Build lookup table for old UUIDs
-    declare -A seen_uuid
-    local uuid
-    for uuid in "${old_uuids[@]}"; do
-        [[ -n "$uuid" ]] && seen_uuid["$uuid"]=1
-    done
-    
-    # Find the new UUID (one that wasn't in the old list)
-    for uuid in "${new_uuids[@]}"; do
-        if [[ -n "$uuid" ]] && [[ -z "${seen_uuid[$uuid]:-}" ]]; then
-            echo "$uuid"
-            return 0
-        fi
-    done
-    
-    # No new UUID found
-    return 1
-}
-
 # Check if a device exists in the system (regardless of formatting)
 # Args: $1 - Device name (e.g., sdd, sde) - /dev/ prefix optional
 # Returns: 0 if device exists, 1 if not found
@@ -1233,10 +1185,12 @@ wsl_device_exists() {
 }
 
 # Get UUID from device name using lsblk
+# This is used in the device-first detection approach: after detecting a new device,
+# this function retrieves its UUID if the device is formatted
 # Args: $1 - Device name (e.g., sdd, sde, or /dev/sdd)
-# Returns: UUID if found, empty string if not found
+# Returns: UUID if found, empty string if not found (device is unformatted)
 # Exit code: 0 if found, 1 if not found
-# Note: Device must exist and have a filesystem UUID (be formatted)
+# Note: Device must exist and have a filesystem UUID (be formatted) to return a UUID
 wsl_get_uuid_by_device() {
     local device_name="$1"
     
@@ -1265,24 +1219,58 @@ wsl_get_uuid_by_device() {
 }
 
 # Detect new device name after attach using snapshot-based detection
-# Args: $1 - Array name containing old device names (passed by name, not value)
-#             Example: detect_new_device_after_attach "old_devs" (not "$old_devs")
+# This function uses device-first detection which works for both formatted and unformatted VHDs
+# Args: $1 - Array name containing old device names (optional, for backward compatibility)
+#       $2... - Old device names as separate arguments (preferred method for reliability)
+#             Example: detect_new_device_after_attach "" "sdd" "sde" 
+#             Or: detect_new_device_after_attach "old_devs" (uses nameref, less reliable)
 # Returns: Device name of newly attached disk via stdout, empty string if not found
 # Exit code: 0 if device found, 1 if not found
-# Note: This function includes a sleep delay to allow kernel to recognize the device
+# Note: 
+#   - Filters old devices to only include dynamically attached VHDs (sd[d-z] pattern) BEFORE sleep
+#   - Excludes system disks (sda, sdb, sdc) to avoid false positives
+#   - Includes sleep delay (configurable via SLEEP_AFTER_ATTACH) for kernel device recognition
+#   - Only returns devices matching sd[d-z] pattern (dynamically attached VHDs)
 detect_new_device_after_attach() {
     local old_devs_array_name="$1"
-    local old_devs=()
+    shift  # Remove first argument
+    local old_devs=("$@")  # Get remaining arguments as array
     
-    # Get old devices from provided array or capture current state
-    if [[ -n "$old_devs_array_name" ]]; then
-        # Use provided array (indirect reference)
-        local array_ref="${old_devs_array_name}[@]"
-        old_devs=("${!array_ref}")
+    # If no arguments provided (except array name), try to use array name or capture current state
+    if [[ ${#old_devs[@]} -eq 0 ]]; then
+        if [[ -n "$old_devs_array_name" ]]; then
+            # Use provided array via nameref (more reliable than indirect reference)
+            # This requires bash 4.3+ for nameref support
+            declare -n array_ref="$old_devs_array_name"
+            old_devs=("${array_ref[@]}")
+            unset -n array_ref  # Unset nameref to avoid side effects
+            log_debug "Received old_devs array via nameref (count: ${#old_devs[@]}): ${old_devs[*]}"
+        else
+            # Capture current state (should be called before attach)
+            old_devs=($(wsl_get_block_devices))
+            log_debug "Captured old_devs array directly (count: ${#old_devs[@]}): ${old_devs[*]}"
+        fi
     else
-        # Capture current state (should be called before attach)
-        old_devs=($(wsl_get_block_devices))
+        log_debug "Received old_devs array as arguments (count: ${#old_devs[@]}): ${old_devs[*]}"
     fi
+    
+    # Filter old devices to only include dynamically attached VHDs (non-system disks)
+    # This MUST be done BEFORE the sleep to ensure we're using the pre-attach state
+    # This ensures we only compare relevant devices and avoid false positives
+    declare -A old_vhd_devs
+    log_debug "Filtering old devices (count: ${#old_devs[@]}): ${old_devs[*]}"
+    local dev
+    for dev in "${old_devs[@]}"; do
+        [[ -z "$dev" ]] && continue
+        
+        # Only include dynamically attached VHDs (sd[d-z] pattern)
+        # Skip system disks (sda, sdb, sdc)
+        if [[ "$dev" =~ ^sd[d-z][a-z]*$ ]]; then
+            old_vhd_devs["$dev"]=1
+            log_debug "Old VHD device: $dev"
+        fi
+    done
+    log_debug "Filtered old VHD devices (count: ${#old_vhd_devs[@]}): ${!old_vhd_devs[*]}"
     
     # Give kernel time to recognize the newly attached device
     sleep "${SLEEP_AFTER_ATTACH:-2}"
@@ -1290,22 +1278,32 @@ detect_new_device_after_attach() {
     # Get new devices after attach
     local new_devs=($(wsl_get_block_devices))
     
-    # Build lookup table for old devices
-    declare -A seen_dev
-    local dev
-    for dev in "${old_devs[@]}"; do
-        [[ -n "$dev" ]] && seen_dev["$dev"]=1
-    done
-    
-    # Find the new device (one that wasn't in the old list)
+    # Find the new device (one that wasn't in the old filtered list)
+    # CRITICAL: Only return devices that are dynamically attached VHDs (non-system disks)
+    # System disks (sda, sdb, sdc) should be excluded to avoid false positives
+    log_debug "Comparing devices: old_vhd_devs has ${#old_vhd_devs[@]} devices, new_devs has ${#new_devs[@]} devices"
     for dev in "${new_devs[@]}"; do
-        if [[ -n "$dev" ]] && [[ -z "${seen_dev[$dev]:-}" ]]; then
-            echo "$dev"
-            return 0
+        [[ -z "$dev" ]] && continue
+        
+        # Check if this device was in the old filtered list
+        if [[ -z "${old_vhd_devs[$dev]:-}" ]]; then
+            # This device is new - verify it's a dynamically attached VHD
+            # Only return device if it's a dynamically attached VHD (sd[d-z] pattern)
+            # Skip system disks (sda, sdb, sdc)
+            if [[ "$dev" =~ ^sd[d-z][a-z]*$ ]]; then
+                log_debug "New VHD device detected: $dev (not in old snapshot)"
+                echo "$dev"
+                return 0
+            else
+                log_debug "Skipping device $dev - not a dynamically attached VHD"
+            fi
+        else
+            log_debug "Device $dev already in old snapshot (skipping - was present before attach)"
         fi
     done
     
     # No new device found
+    log_debug "No new VHD device detected"
     return 1
 }
 
@@ -1458,9 +1456,9 @@ wsl_create_vhd() {
         return 1
     fi
     
-    # Take snapshot of current block devices and UUIDs
+    # Take snapshot of current block devices before attach
+    # This is used to detect the newly attached device after attach
     local old_devs=($(wsl_get_block_devices))
-    local old_uuids=($(wsl_get_disk_uuids))
     
     # Create the VHD file
     if ! debug_cmd qemu-img create -f vhdx "$vhd_path_wsl" "$size" >/dev/null 2>&1; then
@@ -1475,25 +1473,10 @@ wsl_create_vhd() {
         return 1
     fi
     
-    sleep 2  # Give system time to recognize the device
-    
-    # Take new snapshot to detect the new device
-    local new_devs=($(wsl_get_block_devices))
-    
-    # Build lookup table for old devices
-    declare -A seen_dev
-    for dev in "${old_devs[@]}"; do
-        seen_dev["$dev"]=1
-    done
-    
-    # Find the new device
-    local new_dev=""
-    for dev in "${new_devs[@]}"; do
-        if [[ -z "${seen_dev[$dev]}" ]]; then
-            new_dev="$dev"
-            break
-        fi
-    done
+    # Detect new device using snapshot-based detection
+    # This uses the centralized helper function for consistency
+    local new_dev
+    new_dev=$(detect_new_device_after_attach "" "${old_devs[@]}")
     
     if [[ -z "$new_dev" ]]; then
         log_error "Could not detect newly attached device"

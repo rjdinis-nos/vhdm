@@ -54,16 +54,29 @@ Tracking file structure:
 - `wsl_find_uuid_by_path()` - Checks tracking file first, then falls back to device discovery
 
 ### Snapshot-Based Device Detection
-When attaching VHDs, the scripts capture before/after snapshots of block devices and UUIDs to identify newly attached disks:
+When attaching VHDs, the scripts use device-first detection to identify newly attached disks:
 ```bash
-local old_uuids=($(wsl_get_disk_uuids))
+# Before attach - capture block devices snapshot
 local old_devs=($(wsl_get_block_devices))
-# ... attach operation ...
-local new_uuids=($(wsl_get_disk_uuids))
-# Compare to find the new UUID
+
+# Perform attach operation
+wsl_attach_vhd "$path"
+
+# Detect new device using snapshot-based comparison
+# Pass array elements directly for reliability
+local new_device=$(detect_new_device_after_attach "" "${old_devs[@]}")
+
+# Get UUID from device if available (VHD is formatted)
+local uuid=$(wsl_get_uuid_by_device "$new_device")
 ```
 
-This pattern is critical in `mount_vhd()` and `wsl_create_vhd()`. System disks (sda/sdb/sdc) are WSL system volumes; dynamically attached VHDs typically appear as sd[d-z].
+**Key Points**:
+- **Device-first detection**: Works for both formatted and unformatted VHDs
+- **Pre-filtering**: Old devices are filtered to only include dynamically attached VHDs (sd[d-z] pattern) BEFORE sleep
+- **System disk exclusion**: System disks (sda/sdb/sdc) are excluded from comparison
+- **Reliable array passing**: Array elements are passed directly as arguments, not via indirect reference
+
+This pattern is critical in `attach_vhd()`, `mount_vhd()`, `resize_vhd()`, and `wsl_create_vhd()`. System disks (sda/sdb/sdc) are WSL system volumes; dynamically attached VHDs typically appear as sd[d-z].
 
 ### Path Format Handling
 - **User input**: Windows format with forward slashes: `C:/VMs/disk.vhdx`
@@ -317,7 +330,7 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 The system uses deterministic UUID discovery methods with persistent tracking:
 - **From tracking file**: `lookup_vhd_uuid()` checks persistent mapping file first (✅ SAFE, FASTEST)
 - **From mount point**: `wsl_find_uuid_by_mountpoint()` reverse-lookups UUID from mounted filesystem (✅ SAFE)
-- **Snapshot-based**: Compare before/after disk lists during attach/create operations (✅ SAFE)
+- **Snapshot-based device detection**: Compare before/after device lists during attach/create operations, then get UUID from device (✅ SAFE)
 - **From path with safety check**: `wsl_find_uuid_by_path()` checks tracking file, validates file exists, counts attached VHDs before discovery
 - **Dynamic VHD detection**: `wsl_find_dynamic_vhd_uuid()` finds non-system disks - ⚠️ ONLY safe when exactly one VHD is attached
 
@@ -473,7 +486,7 @@ Comprehensive test suites validating all command functionality:
 8. Error handling: non-existent path
 9. Error handling: missing --path parameter
 10. Detach and re-attach successfully
-11. UUID detection after attach
+11. Device detection after attach (device-first, then UUID from device)
 12. Device name reported after attach
 13. Completion message display
 14. Combined quiet + debug mode
@@ -692,7 +705,9 @@ wsl_convert_path() {
 
 ## Critical Gotchas
 
-1. **Snapshot timing**: Take snapshots immediately before/after attach operations, not earlier
+1. **Snapshot timing**: Take snapshots immediately before attach operations. Filter old devices BEFORE sleep to ensure correct pre-attach state. Device detection happens after sleep.
+2. **Device-first detection**: Always detect device first (works for formatted and unformatted), then get UUID from device if available
+3. **Array passing**: Pass array elements directly as arguments (`"${array[@]}"`) instead of using indirect reference for reliability
 2. **Windows path format**: `wsl.exe` commands require Windows paths; filesystem checks require WSL paths
 3. **Structured logging**: Use logging functions (`log_info`, `log_error`, etc.) instead of echo statements for consistent, timestamped output
 4. **Quiet mode**: Logging functions automatically respect `QUIET` flag (info/warn/success suppressed, errors always shown)
@@ -720,7 +735,7 @@ wsl_convert_path() {
 ### Key Command Behaviors
 
 **Attach** - Single operation: Only attaches VHD to WSL as block device. Does NOT mount to filesystem.
-- Uses snapshot-based UUID detection
+- Uses snapshot-based device detection (device-first, then UUID from device)
 - Idempotent (detects already-attached VHDs)
 - VHD available as `/dev/sdX` after attach
 
