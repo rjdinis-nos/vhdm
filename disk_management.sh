@@ -215,16 +215,8 @@ show_status() {
     
     # Try to find UUID if not provided
     if [[ -z "$uuid" ]]; then
-            if ! wsl_is_vhd_attached "$uuid"; then
-                local stale_help="VHD with name '$name' (UUID: $uuid) is not attached.
-The tracking file may be stale."
-                if [[ "$QUIET" == "true" ]]; then
-                    echo "not attached"
-                fi
-                error_exit "VHD found in tracking but not currently attached" 1 "$stale_help"
-            fi
         # If path is provided, check if VHD file exists first
-        elif [[ -n "$vhd_path" ]]; then
+        if [[ -n "$vhd_path" ]]; then
             local vhd_path_wsl
             vhd_path_wsl=$(wsl_convert_path "$vhd_path")
             
