@@ -52,54 +52,56 @@ show_usage() {
     echo "  history [OPTIONS]        - Show detach history"
     echo
     echo "Attach Command Options:"
-    echo "  --path PATH              - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
+    echo "  --vhd-path PATH           - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
     local default_name="${DEFAULT_VHD_NAME:-disk}"
     echo "  --name NAME              - [optional] VHD name for WSL attachment [default: $default_name]"
     echo "  Note: Attaches VHD to WSL without mounting to filesystem."
     echo "        VHD will be accessible as a block device (/dev/sdX) after attachment."
     echo
     echo "Format Command Options:"
-    echo "  --name NAME              - [optional] VHD device block name (e.g., sdd, sde)"
+    echo "  --dev-name NAME          - [optional] VHD device block name (e.g., sdd, sde)"
     echo "  --uuid UUID              - [optional] VHD UUID"
     local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
     echo "  --type TYPE              - [optional] Filesystem type (ext4, ext3, xfs, etc.) [default: $default_fs]"
-    echo "  Note: Either --uuid or --name must be provided."
+    echo "  Note: Either --uuid or --dev-name must be provided."
     echo "        VHD must be attached before formatting. Use 'attach' command first."
     echo "        If --uuid is provided for an already-formatted disk, confirmation will be required."
     echo
     echo "Mount Command Options:"
-    echo "  --path PATH              - [mandatory] VHD file path (Windows format)"
     echo "  --mount-point PATH       - [mandatory] Mount point path"
-    echo "  --name NAME              - [optional] VHD name for WSL attachment"
-    echo "  Note: VHD must be formatted before mounting. Use 'format' command if needed."
+    echo "  --vhd-path PATH          - [optional] VHD file path (Windows format)"
+    echo "  --dev-name DEVICE        - [optional] Device name (e.g., sde)"
+    echo "  Note: Either --vhd-path or --dev-name must be provided."
+    echo "        VHD must be formatted before mounting. Use 'format' command if needed."
     echo
     echo "Umount Command Options:"
-    echo "  --path PATH              - [optional] VHD file path (Windows format, UUID will be discovered)"
+    echo "  --vhd-path PATH           - [optional] VHD file path (Windows format, UUID will be discovered)"
     echo "  --uuid UUID              - [optional] VHD UUID (can be used instead of path or mount-point)"
     echo "  --mount-point PATH       - [optional] Mount point path (UUID will be discovered)"
     echo "  Note: Provide at least one option. UUID will be auto-discovered when possible."
     echo
     echo "Detach Command Options:"
-    echo "  --uuid UUID              - [mandatory] VHD UUID to detach"
-    echo "  --path PATH              - [optional] VHD file path (improves reliability)"
-    echo "  Note: If VHD is mounted, it will be unmounted first."
+    echo "  --dev-name DEVICE        - [optional] VHD device name (e.g., sde) - alternative to --uuid"
+    echo "  --uuid UUID              - [optional] VHD UUID - alternative to --dev-name"
+    echo "  --vhd-path PATH          - [optional] VHD file path (auto-discovered from tracking file if not provided)"
+    echo "  Note: Either --dev-name or --uuid must be provided. If VHD is mounted, it will be unmounted first."
     echo
     echo "Status Command Options:"
-    echo "  --path PATH              - [optional] VHD file path (Windows format, UUID will be discovered)"
+    echo "  --vhd-path PATH           - [optional] VHD file path (Windows format, UUID will be discovered)"
     echo "  --uuid UUID              - [optional] VHD UUID (can be used instead of path, name, or mount-point)"
     echo "  --name NAME              - [optional] VHD name (UUID will be discovered from tracking file)"
     echo "  --mount-point PATH       - [optional] Mount point path (UUID will be discovered)"
     echo "  --all                    - [optional] Show all attached VHDs"
     echo
     echo "Create Command Options:"
-    echo "  --path PATH              - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
+    echo "  --vhd-path PATH           - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
     local default_size="${DEFAULT_VHD_SIZE:-1G}"
     echo "  --size SIZE              - [optional] VHD size (e.g., 1G, 500M, 10G) [default: $default_size]"
     echo "  --force                  - [optional] Overwrite existing VHD (auto-unmounts if attached, prompts for confirmation)"
     echo "  Note: Creates VHD file only. Use 'attach' or 'mount' commands to attach and use the disk."
     echo
     echo "Delete Command Options:"
-    echo "  --path PATH              - [mandatory] VHD file path (Windows format, UUID will be discovered)"
+    echo "  --vhd-path PATH           - [mandatory] VHD file path (Windows format, UUID will be discovered)"
     echo "  --uuid UUID              - [optional] VHD UUID (can be used instead of path)"
     echo "  --force                  - [optional] Skip confirmation prompt"
     echo "  Note: VHD must be unmounted and detached before deletion."
@@ -113,34 +115,41 @@ show_usage() {
     local default_limit="${DEFAULT_HISTORY_LIMIT:-10}"
     local max_limit="${MAX_HISTORY_LIMIT:-50}"
     echo "  --limit N                - [optional] Number of detach events to show [default: $default_limit, max: $max_limit]"
-    echo "  --path PATH              - [optional] Show last detach event for specific VHD path"
+    echo "  --vhd-path PATH           - [optional] Show last detach event for specific VHD path"
     echo "  Note: Shows detach history with timestamps, UUIDs, and VHD names."
     echo
     echo "Examples:"
-    echo "  $0 attach --path C:/VMs/disk.vhdx --name mydisk"
-    echo "  $0 format --name sdd --type ext4"
+    echo "  $0 attach --vhd-path C:/VMs/disk.vhdx --name mydisk"
+    echo "  $0 format --dev-name sdd --type ext4"
     echo "  $0 format --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --type ext4"
-    echo "  $0 mount --path C:/VMs/disk.vhdx --mount-point /mnt/data"
-    echo "  $0 umount --path C:/VMs/disk.vhdx"
+    echo "  $0 mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data"
+    echo "  $0 umount --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 umount --mount-point /mnt/data"
     echo "  $0 umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293"
     echo "  $0 detach --uuid 72a3165c-f1be-4497-a1fb-2c55054ac472"
-    echo "  $0 status --path C:/VMs/disk.vhdx"
+    echo "  $0 detach --dev-name sde"
+    echo "  $0 status --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 status --name mydisk"
     echo "  $0 status --all"
-    echo "  $0 create --path C:/VMs/disk.vhdx --size 5G"
-    echo "  $0 delete --path C:/VMs/disk.vhdx"
-    echo "  $0 delete --path C:/VMs/disk.vhdx --force"
+    echo "  $0 create --vhd-path C:/VMs/disk.vhdx --size 5G"
+    echo "  $0 delete --vhd-path C:/VMs/disk.vhdx"
+    echo "  $0 delete --vhd-path C:/VMs/disk.vhdx --force"
     echo "  $0 resize --mount-point /mnt/data --size 10G"
     echo "  $0 history"
     echo "  $0 history --limit 20"
-    echo "  $0 history --path C:/VMs/disk.vhdx"
+    echo "  $0 history --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 -q status --all"
     echo
     exit 0
 }
 
 # Function to show status
+# Args: $1 - VHD path (Windows format)
+#       $2 - VHD UUID
+#       $3 - VHD name
+#       $4 - Mount point path
+#       $5 - Show all flag
+# Returns: 0 on success, 1 on failure
 show_status() {
     # Parse status command arguments
     local status_path=""
@@ -154,16 +163,16 @@ show_status() {
         echo "Usage: $0 status [OPTIONS]"
         echo
         echo "Options:"
-        echo "  --path PATH         Show status for specific VHD path (UUID auto-discovered)"
-        echo "  --uuid UUID         Show status for specific UUID"
-        echo "  --name NAME         Show status for specific VHD name (UUID auto-discovered)"
-        echo "  --mount-point PATH  Show status for specific mount point (UUID auto-discovered)"
-        echo "  --all               Show all attached VHDs"
+        echo "  --vhd-path PATH      Show status for specific VHD path (UUID auto-discovered)"
+        echo "  --uuid UUID          Show status for specific UUID"
+        echo "  --name NAME          Show status for specific VHD name (UUID auto-discovered)"
+        echo "  --mount-point PATH   Show status for specific mount point (UUID auto-discovered)"
+        echo "  --all                Show all attached VHDs"
         echo
         echo "Examples:"
         echo "  $0 status --all"
         echo "  $0 status --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293"
-        echo "  $0 status --path C:/VMs/disk.vhdx"
+        echo "  $0 status --vhd-path C:/VMs/disk.vhdx"
         echo "  $0 status --name mydisk"
         echo "  $0 status --mount-point /mnt/data"
         return 0
@@ -171,9 +180,9 @@ show_status() {
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
@@ -263,7 +272,7 @@ The tracking file may be stale."
 
 Suggestions:
   1. Check the file path is correct
-  2. Create a new VHD: $0 create --path $status_path --size <size>
+  2. Create a new VHD: $0 create --vhd-path $status_path --size <size>
   3. See all attached VHDs: $0 status --all"
                 if [[ "$QUIET" == "true" ]]; then
                     echo "not found"
@@ -307,7 +316,7 @@ Run '$script_name status --all' to see all attached VHDs."
         log_info "  All Attached VHD Disks"
         log_info "========================================"
         log_info "Note: VHD paths cannot be determined from UUID alone."
-        log_info "      Use 'status --path <path>' to verify a specific VHD."
+        log_info "      Use 'status --vhd-path <path>' to verify a specific VHD."
         log_info ""
         
         local all_uuids
@@ -346,7 +355,7 @@ Suggestions:
   1. Check if the mount point exists: ls -ld $status_mount_point
   2. Verify VHD is mounted: mount | grep $status_mount_point
   3. See all attached VHDs: $0 status --all
-  4. Mount the VHD first: $0 mount --path <path> --mount-point $status_mount_point"
+  4. Mount the VHD first: $0 mount --vhd-path <path> --mount-point $status_mount_point"
         elif [[ -n "$status_path" ]]; then
             # Convert to WSL path to check if file exists
             local vhd_path_wsl
@@ -357,13 +366,13 @@ Suggestions:
 
 Suggestions:
   1. Check the file path is correct
-  2. Create a new VHD: $0 create --path $status_path"
+  2. Create a new VHD: $0 create --vhd-path $status_path"
             else
                 suggestions="VHD file exists at: $status_path
 But it is not currently attached to WSL.
 
 Suggestions:
-  1. Mount the VHD: $0 mount --path $status_path
+  1. Mount the VHD: $0 mount --vhd-path $status_path
   2. See all attached VHDs: $0 status --all"
             fi
         else
@@ -371,7 +380,7 @@ Suggestions:
 
 Suggestions:
   1. Provide a UUID: $0 status --uuid <uuid>
-  2. Provide a path: $0 status --path <path>
+  2. Provide a path: $0 status --vhd-path <path>
   3. Provide a mount point: $0 status --mount-point <path>
   4. See all attached VHDs: $0 status --all"
         fi
@@ -417,23 +426,69 @@ Suggestions:
 }
 
 # Function to mount VHD
+# 
+# This function orchestrates the complete mount workflow: attachment (if needed), UUID discovery,
+# and filesystem mounting. It handles three distinct scenarios based on user input.
+#
+# Args: $@ - Command-line arguments:
+#         --mount-point PATH  Mount point (Linux absolute path, e.g., /mnt/data) [REQUIRED]
+#         --vhd-path PATH     VHD path (Windows format, e.g., C:/VMs/disk.vhdx)
+#         --dev-name NAME     Device name (e.g., sde) - alternative to --vhd-path
+#
+# Logic Flow:
+# ===========
+# 1. Three Mount Scenarios:
+#
+#    SCENARIO 1: --vhd-path provided, disk NOT attached
+#    ---------------------------------------------------
+#    - Takes snapshot of current UUIDs and block devices
+#    - Attempts to attach VHD using wsl.exe --mount --bare
+#    - On success:
+#      * Detects new UUID using snapshot-based comparison (detect_new_uuid_after_attach)
+#      * Detects new device name using snapshot-based comparison (detect_new_device_after_attach)
+#      * Validates VHD is formatted (has filesystem UUID)
+#    - Mounts filesystem using UUID (wsl_mount_vhd)
+#
+#    SCENARIO 2: --dev-name provided
+#    --------------------------------
+#    - Validates device exists in system (using lsblk)
+#    - Gets UUID from device name (wsl_get_uuid_by_device)
+#    - Validates device has filesystem (is formatted)
+#    - Uses provided device name directly (no attachment needed)
+#    - Mounts filesystem using UUID (wsl_mount_vhd)
+#
+#    SCENARIO 3: --vhd-path provided, disk ALREADY attached
+#    -------------------------------------------------------
+#    - wsl.exe attach fails with "already attached" error
+#    - Uses safe UUID discovery (wsl_find_uuid_by_path) with multi-VHD safety
+#    - Handles discovery errors consistently (handle_uuid_discovery_result)
+#    - Gets device name from UUID using lsblk/jq lookup
+#    - Mounts filesystem using UUID (wsl_mount_vhd)
+#
+# 3. Common Mount Logic (applies to all scenarios)
+#    ----------------------------------------------
+#    - Checks if VHD is already mounted at target mount point (idempotent check)
+#    - If already mounted at target: exits successfully (no-op)
+#    - If mounted elsewhere: warns and proceeds to mount at new location
+#    - Creates mount point directory if it doesn't exist
+#    - Mounts filesystem using UUID (wsl_mount_vhd)
+#    - Updates tracking file with mount point and device name (if vhd_path provided)
 mount_vhd() {
     # Parse mount command arguments
-    local mount_path=""
+    local vhd_path=""
     local mount_point=""
-    local default_name="${DEFAULT_VHD_NAME:-disk}"
-    local mount_name="$default_name"
+    local dev_name=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
                 fi
-                mount_path="$2"
+                vhd_path="$2"
                 shift 2
                 ;;
             --mount-point)
@@ -446,14 +501,14 @@ mount_vhd() {
                 mount_point="$2"
                 shift 2
                 ;;
-            --name)
+            --dev-name)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--name requires a value"
+                    error_exit "--dev-name requires a value"
                 fi
-                if ! validate_vhd_name "$2"; then
-                    error_exit "Invalid VHD name format: $2" 1 "VHD name must contain only alphanumeric characters, hyphens, and underscores"
+                if ! validate_device_name "$2"; then
+                    error_exit "Invalid device name format: $2" 1 "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde)"
                 fi
-                mount_name="$2"
+                dev_name="$2"
                 shift 2
                 ;;
             *)
@@ -463,19 +518,16 @@ mount_vhd() {
     done
     
     # Validate required parameters
-    if [[ -z "$mount_path" ]]; then
-        error_exit "--path parameter is required" 1 "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
-    fi
-    
     if [[ -z "$mount_point" ]]; then
-        error_exit "--mount-point parameter is required" 1 "Usage: $0 mount --path PATH --mount-point MOUNT_POINT [--name NAME]"
+        error_exit "--mount-point parameter is required" 1 "Usage: $0 mount --mount-point MOUNT_POINT [--vhd-path PATH | --dev-name DEVICE]"
     fi
     
-    # Convert Windows path to WSL path to check if VHD exists
-    local vhd_path_wsl
-    vhd_path_wsl=$(wsl_convert_path "$mount_path")
-    if [[ ! -e "$vhd_path_wsl" ]]; then
-        error_exit "VHD file does not exist at $mount_path"
+    if [[ -z "$vhd_path" ]] && [[ -z "$dev_name" ]]; then
+        error_exit "Either --vhd-path or --dev-name must be provided" 1 "Usage: $0 mount --mount-point MOUNT_POINT [--vhd-path PATH | --dev-name DEVICE]"
+    fi
+    
+    if [[ -n "$vhd_path" ]] && [[ -n "$dev_name" ]]; then
+        error_exit "Cannot specify both --vhd-path and --dev-name" 1 "Usage: $0 mount --mount-point MOUNT_POINT [--vhd-path PATH | --dev-name DEVICE]"
     fi
     
     log_info "========================================"
@@ -483,89 +535,205 @@ mount_vhd() {
     log_info "========================================"
     log_info ""
     
-    # Take snapshot of current UUIDs and block devices before attaching
-    local old_uuids=($(wsl_get_disk_uuids))
-    local old_devs=($(wsl_get_block_devices))
-    
-    # Try to attach the VHD (will succeed if not attached, fail silently if already attached)
     local mount_uuid=""
-    local newly_attached=false
+    local detected_dev_name=""
+    local found_path=""  # Path found in tracking file when vhd_path not provided
     
-    if wsl_attach_vhd "$mount_path" "$mount_name" 2>/dev/null; then
-        newly_attached=true
-        # Register VHD for cleanup (will be unregistered on successful mount)
-        register_vhd_cleanup "$mount_path" "" "$mount_name"
-        log_success "VHD attached successfully"
+    # ========================================================================
+    # SCENARIO 2: --dev-name provided (device already attached)
+    # ========================================================================
+    # User provides device name directly (e.g., "sde")
+    # - No attachment needed (device already exists in system)
+    # - Validate device exists, get UUID, verify it's formatted
+    # ========================================================================
+    if [[ -n "$dev_name" ]]; then
+        log_info "Using device name: $dev_name"
         
-        # Detect new UUID using snapshot-based detection
-        mount_uuid=$(detect_new_uuid_after_attach "old_uuids")
-        if [[ -n "$mount_uuid" ]]; then
-            # Update cleanup registration with UUID
-            unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
-            register_vhd_cleanup "$mount_path" "$mount_uuid" "$mount_name"
+        # Validate device exists in system (regardless of formatting)
+        if ! wsl_device_exists "$dev_name"; then
+            error_exit "Device $dev_name does not exist" 1 "Use 'lsblk' or '$0 status --all' to see available devices"
         fi
         
-        # Find the new device (for unformatted VHD detection)
-        local new_devs=($(wsl_get_block_devices))
-        declare -A seen_dev
-        local dev
-        for dev in "${old_devs[@]}"; do
-            seen_dev["$dev"]=1
-        done
-        local new_dev=""
-        for dev in "${new_devs[@]}"; do
-            if [[ -z "${seen_dev[$dev]:-}" ]]; then
-                new_dev="$dev"
-                break
-            fi
-        done
-        
-        # If no UUID found, the VHD is unformatted
+        # Get UUID from device name (requires device to be formatted)
+        mount_uuid=$(wsl_get_uuid_by_device "$dev_name")
         if [[ -z "$mount_uuid" ]]; then
-            if [[ -z "$new_dev" ]]; then
-                error_exit "Failed to detect device of attached VHD"
+            error_exit "Device $dev_name exists but has no filesystem UUID" 1 "The device may not be formatted. Use '$0 format --dev-name $dev_name --type ext4' to format it."
+        fi
+        
+        detected_dev_name="$dev_name"
+        log_success "Found UUID: $mount_uuid for device: $dev_name"
+        
+        # If vhd_path is not provided, check if UUID exists in tracking file
+        # If found, update the tracking file entry with the device name
+        # Store found_path for later use in common mount logic
+        if [[ -z "$vhd_path" ]]; then
+            if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                # Find VHD path associated with this UUID
+                found_path=$(jq -r --arg uuid "$mount_uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+                
+                if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
+                    # UUID exists in tracking file - update entry with device name
+                    log_debug "UUID $mount_uuid found in tracking file for path: $found_path"
+                    log_debug "Updating tracking file with device name: $dev_name"
+                    
+                    # Get current mount points for this path
+                    local current_mount_points
+                    current_mount_points=$(jq -r --arg path "$found_path" '.mappings[$path].mount_points // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+                    
+                    # Update tracking file with device name using save_vhd_mapping
+                    # This preserves existing mount points and updates the name field
+                    if save_vhd_mapping "$found_path" "$mount_uuid" "$current_mount_points" "$dev_name"; then
+                        log_debug "Updated tracking file: $found_path → UUID: $mount_uuid, Device: $dev_name"
+                    else
+                        log_debug "Failed to update tracking file with device name"
+                    fi
+                else
+                    log_debug "UUID $mount_uuid not found in tracking file - skipping update"
+                fi
             fi
+        fi
+    
+    # ========================================================================
+    # SCENARIO 1 or 3: --vhd-path provided
+    # ========================================================================
+    # User provides VHD file path
+    # - Need to determine if VHD is already attached or needs attachment
+    # - Use snapshot-based detection for new attachments
+    # - Use tracking file lookup for already-attached VHDs
+    # ========================================================================
+    elif [[ -n "$vhd_path" ]]; then
+        # Validate VHD file exists before attempting any operations
+        local vhd_path_wsl
+        vhd_path_wsl=$(wsl_convert_path "$vhd_path")
+        if [[ ! -e "$vhd_path_wsl" ]]; then
+            error_exit "VHD file does not exist at $vhd_path"
+        fi
+        
+        # Take snapshot BEFORE attach attempt for deterministic UUID/device detection
+        # This allows us to identify which UUID/device was added by comparing before/after
+        local old_uuids=($(wsl_get_disk_uuids))
+        local old_devs=($(wsl_get_block_devices))
+        
+        # Attempt attachment - capture both exit code and error output
+        # Error output is needed to detect "already attached" scenario
+        local attach_output=""
+        wsl_attach_vhd "$vhd_path" "attach_output"
+        local attach_result=$?
+        
+        if [[ $attach_result -eq 0 ]]; then
+            # ================================================================
+            # SCENARIO 1: Successfully attached (disk was NOT attached)
+            # ================================================================
+            # VHD was successfully attached - use snapshot-based detection
+            # to find the new UUID and device name deterministically
+            # ================================================================
+            log_success "VHD attached successfully"
             
-            local format_help="The VHD is attached but not formatted.
-  Device: /dev/$new_dev
+            # Register for cleanup in case script fails/interrupts before mount completes
+            # Will be unregistered on successful mount completion
+            register_vhd_cleanup "$vhd_path" "" ""
+            
+            # Detect new UUID by comparing before/after snapshots
+            # This is deterministic and safe with multiple VHDs (only detects the one we just attached)
+            mount_uuid=$(detect_new_uuid_after_attach "old_uuids")
+            
+            # Detect new device name by comparing before/after snapshots
+            # Used for tracking file and user information
+            detected_dev_name=$(detect_new_device_after_attach "old_devs")
+            
+            # Validate VHD has filesystem (is formatted)
+            # If no UUID detected, check if device was detected (means unformatted)
+            if [[ -z "$mount_uuid" ]]; then
+                if [[ -z "$detected_dev_name" ]]; then
+                    error_exit "Failed to detect device of attached VHD"
+                fi
+                
+                # Provide helpful error message with format command
+                local format_help="The VHD is attached but not formatted.
+  Device: /dev/$detected_dev_name
 
 To format the VHD, run:
-  $0 format --name $new_dev --type ext4
+  $0 format --dev-name $detected_dev_name --type ext4
 
 Or use a different filesystem type (ext3, xfs, etc.):
-  $0 format --name $new_dev --type xfs"
-            error_exit "VHD has no filesystem" 1 "$format_help"
+  $0 format --dev-name $detected_dev_name --type xfs"
+                error_exit "VHD has no filesystem" 1 "$format_help"
+            fi
+            
+            # Update cleanup registration with detected UUID and device name
+            # This allows cleanup to use UUID for more reliable detach if needed
+            if [[ -n "$mount_uuid" ]]; then
+                unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
+                register_vhd_cleanup "$vhd_path" "$mount_uuid" "$detected_dev_name"
+            fi
+            
+            log_info "  Detected UUID: $mount_uuid"
+            [[ -n "$detected_dev_name" ]] && log_info "  Detected Device: /dev/$detected_dev_name"
+            
+        elif [[ "$attach_output" == *"WSL_E_USER_VHD_ALREADY_ATTACHED"* ]] || [[ "$attach_output" == *"already attached"* ]] || [[ "$attach_output" == *"already mounted"* ]]; then
+            # ================================================================
+            # SCENARIO 3: VHD already attached
+            # ================================================================
+            # Attachment failed because VHD is already attached
+            # Use tracking file lookup (fast) or device scanning (with multi-VHD safety)
+            # ================================================================
+            log_warn "VHD is already attached, searching for UUID..."
+            
+            # Use safe UUID discovery with multi-VHD detection
+            # This function:
+            # 1. Checks tracking file first (fastest, most reliable)
+            # 2. Falls back to device scanning if needed
+            # 3. Returns error code 2 if multiple VHDs found (ambiguous)
+            # 4. Returns error code 1 if not found
+            local discovery_result
+            mount_uuid=$(wsl_find_uuid_by_path "$vhd_path" 2>&1)
+            discovery_result=$?
+            
+            # Handle discovery result with consistent error messages
+            # This provides user-friendly errors for multi-VHD scenarios
+            handle_uuid_discovery_result "$discovery_result" "$mount_uuid" "mount" "$vhd_path"
+            
+            if [[ -z "$mount_uuid" ]]; then
+                error_exit "Cannot mount VHD: UUID not found for $vhd_path" 1 "The VHD may be attached but not formatted, or there may be multiple VHDs attached. Use '$0 status --all' to see all attached VHDs."
+            fi
+            
+            # Get device name from UUID for tracking file updates
+            detected_dev_name=$(lsblk -f -J | jq -r --arg UUID "$mount_uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
+            
+        else
+            # Other attach error (not "already attached")
+            error_exit "Failed to attach VHD: $attach_output"
         fi
-        
-        log_info "  Detected UUID: $mount_uuid"
-        [[ -n "$new_dev" ]] && log_info "  Detected Device: /dev/$new_dev"
-    else
-        # VHD might already be attached, try to find it safely
-        log_warn "VHD appears to be already attached, searching for UUID..."
-        
-        # Use safe UUID discovery with multi-VHD detection
-        local discovery_result
-        mount_uuid=$(wsl_find_uuid_by_path "$mount_path" 2>&1)
-        discovery_result=$?
-        
-        # Handle discovery result with consistent error handling
-        handle_uuid_discovery_result "$discovery_result" "$mount_uuid" "mount" "$mount_path"
     fi
+    
+    # ========================================================================
+    # COMMON MOUNT LOGIC (applies to all scenarios)
+    # ========================================================================
+    # At this point, we have:
+    # - mount_uuid: The UUID of the VHD to mount
+    # - detected_dev_name: The device name (if available)
+    # - mount_point: The target mount point (validated)
+    # ========================================================================
     
     log_info ""
     [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$mount_uuid"
     log_info ""
     
-    # Check if already mounted at the specific mount point
+    # Check if VHD is already mounted at the target mount point (idempotent operation)
+    # This allows safe re-running of mount command
     local current_mount_point
     current_mount_point=$(wsl_get_vhd_mount_point "$mount_uuid")
     
     if [[ -n "$current_mount_point" ]] && [[ "$current_mount_point" == "$mount_point" ]]; then
+        # Already mounted at target location - nothing to do
         log_success "VHD is already mounted at $mount_point"
         log_info "Nothing to do."
-        # Already mounted - unregister from cleanup tracking
-        unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
+        # Unregister from cleanup tracking (operation complete, no cleanup needed)
+        if [[ -n "$vhd_path" ]]; then
+            unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
+        fi
     else
+        # Need to mount (either not mounted, or mounted at different location)
         if [[ -n "$current_mount_point" ]]; then
             log_warn "VHD is mounted at a different location: $current_mount_point"
             log_info "Mounting to requested location: $mount_point"
@@ -573,7 +741,8 @@ Or use a different filesystem type (ext3, xfs, etc.):
             log_warn "VHD is attached but not mounted"
         fi
         
-        # Create mount point if it doesn't exist
+        # Create mount point directory if it doesn't exist
+        # Uses secure directory creation with proper permissions
         if [[ ! -d "$mount_point" ]]; then
             log_info "Creating mount point: $mount_point"
             if ! create_mount_point "$mount_point"; then
@@ -581,15 +750,52 @@ Or use a different filesystem type (ext3, xfs, etc.):
             fi
         fi
         
+        # Perform the actual mount operation using UUID
+        # UUID-based mounting is more reliable than device names (device names can change)
         log_info "Mounting VHD to $mount_point..."
         if wsl_mount_vhd "$mount_uuid" "$mount_point"; then
             log_success "VHD mounted successfully"
             
-            # Update mount point in tracking file
-            update_vhd_mount_points "$mount_path" "$mount_point"
+            # Update tracking file with mount point and device name
+            # This enables future path-based operations without requiring UUID
+            if [[ -n "$vhd_path" ]]; then
+                # Update mount points list in tracking file
+                update_vhd_mount_points "$vhd_path" "$mount_point"
+                
+                # Save device name to tracking file if we detected it and it's not already stored
+                # Device name is useful for user reference and format operations
+                if [[ -n "$detected_dev_name" ]]; then
+                    local normalized_path=$(normalize_vhd_path "$vhd_path")
+                    if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                        local current_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
+                        # Only update if name field is empty (preserve existing custom names)
+                        if [[ -z "$current_name" || "$current_name" == "null" ]]; then
+                            # Save mapping with device name for future reference
+                            save_vhd_mapping "$vhd_path" "$mount_uuid" "$mount_point" "$detected_dev_name"
+                        fi
+                    fi
+                fi
+            elif [[ -n "$detected_dev_name" ]]; then
+                # vhd_path not provided, but we have device name
+                # Check if UUID exists in tracking file and update mount point
+                # Note: found_path was already determined in Scenario 2 if --dev-name was used
+                if [[ -z "$found_path" ]] && [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                    # Find VHD path associated with this UUID (for other scenarios)
+                    found_path=$(jq -r --arg uuid "$mount_uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+                fi
+                
+                if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
+                    # UUID exists in tracking file - update mount point
+                    log_debug "Updating tracking file for UUID $mount_uuid: mount_point=$mount_point"
+                    update_vhd_mount_points "$found_path" "$mount_point"
+                fi
+            fi
             
             # Unregister from cleanup tracking - operation completed successfully
-            unregister_vhd_cleanup "$mount_path" 2>/dev/null || true
+            # VHD is now mounted and should remain attached even if script exits
+            if [[ -n "$vhd_path" ]]; then
+                unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
+            fi
         else
             error_exit "Failed to mount VHD"
         fi
@@ -605,25 +811,73 @@ Or use a different filesystem type (ext3, xfs, etc.):
     
     if [[ "$QUIET" == "true" ]]; then
         if wsl_is_vhd_mounted "$mount_uuid"; then
-            echo "$mount_path ($mount_uuid): attached,mounted"
+            if [[ -n "$vhd_path" ]]; then
+                echo "$vhd_path ($mount_uuid): attached,mounted"
+            else
+                echo "$dev_name ($mount_uuid): mounted"
+            fi
         else
-            echo "$mount_path ($mount_uuid): mount failed"
+            if [[ -n "$vhd_path" ]]; then
+                echo "$vhd_path ($mount_uuid): mount failed"
+            else
+                echo "$dev_name ($mount_uuid): mount failed"
+            fi
         fi
     fi
 }
 
 # Function to unmount VHD
+# Arguments:
+#   --vhd-path PATH       VHD file path (Windows format, optional, auto-discovered if not provided)
+#   --dev-name DEVICE     Device name (e.g., sde)
+#   --mount-point PATH    Mount point (Linux absolute path, e.g., /mnt/data)
+#
+# Logic Flow:
+# ===========
+# 1. Three Unmount Scenarios:
+#
+#    SCENARIO 1: --vhd-path provided
+#    ---------------------------------------------------
+#    - Validates VHD file exists (validate_windows_path)
+#    - Validates VHD is attached to WSL (wsl_is_vhd_attached)
+#    - Validates VHD is mounted to filesystem (wsl_is_vhd_mounted)
+#    - Unmounts filesystem from mount point (wsl_umount_vhd)
+#    - Clears mount point in tracking file (update_vhd_mount_points)
+#    - Detaches from WSL (wsl_detach_vhd)
+#    - Saves detach event to history
+#    - Keeps mapping in tracking file (for future re-attachment)
+#
+#    SCENARIO 2: --dev-name provided
+#    ---------------------------------------------------
+#    - Validates device exists in system (wsl_device_exists)
+#    - Gets UUID from device name (wsl_get_uuid_by_device)
+#    - Validates VHD is attached to WSL (wsl_is_vhd_attached)
+#    - Validates VHD is mounted to filesystem (wsl_is_vhd_mounted)
+#    - Unmounts filesystem from mount point (wsl_umount_vhd)
+#    - Clears mount point in tracking file (update_vhd_mount_points)
+#    - Detaches from WSL (wsl_detach_vhd) if --vhd-path provided
+#    - Saves detach event to history
+#    - Keeps mapping in tracking file (for future re-attachment)
+#
+#    SCENARIO 3: --mount-point provided
+#    ---------------------------------------------------
+#    - Discovers UUID from mount point (wsl_find_uuid_by_mountpoint)
+#    - Validates VHD is attached to WSL (wsl_is_vhd_attached)
+#    - Validates VHD is mounted to filesystem (wsl_is_vhd_mounted)
+#    - Unmounts filesystem from mount point (wsl_umount_vhd)
+#    - Clears mount point in tracking file (update_vhd_mount_points)
 umount_vhd() {
     # Parse umount command arguments
     local umount_path=""
     local umount_uuid=""
     local umount_point=""
+    local umount_dev_name=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
@@ -631,14 +885,14 @@ umount_vhd() {
                 umount_path="$2"
                 shift 2
                 ;;
-            --uuid)
+            --dev-name)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--uuid requires a value"
+                    error_exit "--dev-name requires a value"
                 fi
-                if ! validate_uuid "$2"; then
-                    error_exit "Invalid UUID format: $2" 1 "UUID must be in format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                if ! validate_device_name "$2"; then
+                    error_exit "Invalid device name format: $2" 1 "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde)"
                 fi
-                umount_uuid="$2"
+                umount_dev_name="$2"
                 shift 2
                 ;;
             --mount-point)
@@ -657,35 +911,65 @@ umount_vhd() {
         esac
     done
     
-    # Try to discover UUID if not provided
-    if [[ -z "$umount_uuid" ]]; then
-        if [[ -n "$umount_path" ]]; then
-            # Try to find UUID by path with multi-VHD safety
-            local discovery_result
-            umount_uuid=$(wsl_find_uuid_by_path "$umount_path" 2>&1)
-            discovery_result=$?
-            
-            # Handle discovery result with consistent error handling
-            handle_uuid_discovery_result "$discovery_result" "$umount_uuid" "umount" "$umount_path"
+    # ========================================================================
+    # SCENARIO 1: --dev-name provided
+    # ========================================================================
+    # Get UUID from device name
+    # ========================================================================
+    if [[ -n "$umount_dev_name" ]]; then
+        log_info "Using device name: $umount_dev_name"
+        
+        # Validate device exists in system
+        if ! wsl_device_exists "$umount_dev_name"; then
+            error_exit "Device $umount_dev_name does not exist" 1 "Use 'lsblk' or '$0 status --all' to see available devices"
+        fi
+        
+        # Get UUID from device name (requires device to be formatted)
+        umount_uuid=$(wsl_get_uuid_by_device "$umount_dev_name")
+        if [[ -z "$umount_uuid" ]]; then
+            error_exit "Device $umount_dev_name exists but has no filesystem UUID" 1 "The device may not be formatted. Use '$0 format --dev-name $umount_dev_name --type ext4' to format it."
+        fi
+        
+        log_success "Found UUID: $umount_uuid for device: $umount_dev_name"
+        log_info ""
+    
+    # ========================================================================
+    # SCENARIO 2: --vhd-path provided
+    # ========================================================================
+    # Try to find UUID by path with multi-VHD safety
+    # ========================================================================
+    elif [[ -n "$umount_path" ]]; then
+        # Try to find UUID by path with multi-VHD safety
+        local discovery_result
+        umount_uuid=$(wsl_find_uuid_by_path "$umount_path" 2>&1)
+        discovery_result=$?
+        
+        # Handle discovery result with consistent error handling
+        handle_uuid_discovery_result "$discovery_result" "$umount_uuid" "umount" "$umount_path"
+        log_info ""
+    
+    # ========================================================================
+    # SCENARIO 3: --mount-point provided
+    # ========================================================================
+    # Try to find UUID by mount point
+    # ========================================================================
+    elif [[ -n "$umount_point" ]]; then
+        # Try to find UUID by mount point
+        umount_uuid=$(wsl_find_uuid_by_mountpoint "$umount_point")
+        if [[ -n "$umount_uuid" ]]; then
+            log_info "Discovered UUID from mount point: $umount_uuid"
             log_info ""
-        elif [[ -n "$umount_point" ]]; then
-            # Try to find UUID by mount point
-            umount_uuid=$(wsl_find_uuid_by_mountpoint "$umount_point")
-            if [[ -n "$umount_uuid" ]]; then
-                log_info "Discovered UUID from mount point: $umount_uuid"
-                log_info ""
-            fi
         fi
     fi
     
     # If UUID still not found, report error
     if [[ -z "$umount_uuid" ]]; then
         local uuid_help="Could not discover UUID. Please provide one of:
-  --uuid UUID           Explicit UUID
-  --path PATH           VHD file path (will attempt discovery)
+  --dev-name DEVICE     Explicit device name (e.g., sde)
+  --vhd-path PATH       VHD file path (will attempt discovery)
   --mount-point PATH    Mount point (will attempt discovery)
 
-To find UUID, run: $0 status --all"
+To find device name or UUID, run: $0 status --all"
         if [[ "$QUIET" == "true" ]]; then
             echo "uuid not found"
         fi
@@ -770,14 +1054,66 @@ To find UUID, run: $0 status --all"
     fi
 }
 
-# Function to detach VHD by UUID
+# Function to detach VHD
+# Arguments:
+#   --dev-name DEVICE     Device name (e.g., sde) - alternative to --uuid
+#   --uuid UUID           VHD UUID - alternative to --dev-name
+#   --vhd-path PATH       VHD file path (Windows format, optional, auto-discovered if not provided)
+#
+# Logic Flow:
+# ===========
+# 1. Two Detach Scenarios:
+#
+#    SCENARIO 1: --dev-name provided
+#    ---------------------------------------------------
+#    - Validates device exists in system (wsl_device_exists)
+#    - Gets UUID from device name (wsl_get_uuid_by_device)
+#    - Validates device has filesystem UUID (is formatted)
+#    - Validates VHD is attached to WSL (wsl_is_vhd_attached)
+#    - Looks up VHD path from tracking file using UUID (JQ_GET_PATH_BY_UUID)
+#    - Unmounts filesystem from mount point if mounted (wsl_umount_vhd)
+#    - Clears mount points in tracking file (if path found)
+#    - Detaches from WSL (wsl_detach_vhd)
+#    - Saves detach event to history
+#    - Keeps mapping in tracking file (for future re-attachment)
+#
+#    SCENARIO 2: --uuid provided
+#    ---------------------------------------------------
+#    - Gets device name from UUID using lsblk (JQ_GET_DEVICE_NAME_BY_UUID)
+#    - Validates VHD is attached to WSL (wsl_is_vhd_attached)
+#    - Looks up VHD path from tracking file using UUID (JQ_GET_PATH_BY_UUID)
+#    - Unmounts filesystem from mount point if mounted (wsl_umount_vhd)
+#    - Clears mount points in tracking file (if path found)
+#    - Detaches from WSL (wsl_detach_vhd)
+#    - Saves detach event to history
+#    - Keeps mapping in tracking file (for future re-attachment)
+#
+# Common Logic (both scenarios):
+#    - If --vhd-path is explicitly provided, it takes precedence over tracking file lookup
+#    - Path lookup from tracking file enables mount point clearing and history tracking
+#    - If path cannot be found, user must provide it explicitly
+#
+# Note: Unlike delete_vhd(), this function does NOT remove the mapping from
+#       the tracking file. The mapping is preserved so the VHD can be easily
+#       re-attached later. Only delete_vhd() removes mappings entirely.
 detach_vhd() {
     # Parse detach command arguments
     local detach_uuid=""
     local detach_path=""
+    local detach_dev_name=""
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
+            --dev-name)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    error_exit "--dev-name requires a value"
+                fi
+                if ! validate_device_name "$2"; then
+                    error_exit "Invalid device name format: $2" 1 "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde)"
+                fi
+                detach_dev_name="$2"
+                shift 2
+                ;;
             --uuid)
                 if [[ -z "$2" || "$2" == --* ]]; then
                     error_exit "--uuid requires a value"
@@ -788,9 +1124,9 @@ detach_vhd() {
                 detach_uuid="$2"
                 shift 2
                 ;;
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
@@ -804,9 +1140,13 @@ detach_vhd() {
         esac
     done
     
-    # Validate that UUID is provided
-    if [[ -z "$detach_uuid" ]]; then
-        error_exit "--uuid is required" 1 "Use --uuid to specify the VHD UUID to detach. To find UUIDs, run: $0 status --all"
+    # Validate that either dev-name or uuid is provided (mutually exclusive)
+    if [[ -z "$detach_uuid" ]] && [[ -z "$detach_dev_name" ]]; then
+        error_exit "Either --dev-name or --uuid must be provided" 1 "Usage: $0 detach [--dev-name DEVICE | --uuid UUID] [--vhd-path PATH]"
+    fi
+    
+    if [[ -n "$detach_uuid" ]] && [[ -n "$detach_dev_name" ]]; then
+        error_exit "Cannot specify both --dev-name and --uuid" 1 "Usage: $0 detach [--dev-name DEVICE | --uuid UUID] [--vhd-path PATH]"
     fi
     
     log_info "========================================"
@@ -814,21 +1154,80 @@ detach_vhd() {
     log_info "========================================"
     log_info ""
     
+    local detected_dev_name=""
+    
+    # ========================================================================
+    # SCENARIO 1: --dev-name provided
+    # ========================================================================
+    # Get UUID from device name, then look up path from tracking file
+    # ========================================================================
+    if [[ -n "$detach_dev_name" ]]; then
+        log_info "Using device name: $detach_dev_name"
+        
+        # Validate device exists in system
+        if ! wsl_device_exists "$detach_dev_name"; then
+            error_exit "Device $detach_dev_name does not exist" 1 "Use 'lsblk' or '$0 status --all' to see available devices"
+        fi
+        
+        # Get UUID from device name (requires device to be formatted)
+        detach_uuid=$(wsl_get_uuid_by_device "$detach_dev_name")
+        if [[ -z "$detach_uuid" ]]; then
+            error_exit "Device $detach_dev_name exists but has no filesystem UUID" 1 "The device may not be formatted. Use '$0 format --dev-name $detach_dev_name --type ext4' to format it."
+        fi
+        
+        detected_dev_name="$detach_dev_name"
+        log_success "Found UUID: $detach_uuid for device: $detach_dev_name"
+        log_info ""
+    
+    # ========================================================================
+    # SCENARIO 2: --uuid provided
+    # ========================================================================
+    # Get device name from UUID, then look up path from tracking file
+    # ========================================================================
+    elif [[ -n "$detach_uuid" ]]; then
+        log_info "Using UUID: $detach_uuid"
+        
+        # Get device name from UUID for display
+        if [[ "$DEBUG" == "true" ]]; then
+            log_debug "lsblk -f -J | jq -r --arg UUID '$detach_uuid' '.blockdevices[] | select(.uuid == \$UUID) | .name'"
+        fi
+        detected_dev_name=$(lsblk -f -J | jq -r --arg UUID "$detach_uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
+        if [[ -n "$detected_dev_name" ]]; then
+            log_info "Device: /dev/$detected_dev_name"
+        fi
+        log_info ""
+    fi
+    
     # Check if VHD is attached
     if ! wsl_is_vhd_attached "$detach_uuid"; then
         log_warn "VHD is not attached to WSL"
         log_info "Nothing to do."
-        [[ "$QUIET" == "true" ]] && echo "$detach_uuid: not attached"
+        [[ "$QUIET" == "true" ]] && echo "${detach_uuid:-$detach_dev_name}: not attached"
         log_info "========================================"
         exit 0
     fi
     
     log_info "VHD is attached to WSL"
     log_info "  UUID: $detach_uuid"
+    [[ -n "$detected_dev_name" ]] && log_info "  Device: /dev/$detected_dev_name"
     log_info ""
     
-    # Path is optional for detach - WSL can detach by UUID alone
-    # If path is provided, it will be used; otherwise detach will work without it
+    # Look up VHD path from tracking file using UUID
+    # This enables path-based operations (mount point clearing, history tracking)
+    if [[ -z "$detach_path" ]]; then
+        if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+            # Look up path from tracking file using UUID
+            local found_path
+            found_path=$(jq -r --arg uuid "$detach_uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+            
+            if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
+                detach_path="$found_path"
+                log_debug "Found VHD path in tracking file: $detach_path"
+            else
+                log_debug "UUID $detach_uuid not found in tracking file"
+            fi
+        fi
+    fi
     
     # Show current VHD info
     [[ "$QUIET" == "false" ]] && wsl_get_vhd_info "$detach_uuid"
@@ -844,6 +1243,7 @@ detach_vhd() {
             log_success "VHD unmounted successfully"
             
             # Clear mount point in tracking file if we have the path
+            # Path may have been found from UUID lookup above
             if [[ -n "$detach_path" ]]; then
                 update_vhd_mount_points "$detach_path" ""
             fi
@@ -875,12 +1275,16 @@ detach_vhd() {
         fi
     else
         # If we couldn't find the path, report error with helpful message
+        local identifier="${detach_dev_name:-$detach_uuid}"
         local path_help="The VHD path could not be found automatically.
+The VHD may not be in the tracking file, or it may have been attached outside this tool.
+
 Please provide the path explicitly:
-  $0 detach --uuid $detach_uuid --path <vhd_path>
+  $0 detach --dev-name $identifier --vhd-path <vhd_path>
+  $0 detach --uuid $identifier --vhd-path <vhd_path>
 
 Or use the umount command if you know the path or mount point:
-  $0 umount --path <vhd_path>
+  $0 umount --vhd-path <vhd_path>
   $0 umount --mount-point <mount_point>"
         error_exit "Could not determine VHD path" 1 "$path_help"
     fi
@@ -891,10 +1295,11 @@ Or use the umount command if you know the path or mount point:
     log_info "========================================"
     
     if [[ "$QUIET" == "true" ]]; then
+        local identifier="${detach_dev_name:-$detach_uuid}"
         if ! wsl_is_vhd_attached "$detach_uuid"; then
-            echo "$detach_uuid: detached"
+            echo "$identifier: detached"
         else
-            echo "$detach_uuid: detach failed"
+            echo "$identifier: detach failed"
         fi
     fi
 }
@@ -908,9 +1313,9 @@ delete_vhd() {
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
@@ -938,9 +1343,13 @@ delete_vhd() {
         esac
     done
     
-    # Validate that at least path is provided
+    # Validate that at least vhd-path is provided
+    if [[ -z "$delete_path" && -z "$delete_uuid" ]]; then
+        error_exit "Either --vhd-path or --uuid is required" 1 "Usage: $0 delete [--vhd-path PATH | --uuid UUID] [--force]"
+    fi
+    
     if [[ -z "$delete_path" ]]; then
-        error_exit "VHD path is required" 1 "Use --path to specify the VHD file path"
+        error_exit "VHD path is required" 1 "Use --vhd-path to specify the VHD file path"
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
@@ -981,7 +1390,7 @@ delete_vhd() {
         
         # Try umount first (handles both unmount and detach)
         if [[ -n "$delete_path" ]]; then
-            if bash "$0" -q umount --path "$delete_path" >/dev/null 2>&1; then
+            if bash "$0" -q umount --vhd-path "$delete_path" >/dev/null 2>&1; then
                 log_success "VHD detached successfully"
                 # Wait a moment for detachment to complete
                 sleep 1
@@ -993,7 +1402,7 @@ delete_vhd() {
                 else
                     local detach_help="The VHD must be unmounted and detached before deletion.
 To unmount and detach, run:
-  $0 umount --path $delete_path
+  $0 umount --vhd-path $delete_path
 
 Then try the delete command again."
                     error_exit "VHD is currently attached to WSL and could not be detached" 1 "$detach_help"
@@ -1056,9 +1465,9 @@ create_vhd() {
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
@@ -1088,7 +1497,7 @@ create_vhd() {
     
     # Validate required parameters
     if [[ -z "$create_path" ]]; then
-        error_exit "VHD path is required" 1 "Use --path to specify the VHD file path"
+        error_exit "VHD path is required" 1 "Use --vhd-path to specify the VHD file path"
     fi
     
     log_info "========================================"
@@ -1148,7 +1557,7 @@ create_vhd() {
                         log_info "Operation cancelled."
                         log_info ""
                         log_info "To unmount manually, run:"
-                        log_info "  $0 umount --path $create_path"
+                        log_info "  $0 umount --vhd-path $create_path"
                         exit 0
                     fi
                     log_info ""
@@ -1280,9 +1689,9 @@ create_vhd() {
     log_info "  1. Attach the VHD:"
     log_info "     $0 attach --path $create_path --name <name>"
     log_info "  2. Format the VHD:"
-    log_info "     $0 format --name <device_name> --type ext4"
+    log_info "     $0 format --dev-name <device_name> --type ext4"
     log_info "  3. Mount the formatted VHD:"
-    log_info "     $0 mount --path $create_path --mount-point <mount_point>"
+    log_info "     $0 mount --vhd-path $create_path --mount-point <mount_point>"
     log_info ""
     
     if [[ "$QUIET" == "true" ]]; then
@@ -1659,9 +2068,9 @@ format_vhd_command() {
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --name)
+            --dev-name)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--name requires a value"
+                    error_exit "--dev-name requires a value"
                 fi
                 if ! validate_device_name "$2"; then
                     error_exit "Invalid device name format: $2" 1 "Device name must match pattern: sd[a-z]+ (e.g., sdd, sde)"
@@ -1701,16 +2110,16 @@ format_vhd_command() {
         local format_help="Usage: $0 format [OPTIONS]
 
 Options:
-  --name NAME   - VHD device block name (e.g., sdd, sde)
-  --uuid UUID   - VHD UUID
-  --type TYPE   - Filesystem type [default: $default_fs]
+  --dev-name NAME   - VHD device block name (e.g., sdd, sde)
+  --uuid UUID       - VHD UUID
+  --type TYPE       - Filesystem type [default: $default_fs]
 
 Examples:
-  $0 format --name sdd --type ext4
+  $0 format --dev-name sdd --type ext4
   $0 format --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --type ext4
 
 To find attached VHDs, run: $0 status --all"
-        error_exit "Either --name or --uuid is required" 1 "$format_help"
+        error_exit "Either --dev-name or --uuid is required" 1 "$format_help"
     fi
     
     log_info "========================================"
@@ -1841,9 +2250,9 @@ attach_vhd() {
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"
@@ -1869,7 +2278,7 @@ attach_vhd() {
     
     # Validate required parameters
     if [[ -z "$attach_path" ]]; then
-        error_exit "VHD path is required. Use --path option."
+        error_exit "VHD path is required. Use --vhd-path option."
     fi
     
     # Convert Windows path to WSL path to check if VHD exists
@@ -1892,7 +2301,7 @@ attach_vhd() {
     local attach_uuid=""
     local newly_attached=false
     
-    if wsl_attach_vhd "$attach_path" "$attach_name" 2>/dev/null; then
+    if wsl_attach_vhd "$attach_path" 2>/dev/null; then
         newly_attached=true
         # Register VHD for cleanup (will be unregistered on successful completion)
         register_vhd_cleanup "$attach_path" "" "$attach_name"
@@ -1999,9 +2408,9 @@ history_vhd() {
                 limit="$2"
                 shift 2
                 ;;
-            --path)
+            --vhd-path)
                 if [[ -z "$2" || "$2" == --* ]]; then
-                    error_exit "--path requires a value"
+                    error_exit "--vhd-path requires a value"
                 fi
                 if ! validate_windows_path "$2"; then
                     error_exit "Invalid path format: $2" 1 "Path must be a valid Windows path (e.g., C:/path/to/file.vhdx)"

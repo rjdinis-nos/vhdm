@@ -596,11 +596,14 @@ wsl_get_vhd_mount_point() {
 
 # Attach a VHD to WSL
 # Args: $1 - VHD path (Windows path format)
-#       $2 - VHD name (optional, defaults to "disk")
+#       $2 - Variable name to store error output (optional)
 # Returns: 0 on success, 1 on failure
+# Note: Attaches with --bare flag only (no --name parameter)
+# If $2 is provided, error output will be stored in that variable
 wsl_attach_vhd() {
     local vhd_path="$1"
-    local vhd_name="${2:-disk}"
+    local error_output_var="$2"
+    local error_output=""
     
     if [[ -z "$vhd_path" ]]; then
         log_error "VHD path is required"
@@ -613,15 +616,24 @@ wsl_attach_vhd() {
         return 1
     fi
     
-    if ! validate_vhd_name "$vhd_name"; then
-        log_error "Invalid VHD name format"
-        return 1
-    fi
-    
-    if debug_cmd wsl.exe --mount --vhd "$vhd_path" --bare --name "$vhd_name" >/dev/null 2>&1; then
-        return 0
+    if [[ -n "$error_output_var" ]]; then
+        # Capture error output for caller to inspect
+        error_output=$(wsl.exe --mount --vhd "$vhd_path" --bare 2>&1)
+        local exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
+            return 0
+        else
+            # Store error output in the provided variable name
+            eval "$error_output_var=\"\$error_output\""
+            return 1
+        fi
     else
-        return 1
+        # Normal mode: suppress output
+        if debug_cmd wsl.exe --mount --vhd "$vhd_path" --bare >/dev/null 2>&1; then
+            return 0
+        else
+            return 1
+        fi
     fi
 }
 
@@ -848,8 +860,8 @@ wsl_complete_mount() {
     
     # Check if already attached
     if ! wsl_is_vhd_attached "$uuid"; then
-        # Attach VHD
-        if ! wsl_attach_vhd "$vhd_path" "$vhd_name"; then
+        # Attach VHD (no name parameter - uses --bare flag only)
+        if ! wsl_attach_vhd "$vhd_path"; then
             return 1
         fi
         sleep "${SLEEP_AFTER_ATTACH:-2}"  # Give system time to recognize the device
@@ -1189,6 +1201,114 @@ detect_new_uuid_after_attach() {
     return 1
 }
 
+# Check if a device exists in the system (regardless of formatting)
+# Args: $1 - Device name (e.g., sdd, sde) - /dev/ prefix optional
+# Returns: 0 if device exists, 1 if not found
+# Note: This checks device existence only, not whether it has a filesystem
+wsl_device_exists() {
+    local device_name="$1"
+    
+    if [[ -z "$device_name" ]]; then
+        return 1
+    fi
+    
+    # Remove /dev/ prefix if present
+    device_name="${device_name#/dev/}"
+    
+    # Validate device name format for security
+    if ! validate_device_name "$device_name"; then
+        log_debug "wsl_device_exists: invalid device name format"
+        return 1
+    fi
+    
+    # Check if device exists in lsblk output (regardless of UUID/filesystem)
+    log_debug "lsblk -J | jq -r --arg DEVICE '$device_name' '.blockdevices[] | select(.name == \$DEVICE) | .name'"
+    local found_device=$(lsblk -J 2>/dev/null | jq -r --arg DEVICE "$device_name" '.blockdevices[] | select(.name == $DEVICE) | .name' 2>/dev/null | head -n 1)
+    
+    if [[ -n "$found_device" && "$found_device" == "$device_name" ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# Get UUID from device name using lsblk
+# Args: $1 - Device name (e.g., sdd, sde, or /dev/sdd)
+# Returns: UUID if found, empty string if not found
+# Exit code: 0 if found, 1 if not found
+# Note: Device must exist and have a filesystem UUID (be formatted)
+wsl_get_uuid_by_device() {
+    local device_name="$1"
+    
+    if [[ -z "$device_name" ]]; then
+        return 1
+    fi
+    
+    # Remove /dev/ prefix if present
+    device_name="${device_name#/dev/}"
+    
+    # Validate device name format for security
+    if ! validate_device_name "$device_name"; then
+        log_debug "wsl_get_uuid_by_device: invalid device name format"
+        return 1
+    fi
+    
+    log_debug "lsblk -f -J | jq -r --arg DEVICE '$device_name' '.blockdevices[] | select(.name == \$DEVICE) | .uuid'"
+    local uuid=$(lsblk -f -J | jq -r --arg DEVICE "$device_name" '.blockdevices[] | select(.name == $DEVICE) | .uuid' 2>/dev/null | grep -v "null" | head -n 1)
+    
+    if [[ -n "$uuid" && "$uuid" != "null" && "$uuid" != "" ]]; then
+        echo "$uuid"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Detect new device name after attach using snapshot-based detection
+# Args: $1 - Array name containing old device names (passed by name, not value)
+#             Example: detect_new_device_after_attach "old_devs" (not "$old_devs")
+# Returns: Device name of newly attached disk via stdout, empty string if not found
+# Exit code: 0 if device found, 1 if not found
+# Note: This function includes a sleep delay to allow kernel to recognize the device
+detect_new_device_after_attach() {
+    local old_devs_array_name="$1"
+    local old_devs=()
+    
+    # Get old devices from provided array or capture current state
+    if [[ -n "$old_devs_array_name" ]]; then
+        # Use provided array (indirect reference)
+        local array_ref="${old_devs_array_name}[@]"
+        old_devs=("${!array_ref}")
+    else
+        # Capture current state (should be called before attach)
+        old_devs=($(wsl_get_block_devices))
+    fi
+    
+    # Give kernel time to recognize the newly attached device
+    sleep "${SLEEP_AFTER_ATTACH:-2}"
+    
+    # Get new devices after attach
+    local new_devs=($(wsl_get_block_devices))
+    
+    # Build lookup table for old devices
+    declare -A seen_dev
+    local dev
+    for dev in "${old_devs[@]}"; do
+        [[ -n "$dev" ]] && seen_dev["$dev"]=1
+    done
+    
+    # Find the new device (one that wasn't in the old list)
+    for dev in "${new_devs[@]}"; do
+        if [[ -n "$dev" ]] && [[ -z "${seen_dev[$dev]:-}" ]]; then
+            echo "$dev"
+            return 0
+        fi
+    done
+    
+    # No new device found
+    return 1
+}
+
 # Format an attached VHD with a filesystem
 # Args: $1 - Device name (e.g., sdd) or full path (e.g., /dev/sdd)
 #       $2 - Filesystem type (optional, defaults to ext4)
@@ -1351,8 +1471,8 @@ wsl_create_vhd() {
         return 1
     fi
     
-    # Attach the VHD to WSL
-    if ! wsl_attach_vhd "$vhd_path_win" "$vhd_name"; then
+    # Attach the VHD to WSL (no name parameter - uses --bare flag only)
+    if ! wsl_attach_vhd "$vhd_path_win"; then
         log_error "Failed to attach VHD to WSL"
         rm -f "$vhd_path_wsl"
         return 1
