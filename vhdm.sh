@@ -1879,7 +1879,7 @@ resize_vhd() {
     if [[ -z "$target_vhd_path" ]]; then
         target_dev_name=$(basename "$target_mount_point")
         local path_help="The VHD path is required for resize operation.
-Please ensure the VHD was attached/mounted using disk_management.sh so it's tracked.
+Please ensure the VHD was attached/mounted using vhdm.sh so it's tracked.
 Alternatively, you can manually specify the path by modifying the resize command."
         error_exit "Cannot determine VHD path from tracking file" 1 "$path_help"
     fi
@@ -2427,7 +2427,7 @@ attach_vhd() {
             # Device detection failed
             log_warn "Warning: Could not automatically detect device"
             log_info "  The VHD was attached successfully but device detection failed."
-            log_info "  You can find the device using: ./disk_management.sh status --all"
+            log_info "  You can find the device using: ./vhdm.sh status --all"
         fi
     else
         # Attachment failed - VHD might already be attached
@@ -2460,7 +2460,7 @@ attach_vhd() {
             unregister_vhd_cleanup "$vhd_path" 2>/dev/null || true
         else
             local attach_help="The VHD might already be attached with a different name or path.
-Try running: ./disk_management.sh status --all"
+Try running: ./vhdm.sh status --all"
             error_exit "Failed to attach VHD" 1 "$attach_help"
         fi
     fi

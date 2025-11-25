@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test script for disk_management.sh delete command
+# Test script for vhdm.sh delete command
 # This script tests various delete scenarios
 
 # Get the directory where this script is located
@@ -93,7 +93,7 @@ cleanup_test_vhd() {
     
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to unmount if attached
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
+        bash "$PARENT_DIR/vhdm.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
         # Remove the file
         rm -f "$vhd_path_wsl" 2>/dev/null || true
     fi
@@ -188,22 +188,22 @@ fi
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 1..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_1.vhdx" --size 100M >/dev/null 2>&1
-bash "$PARENT_DIR/disk_management.sh" -q attach --vhd-path "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
+bash "$PARENT_DIR/vhdm.sh" -q create --path "${TEST_VHD_BASE}_1.vhdx" --size 100M >/dev/null 2>&1
+bash "$PARENT_DIR/vhdm.sh" -q attach --vhd-path "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
 
 run_test "Attempt to delete attached VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_1.vhdx --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh delete --path ${TEST_VHD_BASE}_1.vhdx --force 2>&1" \
     1
 
 # Cleanup test 1 VHD
-bash "$PARENT_DIR/disk_management.sh" -q detach --path "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
-bash "$PARENT_DIR/disk_management.sh" -q delete --path "${TEST_VHD_BASE}_1.vhdx" --force >/dev/null 2>&1
+bash "$PARENT_DIR/vhdm.sh" -q detach --path "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
+bash "$PARENT_DIR/vhdm.sh" -q delete --path "${TEST_VHD_BASE}_1.vhdx" --force >/dev/null 2>&1
 
 # Test 2: Delete detached VHD by path
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 2..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_2.vhdx" --size 100M >/dev/null 2>&1
+bash "$PARENT_DIR/vhdm.sh" -q create --path "${TEST_VHD_BASE}_2.vhdx" --size 100M >/dev/null 2>&1
 # VHDs created by 'create' command are not attached, so no need to detach
 # However, if it somehow got attached, try to detach it
 # Check if actually attached via lsblk before trying to detach
@@ -211,13 +211,13 @@ local vhd_path_wsl
 vhd_path_wsl=$(wsl_convert_path "${TEST_VHD_BASE}_2.vhdx")
 if lsblk -f -J 2>/dev/null | jq -e --arg path "$vhd_path_wsl" '.blockdevices[] | select(.name != null)' >/dev/null 2>&1; then
     # VHD appears to be attached, try to detach
-    bash "$PARENT_DIR/disk_management.sh" -q umount --path "${TEST_VHD_BASE}_2.vhdx" >/dev/null 2>&1 || \
+    bash "$PARENT_DIR/vhdm.sh" -q umount --path "${TEST_VHD_BASE}_2.vhdx" >/dev/null 2>&1 || \
         wsl.exe --unmount "${TEST_VHD_BASE}_2.vhdx" >/dev/null 2>&1 || true
     sleep 1
 fi
 
 run_test "Delete detached VHD by path" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force 2>&1" \
     0
 
 # Test 3: Verify VHD file is removed after delete
@@ -230,32 +230,32 @@ run_test "Verify VHD file is removed after delete" \
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 4..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_3.vhdx" --size 100M >/dev/null 2>&1
+bash "$PARENT_DIR/vhdm.sh" -q create --path "${TEST_VHD_BASE}_3.vhdx" --size 100M >/dev/null 2>&1
 # VHDs created by 'create' command are not attached, so no need to detach
 
 run_test "Delete detached VHD with --force flag" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_3.vhdx --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh delete --path ${TEST_VHD_BASE}_3.vhdx --force 2>&1" \
     0
 
 # Test 5: Delete in quiet mode
 if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 5..."
 fi
-bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_4.vhdx" --size 100M >/dev/null 2>&1
+bash "$PARENT_DIR/vhdm.sh" -q create --path "${TEST_VHD_BASE}_4.vhdx" --size 100M >/dev/null 2>&1
 # VHDs created by 'create' command are not attached, so no need to detach
 
 run_test "Delete in quiet mode" \
-    "bash $PARENT_DIR/disk_management.sh -q delete --path ${TEST_VHD_BASE}_4.vhdx --force 2>&1 | grep -q 'deleted'" \
+    "bash $PARENT_DIR/vhdm.sh -q delete --path ${TEST_VHD_BASE}_4.vhdx --force 2>&1 | grep -q 'deleted'" \
     0
 
 # Test 6: Attempt to delete non-existent VHD (should fail)
 run_test "Attempt to delete non-existent VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --path C:/NonExistent/disk.vhdx --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh delete --path C:/NonExistent/disk.vhdx --force 2>&1" \
     1
 
 # Test 7: Delete with missing required parameter (should fail)
 run_test "Delete with missing required parameter (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh delete --force 2>&1" \
     1
 
 # Test 8: Create and immediately delete a VHD
@@ -264,7 +264,7 @@ if [[ "$VERBOSE" == "true" ]]; then
 fi
 
 run_test "Create, detach, and delete a VHD" \
-    "bash $PARENT_DIR/disk_management.sh -q create --path ${TEST_VHD_BASE}_temp.vhdx --size 100M >/dev/null 2>&1 && bash $PARENT_DIR/disk_management.sh -q delete --path ${TEST_VHD_BASE}_temp.vhdx --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh -q create --path ${TEST_VHD_BASE}_temp.vhdx --size 100M >/dev/null 2>&1 && bash $PARENT_DIR/vhdm.sh -q delete --path ${TEST_VHD_BASE}_temp.vhdx --force 2>&1" \
     0
 
 # Test 9: Verify temp VHD is gone
@@ -274,7 +274,7 @@ run_test "Verify temp VHD is removed" \
 
 # Test 10: Attempt to delete already deleted VHD (should fail)
 run_test "Attempt to delete already deleted VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh delete --path ${TEST_VHD_BASE}_2.vhdx --force 2>&1" \
     1
 
 # Cleanup: Remove any remaining test VHDs

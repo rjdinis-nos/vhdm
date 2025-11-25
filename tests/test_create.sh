@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test script for disk_management.sh create command
+# Test script for vhdm.sh create command
 # This script tests various create scenarios
 
 # Get the directory where this script is located
@@ -99,10 +99,10 @@ cleanup_test_vhd() {
     
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to unmount if attached (with retry)
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
+        bash "$PARENT_DIR/vhdm.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
         sleep 1
         # Try again in case first attempt didn't complete
-        bash "$PARENT_DIR/disk_management.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
+        bash "$PARENT_DIR/vhdm.sh" -q umount --path "$vhd_path" >/dev/null 2>&1 || true
         sleep 1
         # Remove the file (force remove even if it seems busy)
         rm -f "$vhd_path_wsl" 2>/dev/null || true
@@ -209,7 +209,7 @@ cleanup_test_vhd "${TEST_VHD_BASE}_custom.vhdx" 2>/dev/null
 
 # Test 1: Create VHD with default settings (1G)
 run_test "Create VHD with default settings" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_1.vhdx 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh create --path ${TEST_VHD_BASE}_1.vhdx 2>&1" \
     0
 
 # Test 2: Verify created VHD file exists
@@ -227,7 +227,7 @@ run_test "Verify created VHD file can be found" \
 
 # Test 4: Create VHD with custom size (500M)
 run_test "Create VHD with custom size (500M)" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_2.vhdx --size 500M 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh create --path ${TEST_VHD_BASE}_2.vhdx --size 500M 2>&1" \
     0
 
 # Test 5: Verify custom size VHD file exists
@@ -237,12 +237,12 @@ run_test "Verify custom size VHD exists" \
 
 # Test 6: Create VHD in quiet mode
 run_test "Create VHD in quiet mode" \
-    "bash $PARENT_DIR/disk_management.sh -q create --path ${TEST_VHD_BASE}_4.vhdx 2>&1 | grep -q 'created'" \
+    "bash $PARENT_DIR/vhdm.sh -q create --path ${TEST_VHD_BASE}_4.vhdx 2>&1 | grep -q 'created'" \
     0
 
 # Test 7: Attempt to create VHD that already exists (should fail)
 run_test "Attempt to create existing VHD (should fail)" \
-    "bash $PARENT_DIR/disk_management.sh create --path ${TEST_VHD_BASE}_1.vhdx 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh create --path ${TEST_VHD_BASE}_1.vhdx 2>&1" \
     1
 
 # Cleanup before test 8 to ensure clean state
@@ -256,7 +256,7 @@ if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
             # Convert normalized path back to Windows format for umount
             # Normalized paths are lowercase, convert back: c:/path -> C:/path
             win_path=$(echo "$test_path" | sed 's|^c:/|C:/|')
-            bash $PARENT_DIR/disk_management.sh -q -y umount --path "$win_path" >/dev/null 2>&1 || true
+            bash $PARENT_DIR/vhdm.sh -q -y umount --path "$win_path" >/dev/null 2>&1 || true
         done <<< "$test_paths"
     fi
 fi
@@ -267,7 +267,7 @@ sleep 1
 
 # Test 8: Create VHD with custom size parameter (use --force and -y to overwrite if exists)
 run_test "Create VHD with 2G size" \
-    "bash $PARENT_DIR/disk_management.sh -y create --path ${TEST_VHD_BASE}_custom.vhdx --size 2G --force 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh -y create --path ${TEST_VHD_BASE}_custom.vhdx --size 2G --force 2>&1" \
     0
 
 # Test 9: Verify custom VHD exists
@@ -277,14 +277,14 @@ run_test "Verify custom VHD file exists" \
 
 # Cleanup: Detach the specific VHD we're testing before test 10
 # This ensures test 10 can attach the VHD without ambiguity
-bash $PARENT_DIR/disk_management.sh -q umount --path ${TEST_VHD_BASE}_custom.vhdx >/dev/null 2>&1 || true
+bash $PARENT_DIR/vhdm.sh -q umount --path ${TEST_VHD_BASE}_custom.vhdx >/dev/null 2>&1 || true
 sleep 2
 
 # Test 10: Attach and verify VHD can be attached and formatted
 # Note: If multiple VHDs are attached, this test may fail due to UUID discovery ambiguity
 # The attach command should handle already-attached VHDs gracefully
 run_test "Attach created VHD" \
-    "(bash $PARENT_DIR/disk_management.sh attach --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 || bash $PARENT_DIR/disk_management.sh status --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached') && sleep 2 && bash $PARENT_DIR/disk_management.sh status --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached'" \
+    "(bash $PARENT_DIR/vhdm.sh attach --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 || bash $PARENT_DIR/vhdm.sh status --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached') && sleep 2 && bash $PARENT_DIR/vhdm.sh status --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached'" \
     0
 
 # Cleanup: Remove test VHDs

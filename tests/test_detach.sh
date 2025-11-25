@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test script for disk_management.sh detach command
+# Test script for vhdm.sh detach command
 # This script tests various detach scenarios using the VHD from .env.test
 #
 # NOTE: WSL has known issues with --unmount timing out on certain VHD files.
@@ -73,25 +73,25 @@ get_vhd_uuid() {
     local mount_point="${3:-/tmp/test_detach_mount}"
     
     # Create VHD if it doesn't exist
-    if ! bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" >/dev/null 2>&1; then
-        bash "$PARENT_DIR/disk_management.sh" create --path "$vhd_path" --size 100M >/dev/null 2>&1
+    if ! bash "$PARENT_DIR/vhdm.sh" -q status --path "$vhd_path" >/dev/null 2>&1; then
+        bash "$PARENT_DIR/vhdm.sh" create --path "$vhd_path" --size 100M >/dev/null 2>&1
         # Attach the newly created VHD
-        bash "$PARENT_DIR/disk_management.sh" attach --vhd-path "$vhd_path" >/dev/null 2>&1
+        bash "$PARENT_DIR/vhdm.sh" attach --vhd-path "$vhd_path" >/dev/null 2>&1
         sleep 1
         # Format the VHD (find device name first)
         local device=$(lsblk -J | jq -r '.blockdevices[] | select(.name | test("sd[d-z]")) | .name' | head -1)
         if [[ -n "$device" ]]; then
-            echo "yes" | bash "$PARENT_DIR/disk_management.sh" format --dev-name "$device" --type ext4 >/dev/null 2>&1
+            echo "yes" | bash "$PARENT_DIR/vhdm.sh" format --dev-name "$device" --type ext4 >/dev/null 2>&1
         fi
     fi
     
     # Ensure VHD is attached and mounted
-    bash "$PARENT_DIR/disk_management.sh" mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
+    bash "$PARENT_DIR/vhdm.sh" mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
     # Give system time to update
     sleep 1
     # Get UUID using quiet mode status by path (more reliable)
     # Extract only the UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+    local uuid=$(bash "$PARENT_DIR/vhdm.sh" -q status --path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
     echo "$uuid"
 }
 
@@ -183,7 +183,7 @@ run_test() {
 # Helper function to check if VHD is attached
 is_attached() {
     local uuid="$1"
-    bash "$PARENT_DIR/disk_management.sh" status --uuid "$uuid" 2>&1 | grep -iq "attached"
+    bash "$PARENT_DIR/vhdm.sh" status --uuid "$uuid" 2>&1 | grep -iq "attached"
 }
 
 # Helper function to check if VHD is mounted
@@ -200,7 +200,7 @@ setup_attach_only() {
     local vhd_name="$4"
     
     # Ensure VHD is mounted first (which ensures it's attached)
-    bash "$PARENT_DIR/disk_management.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1 || true
+    bash "$PARENT_DIR/vhdm.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1 || true
     
     # Then unmount from filesystem only (not full detach)
     if is_mounted "$mount_point"; then
@@ -214,7 +214,7 @@ setup_mount() {
     local mount_point="$2"
     local vhd_name="$3"
     if ! is_mounted "$mount_point"; then
-        bash "$PARENT_DIR/disk_management.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
+        bash "$PARENT_DIR/vhdm.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
     fi
 }
 
@@ -242,13 +242,13 @@ fi
 # Test 1: Detach VHD that is attached but not mounted
 setup_attach_only "$VHD_UUID" "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Detach VHD that is attached but not mounted" \
-    "bash $PARENT_DIR/disk_management.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
     0
 
 # Test 2: Detach VHD that is both attached and mounted
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Detach VHD that is attached and mounted" \
-    "bash $PARENT_DIR/disk_management.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
     0
 
 # Test 3: Detach already-detached VHD (idempotency test)
@@ -256,51 +256,51 @@ run_test "Detach VHD that is attached and mounted" \
 # Ensure VHD is re-attached first
 setup_attach_only "$VHD_UUID" "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 # First detach
-bash "$PARENT_DIR/disk_management.sh" detach --uuid "$VHD_UUID" --path "$TEST_VHD_PATH" >/dev/null 2>&1 || true
+bash "$PARENT_DIR/vhdm.sh" detach --uuid "$VHD_UUID" --path "$TEST_VHD_PATH" >/dev/null 2>&1 || true
 # Then test detaching again - WSL limitation means this will fail with exit code 1
 # This is expected behavior given WSL's detach limitations
 run_test "Detach already-detached VHD shows appropriate error" \
-    "bash $PARENT_DIR/disk_management.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'Failed to detach'" \
+    "bash $PARENT_DIR/vhdm.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'Failed to detach'" \
     0
 
 # Test 4: Verify detach command executes without error after proper setup
 setup_attach_only "$VHD_UUID" "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Detach command executes without error" \
-    "bash $PARENT_DIR/disk_management.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
     0
 
 # Test 5: Verify mount point is not accessible after detach
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Mount point not accessible after detach" \
-    "bash $PARENT_DIR/disk_management.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 && ! mountpoint -q $TEST_MOUNT_POINT 2>/dev/null" \
+    "bash $PARENT_DIR/vhdm.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 && ! mountpoint -q $TEST_MOUNT_POINT 2>/dev/null" \
     0
 
 # Test 6: Detach in quiet mode
 setup_attach_only "$VHD_UUID" "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Detach in quiet mode produces minimal output" \
-    "bash $PARENT_DIR/disk_management.sh -q detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 | wc -l | grep -q '^[0-2]$'" \
+    "bash $PARENT_DIR/vhdm.sh -q detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 | wc -l | grep -q '^[0-2]$'" \
     0
 
 # Test 7: Detach handles non-existent UUID gracefully
 run_test "Detach handles non-existent UUID gracefully" \
-    "bash $PARENT_DIR/disk_management.sh detach --uuid 00000000-0000-0000-0000-000000000000 --path \"$TEST_VHD_PATH\" 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh detach --uuid 00000000-0000-0000-0000-000000000000 --path \"$TEST_VHD_PATH\" 2>&1" \
     0
 
 # Test 8: Detach requires UUID parameter
 run_test "Detach requires UUID parameter" \
-    "bash $PARENT_DIR/disk_management.sh detach 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh detach 2>&1" \
     1
 
 # Test 9: Detach in debug mode shows commands
 setup_attach_only "$VHD_UUID" "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Detach in debug mode shows command output" \
-    "bash $PARENT_DIR/disk_management.sh -d detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'DEBUG'" \
+    "bash $PARENT_DIR/vhdm.sh -d detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'DEBUG'" \
     0
 
 # Test 10: Verify detach command completes successfully after proper setup
 setup_attach_only "$VHD_UUID" "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Detach command completes successfully" \
-    "bash $PARENT_DIR/disk_management.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh detach --uuid $VHD_UUID --path \"$TEST_VHD_PATH\" 2>&1" \
     0
 
 # Calculate duration

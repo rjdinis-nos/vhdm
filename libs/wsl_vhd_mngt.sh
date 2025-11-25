@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# WSL Helper Functions Library
+# WSL VHD Management Functions Library
 # This file contains reusable functions for managing VHD disks in WSL
 
 # Source configuration file

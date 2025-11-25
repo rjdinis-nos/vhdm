@@ -4,12 +4,12 @@ This repository contains a collection of bash scripts for managing Virtual Hard 
 
 ## Scripts Overview
 
-### 1. `disk_management.sh`
+### 1. `vhdm.sh`
 The main script providing a comprehensive CLI for VHD disk operations including mount, unmount, status checking, and creation.
 
 ### 2. `libs/`
 A directory containing library functions and helper scripts:
-- `wsl_helpers.sh` - WSL-specific functions for VHD operations, providing core WSL integration functionality.
+- `wsl_vhd_mngt.sh` - WSL-specific functions for VHD operations, providing core WSL integration functionality.
 - `utils.sh` - Utility functions for size calculations, format conversions, and general helper operations.
 
 ### 4. `tests/`
@@ -42,14 +42,14 @@ The system automatically tracks VHD path→UUID associations in a persistent JSO
 Simply use path-based commands as normal - tracking works automatically:
 ```bash
 # Path-based operations
-./disk_management.sh mount --vhd-path C:/VMs/disk2.vhdx --mount-point /mnt/disk2
-./disk_management.sh status --vhd-path C:/VMs/disk2.vhdx
+./vhdm.sh mount --vhd-path C:/VMs/disk2.vhdx --mount-point /mnt/disk2
+./vhdm.sh status --vhd-path C:/VMs/disk2.vhdx
 
 # Attach operation
-./disk_management.sh attach --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh attach --vhd-path C:/VMs/disk.vhdx
 
 # Unmount works with path
-./disk_management.sh umount --vhd-path C:/VMs/disk2.vhdx
+./vhdm.sh umount --vhd-path C:/VMs/disk2.vhdx
 ```
 
 ---
@@ -70,18 +70,18 @@ Simply use path-based commands as normal - tracking works automatically:
 ### Setup
 ```bash
 # Clone and make scripts executable
-chmod +x disk_management.sh libs/wsl_helpers.sh
+chmod +x vhdm.sh libs/wsl_vhd_mngt.sh
 ```
 
 ---
 
 ## Usage Guide
 
-### Main Script: `disk_management.sh`
+### Main Script: `vhdm.sh`
 
 #### Command Format
 ```bash
-./disk_management.sh [OPTIONS] COMMAND [COMMAND_OPTIONS]
+./vhdm.sh [OPTIONS] COMMAND [COMMAND_OPTIONS]
 ```
 
 #### Global Options
@@ -95,7 +95,7 @@ chmod +x disk_management.sh libs/wsl_helpers.sh
 
 **Format:**
 ```bash
-./disk_management.sh attach [OPTIONS]
+./vhdm.sh attach [OPTIONS]
 ```
 
 **Options:**
@@ -114,16 +114,16 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Basic attach
-./disk_management.sh attach --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh attach --vhd-path C:/VMs/disk.vhdx
 
 # Quiet mode for scripts
-./disk_management.sh -q attach --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh -q attach --vhd-path C:/VMs/disk.vhdx
 
 # Debug mode to see commands
-./disk_management.sh -d attach --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh -d attach --vhd-path C:/VMs/disk.vhdx
 
 # Idempotent - safe to run multiple times
-./disk_management.sh attach --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh attach --vhd-path C:/VMs/disk.vhdx
 # Output: "VHD is already attached to WSL"
 ```
 
@@ -140,7 +140,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh mount [OPTIONS]
+./vhdm.sh mount [OPTIONS]
 ```
 
 **Options:**
@@ -159,16 +159,16 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Mount using VHD path
-./disk_management.sh mount --vhd-path C:/VMs/mydisk.vhdx --mount-point /mnt/data
+./vhdm.sh mount --vhd-path C:/VMs/mydisk.vhdx --mount-point /mnt/data
 
 # Mount using device name (when VHD is already attached)
-./disk_management.sh mount --dev-name sde --mount-point /mnt/data
+./vhdm.sh mount --dev-name sde --mount-point /mnt/data
 
 # Mount with all options specified
-./disk_management.sh mount --vhd-path C:/aNOS/VMs/disk.vhdx --mount-point /home/user/disk
+./vhdm.sh mount --vhd-path C:/aNOS/VMs/disk.vhdx --mount-point /home/user/disk
 
 # Idempotent - safe to run multiple times
-./disk_management.sh mount --dev-name sde --mount-point /mnt/data
+./vhdm.sh mount --dev-name sde --mount-point /mnt/data
 # Output: "VHD is already mounted at /mnt/data" (tracking file still updated)
 ```
 
@@ -178,7 +178,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh umount [OPTIONS]
+./vhdm.sh umount [OPTIONS]
 ```
 
 **Options:**
@@ -191,13 +191,13 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Unmount by path (UUID discovered automatically)
-./disk_management.sh umount --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh umount --vhd-path C:/VMs/disk.vhdx
 
 # Unmount by mount point (UUID discovered automatically)
-./disk_management.sh umount --mount-point /mnt/data
+./vhdm.sh umount --mount-point /mnt/data
 
 # Unmount by explicit UUID
-./disk_management.sh umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
+./vhdm.sh umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
 ```
 
 ---
@@ -206,7 +206,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh detach [OPTIONS]
+./vhdm.sh detach [OPTIONS]
 ```
 
 **Options:**
@@ -227,13 +227,13 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Detach by device name
-./disk_management.sh detach --dev-name sde
+./vhdm.sh detach --dev-name sde
 
 # Detach by UUID
-./disk_management.sh detach --uuid 72a3165c-f1be-4497-a1fb-2c55054ac472
+./vhdm.sh detach --uuid 72a3165c-f1be-4497-a1fb-2c55054ac472
 
 # Detach with explicit path (if not in tracking file)
-./disk_management.sh detach --dev-name sde --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh detach --dev-name sde --vhd-path C:/VMs/disk.vhdx
 ```
 
 ---
@@ -242,7 +242,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh status [OPTIONS]
+./vhdm.sh status [OPTIONS]
 ```
 
 **Options:**
@@ -254,19 +254,19 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Show all attached VHDs
-./disk_management.sh status --all
+./vhdm.sh status --all
 
 # Show status by path (UUID discovered automatically)
-./disk_management.sh status --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh status --vhd-path C:/VMs/disk.vhdx
 
 # Show status by mount point (UUID discovered automatically)
-./disk_management.sh status --mount-point /mnt/data
+./vhdm.sh status --mount-point /mnt/data
 
 # Show status for specific UUID
-./disk_management.sh status --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
+./vhdm.sh status --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
 
 # Quiet mode - machine-readable output
-./disk_management.sh -q status --all
+./vhdm.sh -q status --all
 ```
 
 ---
@@ -275,7 +275,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh create [OPTIONS]
+./vhdm.sh create [OPTIONS]
 ```
 
 **Options:**
@@ -288,16 +288,16 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Create 1GB VHD with defaults
-./disk_management.sh create --vhd-path C:/VMs/newdisk.vhdx
+./vhdm.sh create --vhd-path C:/VMs/newdisk.vhdx
 
 # Create 5GB VHD
-./disk_management.sh create --vhd-path C:/VMs/bigdisk.vhdx --size 5G
+./vhdm.sh create --vhd-path C:/VMs/bigdisk.vhdx --size 5G
 
 # Create VHD with force flag
-./disk_management.sh create --vhd-path C:/VMs/data.vhdx --size 10G --force
+./vhdm.sh create --vhd-path C:/VMs/data.vhdx --size 10G --force
 
 # Create and immediately use (requires manual mount after creation)
-./disk_management.sh create --vhd-path C:/VMs/test.vhdx --size 2G
+./vhdm.sh create --vhd-path C:/VMs/test.vhdx --size 2G
 # Note: After creation, the VHD is attached but not mounted
 # To mount: sudo mkdir -p /mnt/test && sudo mount UUID=<reported-uuid> /mnt/test
 ```
@@ -308,7 +308,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh delete [OPTIONS]
+./vhdm.sh delete [OPTIONS]
 ```
 
 **Options:**
@@ -321,14 +321,14 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Delete with confirmation prompt
-./disk_management.sh delete --vhd-path C:/VMs/oldisk.vhdx
+./vhdm.sh delete --vhd-path C:/VMs/oldisk.vhdx
 
 # Delete without confirmation (force)
-./disk_management.sh delete --vhd-path C:/VMs/testdisk.vhdx --force
+./vhdm.sh delete --vhd-path C:/VMs/testdisk.vhdx --force
 
 # Unmount and then delete
-./disk_management.sh umount --vhd-path C:/VMs/disk.vhdx
-./disk_management.sh delete --vhd-path C:/VMs/disk.vhdx --force
+./vhdm.sh umount --vhd-path C:/VMs/disk.vhdx
+./vhdm.sh delete --vhd-path C:/VMs/disk.vhdx --force
 ```
 
 ---
@@ -337,7 +337,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh format [OPTIONS]
+./vhdm.sh format [OPTIONS]
 ```
 
 **Options:**
@@ -350,13 +350,13 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Examples:**
 ```bash
 # Format by device name
-./disk_management.sh format --dev-name sdd --type ext4
+./vhdm.sh format --dev-name sdd --type ext4
 
 # Format by UUID
-./disk_management.sh format --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --type ext4
+./vhdm.sh format --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --type ext4
 
 # Format with default filesystem (ext4)
-./disk_management.sh format --dev-name sde
+./vhdm.sh format --dev-name sde
 ```
 
 ---
@@ -365,7 +365,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Format:**
 ```bash
-./disk_management.sh resize --mount-point <PATH> --size <SIZE>
+./vhdm.sh resize --mount-point <PATH> --size <SIZE>
 ```
 
 **Options:**
@@ -385,17 +385,17 @@ The resize operation creates a new VHD, migrates all data, and replaces the orig
 **Examples:**
 ```bash
 # Resize disk to 10GB
-./disk_management.sh resize --mount-point /home/user/disk --size 10G
+./vhdm.sh resize --mount-point /home/user/disk --size 10G
 
 # Resize with automatic size calculation
 # (If current data is 7GB, actual size will be ~9.1GB minimum)
-./disk_management.sh resize --mount-point /mnt/data --size 5G
+./vhdm.sh resize --mount-point /mnt/data --size 5G
 
 # Quiet mode
-./disk_management.sh -q resize --mount-point /mnt/data --size 10G
+./vhdm.sh -q resize --mount-point /mnt/data --size 10G
 
 # Debug mode to see all commands
-./disk_management.sh -d resize --mount-point /home/user/disk --size 10G
+./vhdm.sh -d resize --mount-point /home/user/disk --size 10G
 ```
 
 **Important Notes:**
@@ -412,7 +412,7 @@ For complete documentation including size calculations, safety features, and tro
 
 The library files in `libs/` provide reusable functions that can be sourced in other scripts.
 
-### `libs/wsl_helpers.sh` - WSL-Specific Functions
+### `libs/wsl_vhd_mngt.sh` - WSL-Specific Functions
 
 #### VHD Status Checks
 - `wsl_is_vhd_attached UUID` - Check if VHD is attached to WSL
@@ -436,6 +436,22 @@ The library files in `libs/` provide reusable functions that can be sourced in o
 - `wsl_find_uuid_by_mountpoint MOUNT_POINT` - Find UUID by mount point
 - `wsl_find_dynamic_vhd_uuid` - Find first non-system disk UUID
 - `wsl_create_vhd PATH SIZE [FS_TYPE] [NAME]` - Create and format new VHD
+
+#### Tracking File Management Functions
+All tracking file operations follow the standardized naming pattern `tracking_file_<action>_<what>()`:
+
+- `tracking_file_init()` - Initialize tracking file structure
+- `tracking_file_save_mapping()` - Save/update path→UUID mapping
+- `tracking_file_lookup_uuid_by_path()` - Lookup UUID by VHD path
+- `tracking_file_lookup_uuid_by_dev_name()` - Lookup UUID by device name
+- `tracking_file_update_mount_point()` - Update mount point in tracking file
+- `tracking_file_remove_mount_point()` - Remove mount point from tracking file
+- `tracking_file_remove_mapping()` - Remove VHD mapping completely
+- `tracking_file_save_detach_history()` - Save detach event to history
+- `tracking_file_get_detach_history()` - Get detach history entries
+- `tracking_file_get_last_detach_for_path()` - Get last detach event for a path
+
+**Note**: These functions are used internally by the disk management commands. The standardized naming convention ensures consistency and maintainability across the codebase.
 
 ### `libs/utils.sh` - Utility Functions
 
@@ -479,7 +495,7 @@ All logging functions support timestamps and structured output. See [Structured 
 ### Usage Example
 ```bash
 #!/bin/bash
-source /path/to/libs/wsl_helpers.sh
+source /path/to/libs/wsl_vhd_mngt.sh
 source /path/to/libs/utils.sh
 
 # WSL-specific operations
@@ -506,63 +522,63 @@ echo "Target size: $target_bytes bytes"
 ### First-Time Setup
 ```bash
 # 1. Create a new VHD
-./disk_management.sh create --vhd-path C:/VMs/mydisk.vhdx --size 5G
+./vhdm.sh create --vhd-path C:/VMs/mydisk.vhdx --size 5G
 
 # 2. The UUID will be displayed. Use it to mount:
 sudo mkdir -p /mnt/mydisk
 sudo mount UUID=<reported-uuid> /mnt/mydisk
 
 # 3. Verify it's mounted
-./disk_management.sh status --all
+./vhdm.sh status --all
 ```
 
 ### Using Attach Command
 ```bash
 # Attach VHD without mounting (makes it available as block device)
-./disk_management.sh attach --vhd-path C:/VMs/mydisk.vhdx
+./vhdm.sh attach --vhd-path C:/VMs/mydisk.vhdx
 
 # Check status to see UUID and device name
-./disk_management.sh status --vhd-path C:/VMs/mydisk.vhdx
+./vhdm.sh status --vhd-path C:/VMs/mydisk.vhdx
 
 # Later, mount it manually or with mount command
 sudo mount UUID=<uuid> /mnt/mydisk
 
 # Or use mount command for full attach+mount workflow
-./disk_management.sh mount --vhd-path C:/VMs/mydisk.vhdx --mount-point /mnt/mydisk
+./vhdm.sh mount --vhd-path C:/VMs/mydisk.vhdx --mount-point /mnt/mydisk
 ```
 
 ### Daily Usage
 ```bash
 # Mount your VHD
-./disk_management.sh mount --vhd-path C:/VMs/mydisk.vhdx --mount-point /mnt/mydisk
+./vhdm.sh mount --vhd-path C:/VMs/mydisk.vhdx --mount-point /mnt/mydisk
 
 # Work with your files...
 
 # Unmount when done
-./disk_management.sh umount --vhd-path C:/VMs/mydisk.vhdx
+./vhdm.sh umount --vhd-path C:/VMs/mydisk.vhdx
 ```
 
 ### Troubleshooting
 ```bash
 # Check what VHDs are currently attached
-./disk_management.sh status --all
+./vhdm.sh status --all
 
 # Check specific VHD status
-./disk_management.sh status --vhd-path C:/VMs/mydisk.vhdx
+./vhdm.sh status --vhd-path C:/VMs/mydisk.vhdx
 
 # Attach VHD separately from mounting (useful for debugging)
-./disk_management.sh attach --vhd-path C:/VMs/mydisk.vhdx
-./disk_management.sh status --uuid <uuid>  # Verify attachment
+./vhdm.sh attach --vhd-path C:/VMs/mydisk.vhdx
+./vhdm.sh status --uuid <uuid>  # Verify attachment
 
 # Enable debug mode to see all commands being executed
-./disk_management.sh -d status --all
+./vhdm.sh -d status --all
 
 # Force unmount if processes are blocking
 sudo lsof +D /mnt/mydisk  # Find processes using mount point
 sudo umount -l /mnt/mydisk  # Lazy unmount
 
 # Then detach from WSL
-./disk_management.sh umount --vhd-path C:/VMs/mydisk.vhdx
+./vhdm.sh umount --vhd-path C:/VMs/mydisk.vhdx
 ```
 
 ### Structured Logging
@@ -585,7 +601,7 @@ All log messages include timestamps:
 **Examples:**
 ```bash
 # Normal operation with structured logging
-./disk_management.sh mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
+./vhdm.sh mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
 # Output:
 # [2025-01-15 14:30:45] [INFO] Attaching VHD: C:/VMs/disk.vhdx
 # [2025-01-15 14:30:49] [SUCCESS] VHD attached (UUID: 550e8400-...)
@@ -593,18 +609,18 @@ All log messages include timestamps:
 # [2025-01-15 14:30:51] [SUCCESS] Disk successfully mounted at /mnt/data
 
 # Debug mode shows detailed command execution
-./disk_management.sh -d mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
+./vhdm.sh -d mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
 # Output includes:
 # [2025-01-15 14:30:45] [DEBUG] Executing: wsl.exe --mount --vhd C:/VMs/disk.vhdx --bare
 # [2025-01-15 14:30:46] [DEBUG] lsblk -f -J | jq -r --arg UUID '...' '.blockdevices[] | select(.uuid == $UUID) | .name'
 
 # Quiet mode suppresses info/warn/success (errors still shown)
-./disk_management.sh -q mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
+./vhdm.sh -q mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
 # Only errors displayed (if any)
 
 # Optional log file support
 export LOG_FILE="/var/log/wsl-disk-management.log"
-./disk_management.sh mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
+./vhdm.sh mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
 # Messages appear on screen AND in log file
 ```
 
@@ -612,7 +628,7 @@ export LOG_FILE="/var/log/wsl-disk-management.log"
 Set the `LOG_FILE` environment variable to write logs to a file:
 ```bash
 export LOG_FILE="/var/log/wsl-disk-management.log"
-./disk_management.sh mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
+./vhdm.sh mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
 ```
 
 Log files include all messages (except debug when `DEBUG=false`) with timestamps for audit trails and troubleshooting.
@@ -683,7 +699,7 @@ For detailed information about the test suite, coverage, configuration, adding n
 
 ## Configuration
 
-The `disk_management.sh` script has default configuration values that can be modified at the top of the script:
+The `vhdm.sh` script has default configuration values that can be modified at the top of the script:
 
 ```bash
 WSL_DISKS_DIR="C:/aNOS/VMs/wsl_disks/"  # Default VHD directory
@@ -711,6 +727,9 @@ The tracking file maintains mappings across sessions, enabling:
 4. **Explicit parameter** - User-provided `--uuid`
 
 The system automatically saves mappings when VHDs are attached/created and updates them when mounted/unmounted. The mount command updates the tracking file even when the VHD is already mounted, ensuring the tracking file stays in sync with the actual mount state.
+
+**Internal Implementation:**
+All tracking file operations use standardized function names following the pattern `tracking_file_<action>_<what>()` for consistency and maintainability. These functions handle all persistent state management automatically in the background.
 
 ---
 
@@ -826,7 +845,7 @@ When validation fails, the scripts provide clear error messages with format exam
 ### Error: "VHD is attached but not mounted"
 This means WSL can see the VHD but it's not available in your filesystem. Run:
 ```bash
-./disk_management.sh mount --vhd-path <your-vhd-path>
+./vhdm.sh mount --vhd-path <your-vhd-path>
 ```
 
 ### Error: "Failed to unmount VHD"

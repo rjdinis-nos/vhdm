@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test script for disk_management.sh umount command
+# Test script for vhdm.sh umount command
 # This script tests various umount scenarios using the VHD from .env.test
 
 # Get the directory where this script is located
@@ -68,25 +68,25 @@ get_vhd_uuid() {
     local vhd_name="$3"
     
     # Create VHD if it doesn't exist
-    if ! bash "$PARENT_DIR/disk_management.sh" -q status --vhd-path "$vhd_path" >/dev/null 2>&1; then
-        bash "$PARENT_DIR/disk_management.sh" create --vhd-path "$vhd_path" --size 100M >/dev/null 2>&1
+    if ! bash "$PARENT_DIR/vhdm.sh" -q status --vhd-path "$vhd_path" >/dev/null 2>&1; then
+        bash "$PARENT_DIR/vhdm.sh" create --vhd-path "$vhd_path" --size 100M >/dev/null 2>&1
         # Attach the newly created VHD
-        bash "$PARENT_DIR/disk_management.sh" attach --vhd-path "$vhd_path" >/dev/null 2>&1
+        bash "$PARENT_DIR/vhdm.sh" attach --vhd-path "$vhd_path" >/dev/null 2>&1
         sleep 1
         # Format the VHD (find device name first)
         local device=$(lsblk -J | jq -r '.blockdevices[] | select(.name | test("sd[d-z]")) | .name' | head -1)
         if [[ -n "$device" ]]; then
-            echo "yes" | bash "$PARENT_DIR/disk_management.sh" format --dev-name "$device" --type ext4 >/dev/null 2>&1
+            echo "yes" | bash "$PARENT_DIR/vhdm.sh" format --dev-name "$device" --type ext4 >/dev/null 2>&1
         fi
     fi
     
     # Ensure VHD is attached and mounted
-    bash "$PARENT_DIR/disk_management.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
+    bash "$PARENT_DIR/vhdm.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
     # Give system time to update
     sleep 1
     # Get UUID using quiet mode status by path (more reliable)
     # Extract only the UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --vhd-path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
+    local uuid=$(bash "$PARENT_DIR/vhdm.sh" -q status --vhd-path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
     echo "$uuid"
 }
 
@@ -187,7 +187,7 @@ setup_mount() {
     local mount_point="$2"
     local vhd_name="$3"
     if ! is_mounted "$mount_point"; then
-        bash "$PARENT_DIR/disk_management.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
+        bash "$PARENT_DIR/vhdm.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
     fi
 }
 
@@ -215,68 +215,68 @@ fi
 # Test 1: Umount mounted VHD with default configuration
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Umount mounted VHD with default configuration" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 2: Umount already-unmounted VHD (idempotency test)
 # Ensure VHD is mounted first, then unmount, then try to unmount again
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
-bash "$PARENT_DIR/disk_management.sh" umount --path "$TEST_VHD_PATH" --uuid "$VHD_UUID" --mount-point "$TEST_MOUNT_POINT" >/dev/null 2>&1 || true
+bash "$PARENT_DIR/vhdm.sh" umount --path "$TEST_VHD_PATH" --uuid "$VHD_UUID" --mount-point "$TEST_MOUNT_POINT" >/dev/null 2>&1 || true
 # Re-mount for the actual test
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 # Just unmount from filesystem (not full detach) to test idempotency
 sudo umount "$TEST_MOUNT_POINT" 2>/dev/null || true
 run_test "Umount already-unmounted VHD (idempotency)" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 3: Umount with UUID only
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Umount with UUID parameter" \
-    "bash $PARENT_DIR/disk_management.sh umount --uuid $VHD_UUID --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh umount --uuid $VHD_UUID --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 4: Umount with path only
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Umount with path parameter" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 5: Umount with mount point parameter
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Umount with mount point parameter" \
-    "bash $PARENT_DIR/disk_management.sh umount --mount-point $TEST_MOUNT_POINT --uuid $VHD_UUID --path $TEST_VHD_PATH 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh umount --mount-point $TEST_MOUNT_POINT --uuid $VHD_UUID --path $TEST_VHD_PATH 2>&1" \
     0
 
 # Test 6: Verify mount point no longer accessible after umount
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Mount point not accessible after umount" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1 && ! mountpoint -q $TEST_MOUNT_POINT 2>/dev/null" \
+    "bash $PARENT_DIR/vhdm.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1 && ! mountpoint -q $TEST_MOUNT_POINT 2>/dev/null" \
     0
 
 # Test 7: Umount in quiet mode
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Umount in quiet mode produces minimal output" \
-    "bash $PARENT_DIR/disk_management.sh -q umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1 | wc -l | grep -q '^[0-2]$'" \
+    "bash $PARENT_DIR/vhdm.sh -q umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1 | wc -l | grep -q '^[0-2]$'" \
     0
 
 # Test 8: Verify umount command completes successfully
 # Note: Due to WSL limitations, VHD may still appear attached in lsblk after detach
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Umount command completes successfully" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1 | grep -q 'Unmount operation completed'" \
+    "bash $PARENT_DIR/vhdm.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1 | grep -q 'Unmount operation completed'" \
     0
 
 # Test 9: Verify umount reports success
 # Note: Due to WSL detach limitations, we verify command success rather than physical state
 setup_mount "$TEST_VHD_PATH" "$TEST_MOUNT_POINT" "$TEST_VHD_NAME"
 run_test "Umount reports successful completion" \
-    "bash $PARENT_DIR/disk_management.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh umount --path $TEST_VHD_PATH --uuid $VHD_UUID --mount-point $TEST_MOUNT_POINT 2>&1" \
     0
 
 # Test 10: Umount handles non-existent UUID gracefully
 run_test "Umount handles non-existent UUID gracefully" \
-    "bash $PARENT_DIR/disk_management.sh umount --uuid 00000000-0000-0000-0000-000000000000 --path $TEST_VHD_PATH 2>&1" \
+    "bash $PARENT_DIR/vhdm.sh umount --uuid 00000000-0000-0000-0000-000000000000 --path $TEST_VHD_PATH 2>&1" \
     0
 
 # Calculate duration

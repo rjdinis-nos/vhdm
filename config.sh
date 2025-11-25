@@ -36,7 +36,7 @@
 #   1. Set defaults in this file
 #   2. Override them via environment variables before sourcing this file
 #   3. Override them in your shell: export DEFAULT_VHD_NAME="mydisk"
-#   4. Override them inline: DEFAULT_VHD_NAME="mydisk" ./disk_management.sh ...
+#   4. Override them inline: DEFAULT_VHD_NAME="mydisk" ./vhdm.sh ...
 #
 # ----------------------------------------------------------------------------
 # ============================================================================

@@ -344,13 +344,13 @@ All tests passed! ✓
 ### Verbose Mode
 ```
 Running Test 1: Default status shows VHD info
-  Command: bash /home/user/scripts/disk_management.sh status
+  Command: bash /home/user/scripts/vhdm.sh status
   Expected exit code: 0
   Actual exit code: 0
 [PASS] Test 1: Default status shows VHD info
 
 Running Test 2: Status by UUID
-  Command: bash /home/user/scripts/disk_management.sh status --uuid 3e76fe9e-c345-4097-b8e2-aa3936ab83bc
+  Command: bash /home/user/scripts/vhdm.sh status --uuid 3e76fe9e-c345-4097-b8e2-aa3936ab83bc
   Expected exit code: 0
   Actual exit code: 0
 [PASS] Test 2: Status by UUID
@@ -379,7 +379,7 @@ All test commands suppress non-test output to keep results clean:
 
 ```bash
 # For commands that need output validation (grep)
-run_test "Test" "bash $PARENT_DIR/disk_management.sh command 2>&1 | grep -q 'pattern'" 0
+run_test "Test" "bash $PARENT_DIR/vhdm.sh command 2>&1 | grep -q 'pattern'" 0
 
 # For setup/cleanup operations (full suppression)
 cleanup_test_vhd "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
@@ -518,8 +518,8 @@ fi
 - Verify `MOUNT_DIR` in `.env.test` is correct
 
 ### All tests fail
-- Ensure scripts are executable: `chmod +x ../disk_management.sh tests/test_*.sh`
-- Check that `wsl_helpers.sh` and `utils.sh` are in the parent `libs/` directory
+- Ensure scripts are executable: `chmod +x ../vhdm.sh tests/test_*.sh`
+- Check that `wsl_vhd_mngt.sh` and `utils.sh` are in the parent `libs/` directory
 - Verify `.env.test` exists in the tests directory
 - Ensure `WSL_DISKS_DIR` and `MOUNT_DIR` are properly set
 

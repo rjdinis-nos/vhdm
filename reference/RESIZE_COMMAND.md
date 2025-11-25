@@ -7,7 +7,7 @@ The `resize` command allows you to resize an existing VHD disk by creating a new
 ## Usage
 
 ```bash
-./disk_management.sh resize --mount-point <PATH> --size <SIZE>
+./vhdm.sh resize --mount-point <PATH> --size <SIZE>
 ```
 
 ## Required Options
@@ -38,13 +38,13 @@ The resize operation performs the following steps:
 
 ```bash
 # Resize a disk mounted at /home/user/disk to 10GB
-./disk_management.sh resize --mount-point /home/user/disk --size 10G
+./vhdm.sh resize --mount-point /home/user/disk --size 10G
 
 # Quiet mode
-./disk_management.sh -q resize --mount-point /mnt/data --size 5G
+./vhdm.sh -q resize --mount-point /mnt/data --size 5G
 
 # Debug mode to see all commands
-./disk_management.sh -d resize --mount-point /mnt/data --size 5G
+./vhdm.sh -d resize --mount-point /mnt/data --size 5G
 ```
 
 ## Size Calculation
@@ -78,7 +78,7 @@ To delete the backup:
 ls -lh /mnt/c/aNOS/VMs/wsl_test/*_bkp.vhdx
 
 # Delete using the delete command
-./disk_management.sh delete --path C:/aNOS/VMs/wsl_test/disk_bkp.vhdx --force
+./vhdm.sh delete --path C:/aNOS/VMs/wsl_test/disk_bkp.vhdx --force
 ```
 
 ## Dependencies

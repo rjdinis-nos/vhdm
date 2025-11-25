@@ -9,7 +9,7 @@ The system is organized into three architectural layers:
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    USER COMMANDS LAYER                      │
-│  disk_management.sh: CLI commands (attach, mount, format,  │
+│  vhdm.sh: CLI commands (attach, mount, format,  │
 │                      umount, detach, status, create,        │
 │                      delete, resize)                        │
 └─────────────────────────────────────────────────────────────┘
@@ -17,7 +17,7 @@ The system is organized into three architectural layers:
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                   WSL HELPERS LAYER                         │
-│  libs/wsl_helpers.sh: WSL-specific operations with          │
+│  libs/wsl_vhd_mngt.sh: WSL-specific operations with          │
 │                       comprehensive error handling           │
 │  - wsl_attach_vhd(), wsl_detach_vhd()                      │
 │  - wsl_mount_vhd(), wsl_umount_vhd()                       │
@@ -25,12 +25,20 @@ The system is organized into three architectural layers:
 │  - wsl_get_vhd_info(), wsl_find_uuid_*()                   │
 │  - format_vhd(), wsl_create_vhd(), wsl_delete_vhd()        │
 │  - handle_uuid_discovery_result(), detect_new_device_after_attach() │
+│                                                             │
+│  libs/wsl_vhd_tracking.sh: Persistent tracking file        │
+│                            management functions             │
+│  - tracking_file_init(), tracking_file_save_mapping()      │
+│  - tracking_file_lookup_uuid_by_path()                     │
+│  - tracking_file_update_mount_point()                      │
+│  - tracking_file_remove_mount_point()                      │
+│  - All tracking_file_*() functions                         │
 └─────────────────────────────────────────────────────────────┘
                             │
                             ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                   PRIMITIVES LAYER                          │
-│  libs/wsl_helpers.sh & libs/utils.sh:                      │
+│  libs/wsl_vhd_mngt.sh & libs/utils.sh:                      │
 │  - create_mount_point(), mount_filesystem()                │
 │  - umount_filesystem()                                      │
 │  - convert_size_to_bytes(), bytes_to_human()               │
@@ -76,8 +84,8 @@ WSL does not provide a direct path→UUID mapping after attachment. This creates
 ### Allowed UUID Discovery Methods
 
 ✅ **SAFE - Deterministic Methods (in priority order):**
-1. **Persistent tracking file by path**: `lookup_vhd_uuid()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
-2. **Persistent tracking file by device name**: `lookup_vhd_uuid_by_dev_name()` queries by device name
+1. **Persistent tracking file by path**: `tracking_file_lookup_uuid_by_path()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
+2. **Persistent tracking file by device name**: `tracking_file_lookup_uuid_by_dev_name()` queries by device name
 3. **UUID from mount point**: `findmnt` or `lsblk` lookup of mounted filesystem
 4. **Snapshot-based device detection during attach/create**: Compare before/after device lists immediately after WSL attach operation, then get UUID from device if available
 5. **Explicit user-provided UUID**: User specifies `--uuid` parameter
@@ -110,7 +118,7 @@ wsl_find_uuid_safely_by_path() {
     
     if [[ $count -gt 1 ]]; then
         echo "Error: Multiple VHDs attached. Specify --uuid explicitly." >&2
-        echo "Run './disk_management.sh status --all' to see all UUIDs." >&2
+        echo "Run './vhdm.sh status --all' to see all UUIDs." >&2
         return 2
     elif [[ $count -eq 0 ]]; then
         return 1  # Not attached
@@ -133,7 +141,7 @@ All tests involving UUID discovery must:
 
 ## Function Responsibility Matrix
 
-### User Command Functions (disk_management.sh)
+### User Command Functions (vhdm.sh)
 
 | Function | Arguments | Responsibility | Orchestrates | Single Operation? |
 |----------|-----------|---------------|--------------|-------------------|
@@ -147,7 +155,7 @@ All tests involving UUID discovery must:
 | `delete_vhd()` | `--path`, `--uuid` (optional), `--force` (optional) | Delete VHD file | No | ✅ Yes - file deletion only |
 | `resize_vhd()` | `--mount-point`, `--size` | Complete resize workflow with data migration | Yes | ❌ No - complex orchestration |
 
-### WSL Helper Functions (libs/wsl_helpers.sh)
+### WSL Helper Functions (libs/wsl_vhd_mngt.sh)
 
 | Function | Arguments | Responsibility | Calls Primitives | Error Handling |
 |----------|-----------|---------------|------------------|----------------|
@@ -168,21 +176,32 @@ All tests involving UUID discovery must:
 | `wsl_delete_vhd()` | `$1: path` (Windows format) | Delete VHD file | No | Minimal |
 | `wsl_get_block_devices()` | None | List all block devices | No | None (query only) |
 | `wsl_get_disk_uuids()` | None | List all disk UUIDs | No | None (query only) |
-| `init_disk_tracking_file()` | None | Initialize tracking file structure | No | None (setup only) |
-| `normalize_vhd_path()` | `$1: path` (Windows format) | Normalize path for consistent tracking | No | None (transform only) |
-| `save_vhd_mapping()` | `$1: path`, `$2: uuid`, `$3: mount_points` (optional) | Save/update path→UUID mapping | No | Minimal |
-| `lookup_vhd_uuid()` | `$1: path` (Windows format) | Retrieve UUID from tracking file | No | None (query only) |
-| `update_vhd_mount_points()` | `$1: path`, `$2: mount_points` (comma-separated) | Update mount points for existing mapping | No | Minimal |
-| `update_tracking_file_mount_point()` | `$1: vhd_path` (optional), `$2: dev_name` (optional), `$3: uuid`, `$4: mount_point`, `$5: found_path` (optional) | Update tracking file with mount point (handles both --vhd-path and --dev-name cases) | No | Minimal |
-| `remove_vhd_mapping()` | `$1: path` (Windows format) | Remove mapping from tracking file | No | Minimal |
 
-### Primitive Functions (libs/wsl_helpers.sh & libs/utils.sh)
+### Tracking File Functions (libs/wsl_vhd_tracking.sh)
+
+| Function | Arguments | Responsibility | Calls Primitives | Error Handling |
+|----------|-----------|---------------|------------------|----------------|
+| `tracking_file_init()` | None | Initialize tracking file structure | No | None (setup only) |
+| `normalize_vhd_path()` | `$1: path` (Windows format) | Normalize path for consistent tracking | No | None (transform only) |
+| `is_test_vhd()` | `$1: path` (Windows format) | Check if VHD is test-related (skip tracking) | No | None (query only) |
+| `tracking_file_save_mapping()` | `$1: path`, `$2: uuid`, `$3: mount_points` (optional), `$4: dev_name` (optional) | Save/update path→UUID mapping | No | Minimal |
+| `tracking_file_lookup_uuid_by_path()` | `$1: path` (Windows format) | Retrieve UUID from tracking file by path | No | None (query only) |
+| `tracking_file_lookup_uuid_by_dev_name()` | `$1: dev_name` | Retrieve UUID from tracking file by device name | No | None (query only) |
+| `tracking_file_update_mount_points()` | `$1: path`, `$2: mount_points` (comma-separated) | Update mount points for existing mapping | No | Minimal |
+| `tracking_file_update_mount_point()` | `$1: vhd_path` (optional), `$2: dev_name` (optional), `$3: uuid`, `$4: mount_point`, `$5: found_path` (optional) | Update tracking file with mount point (handles both --vhd-path and --dev-name cases) | No | Minimal |
+| `tracking_file_remove_mount_point()` | `$1: vhd_path` (optional), `$2: dev_name` (optional), `$3: uuid`, `$4: mount_point` (optional), `$5: found_path` (optional) | Remove/clear mount point from tracking file (handles UUID, mount point, vhd_path, or dev_name cases) | No | Minimal |
+| `tracking_file_remove_mapping()` | `$1: path` (Windows format) | Remove mapping from tracking file | No | Minimal |
+| `tracking_file_save_detach_history()` | `$1: path`, `$2: uuid`, `$3: dev_name` (optional) | Save detach event to history | No | Minimal |
+| `tracking_file_get_detach_history()` | `$1: limit` (optional) | Get detach history from tracking file | No | None (query only) |
+| `tracking_file_get_last_detach_for_path()` | `$1: path` | Get last detach event for a VHD path | No | None (query only) |
+
+### Primitive Functions (libs/wsl_vhd_mngt.sh & libs/utils.sh)
 
 | Function | Arguments | Responsibility | Library | Purpose |
 |----------|-----------|---------------|---------|---------|
-| `create_mount_point()` | `$1: mount_point` | Create directory with mkdir -p | wsl_helpers.sh | Directory creation |
-| `mount_filesystem()` | `$1: uuid`, `$2: mount_point` | Execute sudo mount UUID=... | wsl_helpers.sh | Filesystem mount |
-| `umount_filesystem()` | `$1: mount_point` | Execute sudo umount | wsl_helpers.sh | Filesystem unmount |
+| `create_mount_point()` | `$1: mount_point` | Create directory with mkdir -p | wsl_vhd_mngt.sh | Directory creation |
+| `mount_filesystem()` | `$1: uuid`, `$2: mount_point` | Execute sudo mount UUID=... | wsl_vhd_mngt.sh | Filesystem mount |
+| `umount_filesystem()` | `$1: mount_point` | Execute sudo umount | wsl_vhd_mngt.sh | Filesystem unmount |
 | `convert_size_to_bytes()` | `$1: size_string` (e.g., "1G", "500M") | Convert size string to bytes | utils.sh | Size calculation |
 | `bytes_to_human()` | `$1: bytes` | Convert bytes to human readable | utils.sh | Size formatting |
 | `get_directory_size_bytes()` | `$1: directory_path` | Calculate directory size | utils.sh | Size query |
@@ -199,7 +218,7 @@ All tests involving UUID discovery must:
 | `log_error()` | `$@: message` | Log error message (always shown) | utils.sh | Structured logging |
 | `log_success()` | `$@: message` | Log success message (unless QUIET=true) | utils.sh | Structured logging |
 | `print_section_header()` | `$1: title` (optional) | Print standardized section header with separator lines | utils.sh | Output formatting |
-| `debug_cmd()` | `$@: command and args` | Wrapper to log and execute commands in debug mode | wsl_helpers.sh | Debug support (uses log_debug) |
+| `debug_cmd()` | `$@: command and args` | Wrapper to log and execute commands in debug mode | wsl_vhd_mngt.sh | Debug support (uses log_debug) |
 | `init_resource_cleanup()` | None | Initialize resource cleanup system with trap handlers | utils.sh | Resource management |
 | `register_vhd_cleanup()` | `$1: path, $2: uuid, $3: dev_name` | Register VHD for automatic cleanup | utils.sh | Resource management |
 | `unregister_vhd_cleanup()` | `$1: path` | Unregister VHD from cleanup tracking | utils.sh | Resource management |
@@ -399,13 +418,13 @@ resize_vhd()
 ## Function Invocation Hierarchy
 
 ### Level 1: User Commands (Entry Points)
-- `attach_vhd()` → `wsl_attach_vhd()`
+- `attach_vhd()` → `wsl_attach_vhd()` → `tracking_file_save_mapping()`
 - `format_vhd_command()` → `format_vhd()`
-- `mount_vhd()` → `wsl_attach_vhd()` → `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()`
-- `umount_vhd()` → `wsl_umount_vhd()` → `umount_filesystem()` + `wsl_detach_vhd()`
-- `detach_vhd()` → `wsl_umount_vhd()` + `wsl_detach_vhd()`
+- `mount_vhd()` → `wsl_attach_vhd()` → `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()` → `tracking_file_update_mount_point()`
+- `umount_vhd()` → `wsl_umount_vhd()` → `umount_filesystem()` + `wsl_detach_vhd()` → `tracking_file_remove_mount_point()`
+- `detach_vhd()` → `wsl_umount_vhd()` + `wsl_detach_vhd()` → `tracking_file_remove_mount_point()`
 - `create_vhd()` → `qemu-img` (direct)
-- `delete_vhd()` → `wsl_delete_vhd()` → `rm`
+- `delete_vhd()` → `wsl_delete_vhd()` → `rm` → `tracking_file_remove_mapping()`
 - `resize_vhd()` → orchestrates multiple operations
 
 ### Level 2: WSL Helpers (Business Logic)
@@ -415,6 +434,13 @@ resize_vhd()
 - `wsl_umount_vhd()` → `umount_filesystem()` + diagnostics
 - `wsl_create_vhd()` → `qemu-img` + `wsl_attach_vhd()` + `format_vhd()`
 - `format_vhd()` → `sudo mkfs` + `blkid`
+
+### Level 2.5: Tracking File Functions (Persistent State Management)
+- `tracking_file_save_mapping()` → JSON file operations (jq)
+- `tracking_file_lookup_uuid_by_path()` → JSON file queries (jq)
+- `tracking_file_update_mount_point()` → JSON file updates (jq)
+- `tracking_file_remove_mount_point()` → JSON file updates (jq)
+- All tracking file functions are in `libs/wsl_vhd_tracking.sh`
 
 ### Level 3: Primitives (Direct Operations)
 - `create_mount_point()` → `mkdir -p`
@@ -429,7 +455,7 @@ resize_vhd()
 - `wsl_is_vhd_mounted()` → `lsblk -f -J` + `jq`
 - `wsl_get_vhd_info()` → `lsblk -f -J` + `jq`
 - `wsl_get_vhd_mount_point()` → `lsblk -f -J` + `jq`
-- `wsl_find_uuid_by_path()` → `lookup_vhd_uuid()` → `wsl_find_dynamic_vhd_uuid()` (with multi-VHD safety)
+- `wsl_find_uuid_by_path()` → `tracking_file_lookup_uuid_by_path()` → `wsl_find_dynamic_vhd_uuid()` (with multi-VHD safety)
 - `wsl_find_uuid_by_mountpoint()` → `lsblk -f -J` + `jq`
 - `wsl_get_block_devices()` → `lsblk -J` + `jq`
 - `wsl_get_disk_uuids()` → `sudo blkid`
@@ -442,7 +468,7 @@ Used in: All operations that work with VHD paths
 
 ```bash
 # Check tracking file first
-local uuid=$(lookup_vhd_uuid "$vhd_path")
+local uuid=$(tracking_file_lookup_uuid_by_path "$vhd_path")
 if [[ -n "$uuid" ]]; then
     # Verify UUID is still attached
     if wsl_is_vhd_attached "$uuid"; then
@@ -455,7 +481,7 @@ fi
 # Second, try lookup by name (extract name from tracking file first)
 local tracked_dev_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].dev_name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
     if [[ -n "$tracked_dev_name" && "$tracked_dev_name" != "null" ]]; then
-        local uuid_by_dev_name=$(lookup_vhd_uuid_by_dev_name "$tracked_dev_name")
+        local uuid_by_dev_name=$(tracking_file_lookup_uuid_by_dev_name "$tracked_dev_name")
         if [[ -n "$uuid_by_dev_name" ]] && wsl_is_vhd_attached "$uuid_by_dev_name"; then
         echo "$uuid_by_name"
         return 0
@@ -468,14 +494,43 @@ fi
 **Purpose**: Fast, deterministic UUID lookup without device scanning. Automatically handles multi-VHD scenarios with path and name-based discovery.
 
 **Operations that save/update tracking:**
-- `attach_vhd()` - Saves path→UUID + dev_name after successful attach
-- `mount_vhd()` - Updates mount_points after mount (or when already mounted, ensuring tracking file stays in sync)
-- `umount_vhd()` - Clears mount_points after unmount
-- `detach_vhd()` - Clears mount_points when detaching
-- `delete_vhd()` - Removes mapping completely
-- `wsl_create_vhd()` - Saves mapping after creation and formatting
+- `attach_vhd()` - Saves path→UUID + dev_name after successful attach using `tracking_file_save_mapping()`
+- `mount_vhd()` - Updates mount_points after mount (or when already mounted, ensuring tracking file stays in sync) using `tracking_file_update_mount_point()`
+- `umount_vhd()` - Clears mount_points after unmount using `tracking_file_remove_mount_point()`
+- `detach_vhd()` - Clears mount_points when detaching using `tracking_file_remove_mount_point()`
+- `delete_vhd()` - Removes mapping completely using `tracking_file_remove_mapping()`
+- `wsl_create_vhd()` - Saves mapping after creation and formatting using `tracking_file_save_mapping()`
 
-**Note:** The `mount_vhd()` command uses the `update_tracking_file_mount_point()` helper function to update the tracking file. This helper handles both `--vhd-path` and `--dev-name` cases, and ensures the tracking file is updated even when the VHD is already mounted at the target mount point, keeping the tracking file in sync with the actual mount state.
+**Note:** The `mount_vhd()` command uses the `tracking_file_update_mount_point()` helper function to update the tracking file. This helper handles both `--vhd-path` and `--dev-name` cases, and ensures the tracking file is updated even when the VHD is already mounted at the target mount point, keeping the tracking file in sync with the actual mount state.
+
+The `umount_vhd()` and `detach_vhd()` commands use the `tracking_file_remove_mount_point()` helper function to clear mount points from the tracking file. This helper can work with UUID, mount point, vhd_path, or dev_name, automatically finding the VHD path from the tracking file when needed. This ensures mount points are properly cleared even when unmounting with only `--mount-point` parameter.
+
+**Standardized Naming Convention:**
+All tracking file management functions follow the consistent pattern `tracking_file_<action>_<what>()`:
+
+**Pattern Structure:**
+- **Prefix**: `tracking_file_` - Identifies all tracking file operations
+- **Action**: Verb describing the operation (`init`, `save`, `lookup`, `update`, `remove`, `get`)
+- **What**: Object being acted upon (`mapping`, `mount_point`, `mount_points`, `uuid_by_path`, `uuid_by_dev_name`, `detach_history`, `last_detach_for_path`)
+
+**Complete Function List:**
+- `tracking_file_init()` - Initialize tracking file structure
+- `tracking_file_save_mapping()` - Save/update path→UUID mapping
+- `tracking_file_lookup_uuid_by_path()` - Lookup UUID by VHD path
+- `tracking_file_lookup_uuid_by_dev_name()` - Lookup UUID by device name
+- `tracking_file_update_mount_point()` - Update mount point (high-level, handles multiple input types)
+- `tracking_file_update_mount_points()` - Update mount points (low-level, direct path-based update)
+- `tracking_file_remove_mount_point()` - Remove/clear mount point (handles multiple input types)
+- `tracking_file_remove_mapping()` - Remove VHD mapping completely
+- `tracking_file_save_detach_history()` - Save detach event to history
+- `tracking_file_get_detach_history()` - Get detach history entries
+- `tracking_file_get_last_detach_for_path()` - Get last detach event for a specific VHD path
+
+**Benefits of Standardization:**
+- **Consistency**: All tracking file functions are easily identifiable by prefix
+- **Discoverability**: Functions can be found quickly using `grep tracking_file_`
+- **Maintainability**: Clear naming pattern makes code easier to understand and modify
+- **Documentation**: Self-documenting function names reduce need for extensive comments
 
 ### 2. Snapshot-Based Detection Pattern
 
@@ -501,7 +556,7 @@ if [[ -n "$detected_device" ]]; then
 fi
 ```
 
-**Helper Function**: `detect_new_device_after_attach()` in `libs/wsl_helpers.sh`
+**Helper Function**: `detect_new_device_after_attach()` in `libs/wsl_vhd_mngt.sh`
 - Accepts array elements as direct arguments (more reliable than indirect reference)
 - Filters old devices to only include dynamically attached VHDs (sd[d-z] pattern) BEFORE sleep
 - Includes sleep delay for kernel device recognition (configurable via `SLEEP_AFTER_ATTACH`)
@@ -532,7 +587,7 @@ discovery_result=$?
 handle_uuid_discovery_result "$discovery_result" "$uuid" "mount" "$path"
 ```
 
-**Helper Function**: `handle_uuid_discovery_result()` in `libs/wsl_helpers.sh`
+**Helper Function**: `handle_uuid_discovery_result()` in `libs/wsl_vhd_mngt.sh`
 - Args: `$1` - Discovery result (exit code from `wsl_find_uuid_by_path`: 0=found, 1=not found, 2=multiple VHDs)
 - Args: `$2` - Discovered UUID (may be empty)
 - Args: `$3` - Context message (e.g., "mount", "umount") for error messages
@@ -686,9 +741,9 @@ fi
 - `sanitize_string()` - Removes control characters (defense in depth)
 
 **Validation Points:**
-- Command argument parsing in `disk_management.sh` (all commands)
+- Command argument parsing in `vhdm.sh` (all commands)
 - Input parameters in `mount_disk.sh`
-- Helper functions in `libs/wsl_helpers.sh` that receive user input
+- Helper functions in `libs/wsl_vhd_mngt.sh` that receive user input
 
 **Defense in Depth:**
 1. Validation at command argument parsing
@@ -742,17 +797,17 @@ fi
 5. ✅ Use `mv` for atomic file updates (not `cp` + `rm`)
 
 **Functions Using This Pattern**:
-- `save_vhd_mapping()` - Updates tracking file with new VHD mappings
-- `update_vhd_mount_points()` - Updates mount points for existing VHD
-- `remove_vhd_mapping()` - Removes VHD from tracking file
-- `save_detach_history()` - Adds detach events to history
+- `tracking_file_save_mapping()` - Updates tracking file with new VHD mappings
+- `tracking_file_update_mount_points()` - Updates mount points for existing VHD
+- `tracking_file_remove_mapping()` - Removes VHD from tracking file
+- `tracking_file_save_detach_history()` - Adds detach events to history
 
 ### 11. Resource Cleanup Pattern
 
 Used in: All operations that attach VHDs or create temporary resources that need cleanup on script failure/interrupt
 
 ```bash
-# Initialize cleanup system at script startup (disk_management.sh)
+# Initialize cleanup system at script startup (vhdm.sh)
 init_resource_cleanup
 
 # Register VHD for cleanup when attaching
@@ -903,7 +958,7 @@ fi
 
 ## Standardized Variable Naming Conventions
 
-All command functions in `disk_management.sh` use standardized local variable names for consistency and maintainability:
+All command functions in `vhdm.sh` use standardized local variable names for consistency and maintainability:
 
 ### Core Variables
 

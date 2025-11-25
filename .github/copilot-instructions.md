@@ -3,11 +3,12 @@
 ## Project Overview
 
 Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Multi-script architecture:
-- `disk_management.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
-- `libs/wsl_helpers.sh` - Shared WSL-specific function library
+- `vhdm.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
+- `libs/wsl_vhd_mngt.sh` - Shared WSL-specific function library
+- `libs/wsl_vhd_tracking.sh` - Persistent tracking file management functions
 - `libs/utils.sh` - Shared utility functions for size calculations, conversions, and input validation
 
-The `disk_management.sh` script sources `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
+The `vhdm.sh` script sources `libs/wsl_vhd_mngt.sh` (which sources `libs/wsl_vhd_tracking.sh`) and `libs/utils.sh` for core functionality.
 
 **📖 For comprehensive architecture details, function flows, and responsibility matrix, see [copilot-code-architecture.md](copilot-code-architecture.md)**
 
@@ -126,8 +127,8 @@ All user-provided inputs are validated to prevent command injection and path tra
 - Filesystem types: Whitelist only (ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat)
 
 **Validation Points:**
-- All command argument parsing in `disk_management.sh` (status, mount, umount, detach, delete, create, resize, format, attach, history)
-- Helper functions in `libs/wsl_helpers.sh` that receive user input (`save_vhd_mapping()`, `lookup_vhd_uuid()`, `wsl_attach_vhd()`, `mount_filesystem()`, `format_vhd()`, etc.)
+- All command argument parsing in `vhdm.sh` (status, mount, umount, detach, delete, create, resize, format, attach, history)
+- Helper functions in `libs/wsl_vhd_mngt.sh` that receive user input (`save_vhd_mapping()`, `lookup_vhd_uuid()`, `wsl_attach_vhd()`, `mount_filesystem()`, `format_vhd()`, etc.)
 
 **Defense in Depth:**
 1. Validation at command argument parsing
@@ -273,7 +274,7 @@ All operations that attach VHDs or create temporary resources must register them
 
 **Pattern:**
 ```bash
-# Initialize cleanup system at script startup (disk_management.sh)
+# Initialize cleanup system at script startup (vhdm.sh)
 init_resource_cleanup
 
 # Register VHD for cleanup when attaching
@@ -310,7 +311,7 @@ unregister_vhd_cleanup "$vhd_path"
 ## Key Implementation Details
 
 ### Configuration
-**Main Script (`disk_management.sh`):**
+**Main Script (`vhdm.sh`):**
 - No default configuration values
 - All parameters must be provided via command-line options
 - Required parameters: `--path`, `--mount-point`, `--name` (depending on command)
@@ -370,22 +371,22 @@ After attach/create operations, scripts include `sleep 2` to allow the kernel to
 ### Testing Commands
 ```bash
 # Test mount with already-attached VHD (idempotency)
-./disk_management.sh mount --path C:/VMs/test.vhdx
+./vhdm.sh mount --path C:/VMs/test.vhdx
 
 # Test status output formats
-./disk_management.sh status --all
-./disk_management.sh -q status --all  # Machine-readable
-./disk_management.sh -d status --all  # Debug mode (show all commands)
-./disk_management.sh -q -d status --all  # Combined (machine-readable + commands)
+./vhdm.sh status --all
+./vhdm.sh -q status --all  # Machine-readable
+./vhdm.sh -d status --all  # Debug mode (show all commands)
+./vhdm.sh -q -d status --all  # Combined (machine-readable + commands)
 
 # Test error handling
-./disk_management.sh mount --path C:/NonExistent/disk.vhdx  # Should fail gracefully
+./vhdm.sh mount --path C:/NonExistent/disk.vhdx  # Should fail gracefully
 ```
 
 ### Debugging Block Device Issues
 ```bash
 # Use debug mode to see all commands executed
-./disk_management.sh -d mount --path C:/VMs/disk.vhdx
+./vhdm.sh -d mount --path C:/VMs/disk.vhdx
 
 # Inspect current block devices
 sudo lsblk -J | jq
@@ -626,7 +627,7 @@ bash "$SCRIPT_DIR/update_test_report.sh" \
 ## Common Modifications
 
 ### Adding New Commands
-1. Add function in `disk_management.sh` following pattern: `command_verb()`
+1. Add function in `vhdm.sh` following pattern: `command_verb()`
 2. Parse arguments with `while [[ $# -gt 0 ]]` loop
 3. Support `QUIET` mode with conditional echo statements
 4. Add to main case statement at bottom
@@ -733,7 +734,7 @@ wsl_convert_path() {
 19. **UUID extraction in tests**: Use specific UUID regex `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` instead of generic patterns like `(?<=\().*(?=\))` to avoid extracting error messages from parentheses
 20. **VHD formatting requirement**: VHDs must be formatted before they have UUIDs; test helpers should create + attach + format new VHDs automatically
 21. **Create command parameters**: The `create` command does NOT accept `--name` parameter (only `--path`, `--size`, `--force`); it only creates the VHD file and does not auto-attach; tests must explicitly call `attach` after `create` if VHD attachment is needed
-12. **Test output suppression**: All disk_management.sh calls in tests must suppress non-test output using `2>&1` for commands or `>/dev/null 2>&1` for setup/cleanup operations
+12. **Test output suppression**: All vhdm.sh calls in tests must suppress non-test output using `2>&1` for commands or `>/dev/null 2>&1` for setup/cleanup operations
 13. **Optional test dependencies**: Tests requiring optional tools (xfs, etc.) should check availability and gracefully skip or adjust the test
 14. **Filesystem unmount vs detach**: To test "attached but not mounted" state, use `sudo umount` (not the script's umount command which fully detaches)
 15. **Flag exports**: QUIET and DEBUG flags must be exported at script initialization for child script access

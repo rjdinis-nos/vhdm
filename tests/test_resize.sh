@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Test script for disk_management.sh resize command
+# Test script for vhdm.sh resize command
 # This script tests various resize scenarios using test VHDs
 
 # Get the directory where this script is located
@@ -155,7 +155,7 @@ cleanup_test_vhd() {
     local mount_point="$2"
     
     # Unmount and detach if necessary
-    bash $PARENT_DIR/disk_management.sh -q umount --path "$vhd_path" >/dev/null 2>&1
+    bash $PARENT_DIR/vhdm.sh -q umount --path "$vhd_path" >/dev/null 2>&1
     
     # Remove mount point
     if [[ -d "$mount_point" ]]; then
@@ -168,7 +168,7 @@ cleanup_test_vhd() {
     fi
     
     # Delete VHD file
-    bash $PARENT_DIR/disk_management.sh -q delete --path "$vhd_path" --force >/dev/null 2>&1
+    bash $PARENT_DIR/vhdm.sh -q delete --path "$vhd_path" --force >/dev/null 2>&1
     
     # Delete backup VHD if exists
     local vhd_path_wsl
@@ -191,19 +191,19 @@ create_test_vhd_with_data() {
     vhd_path_wsl=$(wsl_convert_path "$vhd_path")
     if [[ -f "$vhd_path_wsl" ]]; then
         # Try to detach first
-        bash $PARENT_DIR/disk_management.sh -q umount --path "$vhd_path" >/dev/null 2>&1 || \
+        bash $PARENT_DIR/vhdm.sh -q umount --path "$vhd_path" >/dev/null 2>&1 || \
             wsl.exe --unmount "$vhd_path" >/dev/null 2>&1 || true
         rm -f "$vhd_path_wsl" >/dev/null 2>&1 || true
     fi
     
     # Create VHD with --force to overwrite any existing VHD
-    if ! bash $PARENT_DIR/disk_management.sh -q create --path "$vhd_path" --size "$size" --force >/dev/null 2>&1; then
+    if ! bash $PARENT_DIR/vhdm.sh -q create --path "$vhd_path" --size "$size" --force >/dev/null 2>&1; then
         return 1
     fi
     
     # Attach the VHD (create doesn't auto-attach)
     local vhd_name=$(basename ${vhd_path%.vhdx})
-    if ! bash $PARENT_DIR/disk_management.sh -q attach --vhd-path "$vhd_path" >/dev/null 2>&1; then
+    if ! bash $PARENT_DIR/vhdm.sh -q attach --vhd-path "$vhd_path" >/dev/null 2>&1; then
         return 1
     fi
     
@@ -214,7 +214,7 @@ create_test_vhd_with_data() {
     # Try multiple times as UUID might not be immediately available
     local vhd_uuid=""
     for i in {1..5}; do
-        vhd_uuid=$(bash $PARENT_DIR/disk_management.sh -q status --path "$vhd_path" 2>&1 | grep -oP '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
+        vhd_uuid=$(bash $PARENT_DIR/vhdm.sh -q status --path "$vhd_path" 2>&1 | grep -oP '[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}' | head -1)
         if [[ -n "$vhd_uuid" ]]; then
             break
         fi
@@ -226,7 +226,7 @@ create_test_vhd_with_data() {
     fi
     
     # Format the VHD using UUID (format command accepts UUID)
-    bash $PARENT_DIR/disk_management.sh -q format --uuid "$vhd_uuid" --type ext4 >/dev/null 2>&1
+    bash $PARENT_DIR/vhdm.sh -q format --uuid "$vhd_uuid" --type ext4 >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
         return 1
     fi
@@ -235,7 +235,7 @@ create_test_vhd_with_data() {
     sleep 2
     
     # Mount it
-    bash $PARENT_DIR/disk_management.sh -q mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
+    bash $PARENT_DIR/vhdm.sh -q mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
         return 1
     fi
@@ -279,24 +279,24 @@ cleanup_test_vhd "$TEST_VHD_PATH" "$TEST_MOUNT_POINT"
 
 # Test 1: Resize without mount-point parameter (should fail)
 run_test "Resize without --mount-point fails" \
-    "bash $PARENT_DIR/disk_management.sh resize --size 200M 2>&1 | grep -q 'mount-point is required'" \
+    "bash $PARENT_DIR/vhdm.sh resize --size 200M 2>&1 | grep -q 'mount-point is required'" \
     0
 
 # Test 2: Resize without size parameter (should fail)
 run_test "Resize without --size fails" \
-    "bash $PARENT_DIR/disk_management.sh resize --mount-point /tmp/test 2>&1 | grep -q 'size is required'" \
+    "bash $PARENT_DIR/vhdm.sh resize --mount-point /tmp/test 2>&1 | grep -q 'size is required'" \
     0
 
 # Test 3: Resize non-existent mount point (should fail)
 run_test "Resize non-existent mount point fails" \
-    "bash $PARENT_DIR/disk_management.sh resize --mount-point /nonexistent/path --size 200M 2>&1 | grep -q 'does not exist'" \
+    "bash $PARENT_DIR/vhdm.sh resize --mount-point /nonexistent/path --size 200M 2>&1 | grep -q 'does not exist'" \
     0
 
 # Test 4: Resize unmounted disk (should fail)
 # Create mount point but don't mount anything
 mkdir -p /tmp/test_unmounted_resize >/dev/null 2>&1
 run_test "Resize unmounted disk fails" \
-    "bash $PARENT_DIR/disk_management.sh resize --mount-point /tmp/test_unmounted_resize --size 200M 2>&1 | grep -q 'No VHD mounted'" \
+    "bash $PARENT_DIR/vhdm.sh resize --mount-point /tmp/test_unmounted_resize --size 200M 2>&1 | grep -q 'No VHD mounted'" \
     0
 rmdir /tmp/test_unmounted_resize >/dev/null 2>&1
 
@@ -322,12 +322,12 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
     
     # Test 7: Verify size conversion works
     run_test "Size conversion to bytes works (5G)" \
-        "bash -c 'source $PARENT_DIR/disk_management.sh && size=\$(convert_size_to_bytes \"5G\"); [[ \$size -eq 5368709120 ]]'" \
+        "bash -c 'source $PARENT_DIR/vhdm.sh && size=\$(convert_size_to_bytes \"5G\"); [[ \$size -eq 5368709120 ]]'" \
         0
     
     # Test 8: Verify size conversion works (100M)
     run_test "Size conversion to bytes works (100M)" \
-        "bash -c 'source $PARENT_DIR/disk_management.sh && size=\$(convert_size_to_bytes \"100M\"); [[ \$size -eq 104857600 ]]'" \
+        "bash -c 'source $PARENT_DIR/vhdm.sh && size=\$(convert_size_to_bytes \"100M\"); [[ \$size -eq 104857600 ]]'" \
         0
     
     # Test 9: Resize to larger size (actual resize operation)
@@ -345,7 +345,7 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
     
     # Run resize and check if it completes (exit code 0 or disk still mounted)
     run_test "Resize to larger size (200M) completes successfully" \
-        "bash $PARENT_DIR/disk_management.sh -q resize --mount-point $TEST_MOUNT_POINT --size 200M >/dev/null 2>&1; mountpoint -q $TEST_MOUNT_POINT" \
+        "bash $PARENT_DIR/vhdm.sh -q resize --mount-point $TEST_MOUNT_POINT --size 200M >/dev/null 2>&1; mountpoint -q $TEST_MOUNT_POINT" \
         0
     
     # Test 11: Verify disk is still mounted after resize
@@ -375,7 +375,7 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
         
         # Test 15: Verify disk status shows new UUID
         run_test "Status shows resized disk info" \
-            "bash $PARENT_DIR/disk_management.sh status --mount-point $TEST_MOUNT_POINT 2>&1 | grep -q 'UUID:'" \
+            "bash $PARENT_DIR/vhdm.sh status --mount-point $TEST_MOUNT_POINT 2>&1 | grep -q 'UUID:'" \
             0
     else
         echo -e "${YELLOW}Skipping post-resize tests - disk not mounted${NC}"
@@ -392,7 +392,7 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
     
     # This should output a warning about using minimum size
     run_test "Resize with too-small size uses minimum (data + 30%)" \
-        "bash $PARENT_DIR/disk_management.sh resize --mount-point $TEST_MOUNT_POINT --size 10M 2>&1 | grep -qE '(Requested size|smaller than required|Using minimum)'" \
+        "bash $PARENT_DIR/vhdm.sh resize --mount-point $TEST_MOUNT_POINT --size 10M 2>&1 | grep -qE '(Requested size|smaller than required|Using minimum)'" \
         0
     
     # Test 17: Verify disk is still functional after second resize
@@ -404,23 +404,23 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
     
     # Test 18: Test quiet mode completes and disk still works
     run_test "Quiet mode resize completes successfully" \
-        "bash $PARENT_DIR/disk_management.sh -q resize --mount-point $TEST_MOUNT_POINT --size 250M >/dev/null 2>&1; mountpoint -q $TEST_MOUNT_POINT && [[ -d $TEST_MOUNT_POINT/data ]]" \
+        "bash $PARENT_DIR/vhdm.sh -q resize --mount-point $TEST_MOUNT_POINT --size 250M >/dev/null 2>&1; mountpoint -q $TEST_MOUNT_POINT && [[ -d $TEST_MOUNT_POINT/data ]]" \
         0
     
     # Test 19: Test debug mode shows commands
     if mountpoint -q "$TEST_MOUNT_POINT" 2>/dev/null; then
         run_test "Debug mode shows executed commands" \
-            "bash $PARENT_DIR/disk_management.sh -d resize --mount-point $TEST_MOUNT_POINT --size 300M 2>&1 | grep -q '\[DEBUG\]'" \
+            "bash $PARENT_DIR/vhdm.sh -d resize --mount-point $TEST_MOUNT_POINT --size 300M 2>&1 | grep -q '\[DEBUG\]'" \
             0
     fi
     
     # Test 20: Final verification - mount, unmount still work
     run_test "Unmount resized disk works" \
-        "bash $PARENT_DIR/disk_management.sh -q umount --mount-point $TEST_MOUNT_POINT 2>&1; [[ \$? -eq 0 ]] || ! mountpoint -q $TEST_MOUNT_POINT" \
+        "bash $PARENT_DIR/vhdm.sh -q umount --mount-point $TEST_MOUNT_POINT 2>&1; [[ \$? -eq 0 ]] || ! mountpoint -q $TEST_MOUNT_POINT" \
         0
     
     run_test "Re-mount resized disk works" \
-        "bash $PARENT_DIR/disk_management.sh -q mount --vhd-path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT 2>&1" \
+        "bash $PARENT_DIR/vhdm.sh -q mount --vhd-path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT 2>&1" \
         0
     
 else

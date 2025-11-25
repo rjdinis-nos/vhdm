@@ -3,12 +3,13 @@
 ## Project Overview
 
 Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Multi-script architecture:
-- `disk_management.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
+- `vhdm.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
 - `mount_disk.sh` - Idempotent utility script for ensuring disk is mounted
-- `libs/wsl_helpers.sh` - Shared WSL-specific function library
+- `libs/wsl_vhd_mngt.sh` - Shared WSL-specific function library
+- `libs/wsl_vhd_tracking.sh` - Persistent tracking file management functions
 - `libs/utils.sh` - Shared utility functions for size calculations and conversions
 
-Both `disk_management.sh` and `mount_disk.sh` source `libs/wsl_helpers.sh` and `libs/utils.sh` for core functionality.
+Both `vhdm.sh` and `mount_disk.sh` source `libs/wsl_vhd_mngt.sh` (which sources `libs/wsl_vhd_tracking.sh`) and `libs/utils.sh` for core functionality.
 
 **📖 For comprehensive architecture details, see `.github/copilot-code-architecture.md`**
 
@@ -22,8 +23,8 @@ WSL does not provide a direct path→UUID mapping after attachment. These approa
 - ❌ "Pick any disk that matches a pattern" - random selection
 
 **SAFE UUID Discovery Methods (in priority order):**
-1. ✅ **Persistent tracking file by path**: `lookup_vhd_uuid()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
-2. ✅ **Persistent tracking file by name**: `lookup_vhd_uuid_by_name()` queries by WSL mount name
+1. ✅ **Persistent tracking file by path**: `tracking_file_lookup_uuid_by_path()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
+2. ✅ **Persistent tracking file by device name**: `tracking_file_lookup_uuid_by_dev_name()` queries by device name
 3. ✅ **UUID from mount point**: `findmnt` or `lsblk` lookup of mounted filesystem
 4. ✅ **Snapshot-based device detection during attach/create**: Compare before/after device lists immediately after WSL attach operation, then get UUID from device if available
 5. ✅ **Explicit user-provided UUID**: User specifies `--uuid` parameter
@@ -37,9 +38,9 @@ WSL does not provide a direct path→UUID mapping after attachment. These approa
 ## Architecture Layers
 
 **Three-layer architecture:**
-1. **User Commands Layer** (`disk_management.sh`): CLI commands that orchestrate operations
-2. **WSL Helpers Layer** (`libs/wsl_helpers.sh`): WSL-specific operations with comprehensive error handling
-3. **Primitives Layer** (`libs/wsl_helpers.sh` & `libs/utils.sh`): Generic Linux operations, minimal error handling
+1. **User Commands Layer** (`vhdm.sh`): CLI commands that orchestrate operations
+2. **WSL Helpers Layer** (`libs/wsl_vhd_mngt.sh`): WSL-specific operations with comprehensive error handling
+3. **Primitives Layer** (`libs/wsl_vhd_mngt.sh` & `libs/utils.sh`): Generic Linux operations, minimal error handling
 
 **Design Principles:**
 - Layered Architecture: Each layer can only call functions from its own layer or layers below
@@ -68,9 +69,15 @@ WSL does not provide a direct path→UUID mapping after attachment. These approa
 - Exit on errors (exit 1)
 - Comprehensive user-facing error messages
 
+**Tracking File Functions**: Use `tracking_file_` prefix
+- Examples: `tracking_file_save_mapping()`, `tracking_file_lookup_uuid_by_path()`, `tracking_file_update_mount_point()`
+- All tracking file operations follow the pattern `tracking_file_<action>_<what>()`
+- Standardized naming ensures consistency and discoverability
+- See "Persistent Disk Tracking" section for complete function list
+
 ## Standardized Variable Naming Conventions
 
-All command functions in `disk_management.sh` use standardized local variable names:
+All command functions in `vhdm.sh` use standardized local variable names:
 - **`vhd_path`**: VHD file path (Windows format)
 - **`uuid`**: VHD filesystem UUID
 - **`mount_point`**: Mount point path
@@ -87,6 +94,22 @@ This ensures consistency across all functions. See `.github/copilot-code-archite
 - Windows paths normalized to lowercase with forward slashes for case-insensitive matching
 - Tracking file checked FIRST before falling back to device discovery
 - Operations that save/update tracking: `attach_vhd()`, `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `wsl_create_vhd()`
+
+**Standardized Tracking File Function Naming:**
+All tracking file management functions follow the pattern `tracking_file_<action>_<what>()`:
+- `tracking_file_init()` - Initialize tracking file structure
+- `tracking_file_save_mapping()` - Save/update path→UUID mapping
+- `tracking_file_lookup_uuid_by_path()` - Lookup UUID by VHD path
+- `tracking_file_lookup_uuid_by_dev_name()` - Lookup UUID by device name
+- `tracking_file_update_mount_point()` - Update mount point (high-level)
+- `tracking_file_update_mount_points()` - Update mount points (low-level)
+- `tracking_file_remove_mount_point()` - Remove mount point
+- `tracking_file_remove_mapping()` - Remove VHD mapping
+- `tracking_file_save_detach_history()` - Save detach event to history
+- `tracking_file_get_detach_history()` - Get detach history entries
+- `tracking_file_get_last_detach_for_path()` - Get last detach event for a path
+
+**Always use these standardized function names** - never use old names like `lookup_vhd_uuid()`, `save_vhd_mapping()`, etc.
 
 ### Snapshot-Based Device Detection
 When attaching VHDs, use the centralized `detect_new_device_after_attach()` helper with device-first detection:
@@ -297,7 +320,7 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 - Each test suite creates unique VHDs: `test_[suite]_disk.vhdx`
 - UUIDs are discovered dynamically at test runtime
 - Test pattern: `run_test "Description" "command" expected_exit_code`
-- All disk_management.sh calls in tests must suppress non-test output using `2>&1` or `>/dev/null 2>&1`
+- All vhdm.sh calls in tests must suppress non-test output using `2>&1` or `>/dev/null 2>&1`
 
 ### Test Reporting
 
@@ -313,7 +336,7 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 ## Adding New Code
 
 ### Adding New Commands
-1. Add function in `disk_management.sh` following pattern: `command_verb()`
+1. Add function in `vhdm.sh` following pattern: `command_verb()`
 2. Parse arguments with `while [[ $# -gt 0 ]]` loop
 3. Support `QUIET` mode with conditional echo statements
 4. Add to main case statement at bottom
@@ -321,14 +344,15 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 
 ### Adding Helper Functions
 1. Add clear doc comment describing purpose, parameters, return values
-2. Follow naming convention for appropriate layer (Primitive/WSL Helper/Command)
+2. Follow naming convention for appropriate layer (Primitive/WSL Helper/Command/Tracking File)
 3. Respect `DEBUG` and `QUIET` flags (use structured logging functions)
 4. Primitives: Minimal error handling, single operation
 5. WSL Helpers: Comprehensive error handling, may call primitives
 6. Commands: May orchestrate multiple operations, user-friendly output, use `error_exit()` for errors
-7. **UUID Discovery**: Use `handle_uuid_discovery_result()` for consistent error handling
-8. **Snapshot Detection**: Use `detect_new_device_after_attach()` for post-attach device detection. Pass array elements directly as arguments (`"${old_devs[@]}"`) for reliability. Get UUID from device if available.
-9. **Configuration**: Use `SLEEP_AFTER_ATTACH` and `DETACH_TIMEOUT` instead of hardcoded values
+7. **Tracking File Functions**: Use `tracking_file_<action>_<what>()` naming pattern. See "Persistent Disk Tracking" section for examples.
+8. **UUID Discovery**: Use `handle_uuid_discovery_result()` for consistent error handling. Use `tracking_file_lookup_uuid_by_path()` or `tracking_file_lookup_uuid_by_dev_name()` for tracking file lookups.
+9. **Snapshot Detection**: Use `detect_new_device_after_attach()` for post-attach device detection. Pass array elements directly as arguments (`"${old_devs[@]}"`) for reliability. Get UUID from device if available.
+10. **Configuration**: Use `SLEEP_AFTER_ATTACH` and `DETACH_TIMEOUT` instead of hardcoded values
 
 ## References
 
