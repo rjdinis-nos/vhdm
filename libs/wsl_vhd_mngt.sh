@@ -103,7 +103,7 @@ wsl_is_vhd_mounted() {
 wsl_get_vhd_info() {
     local uuid="$1"
     local device_name fsavail fsuse mountpoints
-    
+    +
     if [[ -z "$uuid" ]]; then
         log_error "UUID is required"
         return 1
@@ -212,10 +212,11 @@ wsl_detach_vhd() {
     
     # WSL unmounts by the VHD file path that was originally used to mount
     # Use timeout to prevent hanging (30 seconds max)
+    # Filter out null bytes from wsl.exe output to avoid bash warnings
     local error_output
     if command -v timeout >/dev/null 2>&1; then
-        error_output=$(timeout "${DETACH_TIMEOUT:-30}" wsl.exe --unmount "$vhd_path" 2>&1)
-        local exit_code=$?
+        error_output=$(timeout "${DETACH_TIMEOUT:-30}" wsl.exe --unmount "$vhd_path" 2>&1 | tr -d '\0')
+        local exit_code=${PIPESTATUS[0]}
         
         if [[ $exit_code -eq 0 ]]; then
             return 0
@@ -231,9 +232,16 @@ wsl_detach_vhd() {
         fi
     else
         # No timeout command available, try without it
-        if debug_cmd wsl.exe --unmount "$vhd_path" >/dev/null 2>&1; then
+        # Filter null bytes from output to avoid bash warnings
+        # Capture exit code separately to avoid pipeline exit code issues
+        local temp_output
+        temp_output=$(wsl.exe --unmount "$vhd_path" 2>&1 | tr -d '\0')
+        local exit_code=${PIPESTATUS[0]}
+        
+        if [[ $exit_code -eq 0 ]]; then
             return 0
         else
+            log_debug "WSL unmount failed: $temp_output"
             return 1
         fi
     fi

@@ -1255,6 +1255,10 @@ detach_vhd() {
         # Use path if we have it, pass UUID and dev_name for history tracking
         if wsl_detach_vhd "$vhd_path" "$uuid" "$dev_name"; then
             log_success "VHD detached successfully"
+            
+            # Remove mapping from tracking file after successful detach
+            # The mapping is no longer valid since the VHD is detached
+            tracking_file_remove_mapping "$vhd_path"
         else
             error_exit "Failed to detach VHD from WSL"
         fi
