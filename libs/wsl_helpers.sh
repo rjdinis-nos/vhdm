@@ -98,13 +98,13 @@ is_test_vhd() {
 # Args: $1 - VHD path (Windows format)
 #       $2 - UUID
 #       $3 - Mount point (optional, can be empty or comma-separated list)
-#       $4 - VHD name (optional, WSL mount name)
+#       $4 - Device name (optional, e.g., sde, sdd)
 # Returns: 0 on success, 1 on failure
 save_vhd_mapping() {
     local path="$1"
     local uuid="$2"
     local mount_points="$3"
-    local vhd_name="${4:-}"
+    local dev_name="${4:-}"
     
     if [[ -z "$path" || -z "$uuid" ]]; then
         log_debug "save_vhd_mapping: path or uuid is empty"
@@ -122,8 +122,8 @@ save_vhd_mapping() {
         return 1
     fi
     
-    if [[ -n "$vhd_name" ]] && ! validate_vhd_name "$vhd_name"; then
-        log_debug "save_vhd_mapping: invalid VHD name format"
+    if [[ -n "$dev_name" ]] && ! validate_device_name "$dev_name"; then
+        log_debug "save_vhd_mapping: invalid device name format"
         return 1
     fi
     
@@ -153,18 +153,18 @@ save_vhd_mapping() {
     fi
     
     # Update JSON with new mapping
-    log_debug "jq --arg path '$normalized' --arg uuid '$uuid' --arg mp '$mount_points' --arg name '$vhd_name' --arg ts '$timestamp' ..."
+    log_debug "jq --arg path '$normalized' --arg uuid '$uuid' --arg mp '$mount_points' --arg dev_name '$dev_name' --arg ts '$timestamp' ..."
     
     if jq --arg path "$normalized" \
           --arg uuid "$uuid" \
           --arg mp "$mount_points" \
-          --arg name "$vhd_name" \
+          --arg dev_name "$dev_name" \
           --arg ts "$timestamp" \
           "$JQ_SAVE_MAPPING" \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
         mv "$temp_file" "$DISK_TRACKING_FILE"
         trap - EXIT INT TERM
-        log_debug "Saved mapping: $normalized → $uuid (name: $vhd_name)"
+        log_debug "Saved mapping: $normalized → $uuid (dev_name: $dev_name)"
         return 0
     else
         rm -f "$temp_file"
@@ -210,19 +210,19 @@ lookup_vhd_uuid() {
     return 1
 }
 
-# Lookup UUID by VHD name from tracking file
-# Args: $1 - VHD name (WSL mount name)
+# Lookup UUID by device name from tracking file
+# Args: $1 - Device name (e.g., sde, sdd)
 # Returns: UUID if found, empty string if not found
 # Exit code: 0 if found, 1 if not found
-lookup_vhd_uuid_by_name() {
-    local vhd_name="$1"
+lookup_vhd_uuid_by_dev_name() {
+    local dev_name="$1"
     
-    if [[ -z "$vhd_name" ]]; then
+    if [[ -z "$dev_name" ]]; then
         return 1
     fi
     
-    # Validate name format for security
-    if ! validate_vhd_name "$vhd_name"; then
+    # Validate device name format for security
+    if ! validate_device_name "$dev_name"; then
         return 1
     fi
     
@@ -232,9 +232,9 @@ lookup_vhd_uuid_by_name() {
         return 1
     fi
     
-    log_debug "jq -r --arg name '$vhd_name' '.mappings[] | select(.name == \$name) | .uuid' $DISK_TRACKING_FILE"
+    log_debug "jq -r --arg dev_name '$dev_name' '.mappings[] | select(.dev_name == \$dev_name) | .uuid' $DISK_TRACKING_FILE"
     
-    local uuid=$(jq -r --arg name "$vhd_name" "$JQ_GET_UUID_BY_NAME" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+    local uuid=$(jq -r --arg dev_name "$dev_name" '.mappings[] | select(.dev_name == $dev_name) | .uuid' "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
     
     if [[ -n "$uuid" && "$uuid" != "null" && "$uuid" != "" ]]; then
         echo "$uuid"
@@ -363,7 +363,7 @@ remove_vhd_mapping() {
 save_detach_history() {
     local path="$1"
     local uuid="$2"
-    local vhd_name="${3:-}"
+    local dev_name="${3:-}"
     
     if [[ -z "$path" || -z "$uuid" ]]; then
         log_debug "save_detach_history: path or uuid is empty"
@@ -402,11 +402,11 @@ save_detach_history() {
     fi
     
     # Add detach event to history (keep last 50 entries)
-    log_debug "Adding detach event to history: $normalized (uuid: $uuid, name: $vhd_name)"
+    log_debug "Adding detach event to history: $normalized (uuid: $uuid, dev_name: $dev_name)"
     
     if jq --arg path "$normalized" \
           --arg uuid "$uuid" \
-          --arg name "$vhd_name" \
+          --arg dev_name "$dev_name" \
           --arg ts "$timestamp" \
           "$JQ_SAVE_DETACH_HISTORY" \
           "$DISK_TRACKING_FILE" > "$temp_file" 2>/dev/null; then
@@ -639,13 +639,14 @@ wsl_attach_vhd() {
 
 # Detach a VHD from WSL
 # Args: $1 - VHD path (Windows path format)
-#       $2 - UUID (optional, not used but kept for compatibility)
+#       $2 - UUID (optional, for history tracking)
+#       $3 - Device name (optional, for history tracking)
 # Returns: 0 on success, 1 on failure
 # Note: WSL unmounts VHDs by their original file path
 wsl_detach_vhd() {
     local vhd_path="$1"
     local uuid="$2"  # UUID for history tracking
-    local vhd_name="$3"  # Optional VHD name for history tracking
+    local dev_name="$3"  # Optional device name for history tracking
     
     if [[ -z "$vhd_path" ]]; then
         log_error "VHD path is required"
@@ -654,7 +655,7 @@ wsl_detach_vhd() {
     
     # Save detach event to history before detaching (if UUID provided)
     if [[ -n "$uuid" ]]; then
-        save_detach_history "$vhd_path" "$uuid" "$vhd_name"
+        save_detach_history "$vhd_path" "$uuid" "$dev_name"
     fi
     
     # WSL unmounts by the VHD file path that was originally used to mount
@@ -851,7 +852,6 @@ wsl_complete_mount() {
     local vhd_path="$1"
     local uuid="$2"
     local mount_point="$3"
-    local vhd_name="${4:-disk}"
     
     if [[ -z "$vhd_path" || -z "$uuid" || -z "$mount_point" ]]; then
         echo "Error: VHD path, UUID, and mount point are required" >&2
@@ -905,15 +905,15 @@ wsl_complete_unmount() {
         fi
     fi
     
-    # Get VHD name from tracking file for history
-    local vhd_name=""
+    # Get device name from tracking file for history
+    local dev_name=""
     if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
         local normalized_path=$(normalize_vhd_path "$vhd_path")
-        vhd_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
+        dev_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_DEV_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
     fi
     
     # Detach from WSL
-    if ! wsl_detach_vhd "$vhd_path" "$uuid" "$vhd_name"; then
+    if ! wsl_detach_vhd "$vhd_path" "$uuid" "$dev_name"; then
         log_warn "Failed to detach VHD before deletion. It may still be attached."
         return 1
     fi
@@ -1060,16 +1060,16 @@ wsl_find_uuid_by_path() {
         fi
     fi
     
-    # Second, try to lookup UUID by name (extract name from tracking file first)
+    # Second, try to lookup UUID by device name (extract dev_name from tracking file first)
     local normalized_path=$(normalize_vhd_path "$vhd_path_win")
-    local tracked_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
-    if [[ -n "$tracked_name" ]]; then
-        local uuid_by_name=$(lookup_vhd_uuid_by_name "$tracked_name")
-        if [[ -n "$uuid_by_name" ]]; then
+    local tracked_dev_name=$(jq -r --arg path "$normalized_path" "$JQ_GET_DEV_NAME_BY_PATH" "$DISK_TRACKING_FILE" 2>/dev/null)
+    if [[ -n "$tracked_dev_name" && "$tracked_dev_name" != "null" ]]; then
+        local uuid_by_dev_name=$(lookup_vhd_uuid_by_dev_name "$tracked_dev_name")
+        if [[ -n "$uuid_by_dev_name" ]]; then
             # Verify the UUID is actually attached
-            if wsl_is_vhd_attached "$uuid_by_name"; then
-                log_debug "Found UUID by name '$tracked_name': $uuid_by_name"
-                echo "$uuid_by_name"
+            if wsl_is_vhd_attached "$uuid_by_dev_name"; then
+                log_debug "Found UUID by dev_name '$tracked_dev_name': $uuid_by_dev_name"
+                echo "$uuid_by_dev_name"
                 return 0
             fi
         fi
@@ -1417,16 +1417,13 @@ wsl_delete_vhd() {
 # Args: $1 - VHD path (Windows path format, e.g., C:/path/to/disk.vhdx)
 #       $2 - Size (e.g., 1G, 500M, 10G)
 #       $3 - Filesystem type (optional, defaults to ext4)
-#       $4 - VHD name for WSL (optional, defaults to "disk")
 # Returns: 0 on success, 1 on failure
 # Prints: The UUID of the newly created and formatted disk
 wsl_create_vhd() {
     local vhd_path_win="$1"
     local size="$2"
     local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
-    local default_name="${DEFAULT_VHD_NAME:-disk}"
     local fs_type="${3:-$default_fs}"
-    local vhd_name="${4:-$default_name}"
     
     if [[ -z "$vhd_path_win" || -z "$size" ]]; then
         log_error "VHD path and size are required"
@@ -1514,8 +1511,8 @@ wsl_create_vhd() {
         return 1
     fi
     
-    # Save mapping to tracking file with VHD name
-    save_vhd_mapping "$vhd_path_win" "$new_uuid" "" "$vhd_name"
+    # Save mapping to tracking file with device name
+    save_vhd_mapping "$vhd_path_win" "$new_uuid" "" "$new_dev"
     
     # Output the UUID
     echo "$new_uuid"
@@ -1554,12 +1551,12 @@ init_resource_cleanup() {
 # Register a VHD for cleanup tracking
 # Args: $1 - VHD path (Windows format)
 #       $2 - UUID (optional, for detach operations)
-#       $3 - VHD name (optional, for detach operations)
+#       $3 - Device name (optional, for detach operations)
 # Returns: 0 on success, 1 on failure
 register_vhd_cleanup() {
     local vhd_path="$1"
     local uuid="${2:-}"
-    local vhd_name="${3:-}"
+    local dev_name="${3:-}"
     
     if [[ -z "$vhd_path" ]]; then
         log_debug "register_vhd_cleanup: vhd_path is empty"
@@ -1579,7 +1576,7 @@ register_vhd_cleanup() {
     fi
     
     # Check if already registered (avoid duplicates)
-    local entry="$vhd_path|$uuid|$vhd_name"
+    local entry="$vhd_path|$uuid|$dev_name"
     for existing in "${CLEANUP_VHDS[@]}"; do
         if [[ "$existing" == "$entry" ]]; then
             log_debug "VHD already registered for cleanup: $vhd_path"
@@ -1589,7 +1586,7 @@ register_vhd_cleanup() {
     
     # Add to cleanup array
     CLEANUP_VHDS+=("$entry")
-    log_debug "Registered VHD for cleanup: $vhd_path (UUID: ${uuid:-<none>}, Name: ${vhd_name:-<none>})"
+    log_debug "Registered VHD for cleanup: $vhd_path (UUID: ${uuid:-<none>}, Device: ${dev_name:-<none>})"
     return 0
 }
 
@@ -1715,8 +1712,8 @@ cleanup_on_exit() {
             continue
         fi
         
-        # Parse entry: "path|uuid|name"
-        IFS='|' read -r vhd_path uuid vhd_name <<< "$entry"
+        # Parse entry: "path|uuid|dev_name"
+        IFS='|' read -r vhd_path uuid dev_name <<< "$entry"
         
         if [[ -z "$vhd_path" ]]; then
             continue
@@ -1734,7 +1731,7 @@ cleanup_on_exit() {
         fi
         
         # Attempt detach (suppress errors - cleanup should be best-effort)
-        wsl_detach_vhd "$vhd_path" "$uuid" "$vhd_name" >/dev/null 2>&1 || true
+        wsl_detach_vhd "$vhd_path" "$uuid" "$dev_name" >/dev/null 2>&1 || true
     done
     
     # Clean up temporary files

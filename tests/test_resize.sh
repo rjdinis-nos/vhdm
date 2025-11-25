@@ -203,7 +203,7 @@ create_test_vhd_with_data() {
     
     # Attach the VHD (create doesn't auto-attach)
     local vhd_name=$(basename ${vhd_path%.vhdx})
-    if ! bash $PARENT_DIR/disk_management.sh -q attach --path "$vhd_path" --name "$vhd_name" >/dev/null 2>&1; then
+    if ! bash $PARENT_DIR/disk_management.sh -q attach --vhd-path "$vhd_path" >/dev/null 2>&1; then
         return 1
     fi
     
@@ -235,7 +235,7 @@ create_test_vhd_with_data() {
     sleep 2
     
     # Mount it
-    bash $PARENT_DIR/disk_management.sh -q mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
+    bash $PARENT_DIR/disk_management.sh -q mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
     if [[ $? -ne 0 ]]; then
         return 1
     fi
@@ -420,7 +420,7 @@ if [[ $TEST_VHD_CREATED -eq 0 ]]; then
         0
     
     run_test "Re-mount resized disk works" \
-        "bash $PARENT_DIR/disk_management.sh -q mount --path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT --name $TEST_VHD_NAME 2>&1" \
+        "bash $PARENT_DIR/disk_management.sh -q mount --vhd-path $TEST_VHD_PATH --mount-point $TEST_MOUNT_POINT 2>&1" \
         0
     
 else

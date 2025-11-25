@@ -58,8 +58,7 @@ export NC='\033[0m'            # No Color (reset)
 # ============================================================================
 # Default values used when command-line options are not provided
 
-# Default VHD name for WSL attachment (used when --name is not specified)
-export DEFAULT_VHD_NAME="${DEFAULT_VHD_NAME:-disk}"
+# Note: VHD name parameter has been removed. Device names (dev_name) are now used for tracking.
 
 # Default VHD size for create command (used when --size is not specified)
 # Format: number followed by unit (K, M, G, T) with optional B
@@ -84,8 +83,7 @@ export MAX_PATH_LENGTH="${MAX_PATH_LENGTH:-4096}"
 # Maximum size string length (e.g., "10GB" = 4 characters)
 export MAX_SIZE_STRING_LENGTH="${MAX_SIZE_STRING_LENGTH:-20}"
 
-# Maximum VHD name length (WSL mount name)
-export MAX_VHD_NAME_LENGTH="${MAX_VHD_NAME_LENGTH:-64}"
+# Note: MAX_VHD_NAME_LENGTH removed - device names are used for tracking instead
 
 # Maximum device name length (e.g., "sda", "sdaa")
 export MAX_DEVICE_NAME_LENGTH="${MAX_DEVICE_NAME_LENGTH:-10}"
@@ -139,18 +137,17 @@ export DEBUG="${DEBUG:-false}"
 # These are stored as strings and used with jq --arg parameters at runtime
 
 # Mapping operations (tracking file)
-export JQ_SAVE_MAPPING='.mappings[$path] = {uuid: $uuid, last_attached: $ts, mount_points: $mp, name: $name}'
+export JQ_SAVE_MAPPING='.mappings[$path] = {uuid: $uuid, last_attached: $ts, mount_points: $mp, dev_name: $dev_name}'
 export JQ_GET_UUID_BY_PATH='.mappings[$path].uuid // empty'
-export JQ_GET_UUID_BY_NAME='.mappings[] | select(.name == $name) | .uuid'
 export JQ_CHECK_MAPPING_EXISTS='.mappings[$path] // empty'
 export JQ_UPDATE_MOUNT_POINTS='.mappings[$path].mount_points = $mp'
 export JQ_DELETE_MAPPING='del(.mappings[$path])'
-export JQ_GET_NAME_BY_PATH='.mappings[$path].name // empty'
+export JQ_GET_DEV_NAME_BY_PATH='.mappings[$path].dev_name // empty'
 export JQ_GET_PATH_BY_UUID='.mappings | to_entries[] | select(.value.uuid == $uuid) | .key'
-export JQ_GET_NAME_BY_UUID='.mappings | to_entries[] | select(.value.uuid == $uuid) | .value.name // empty'
+export JQ_GET_DEV_NAME_BY_UUID='.mappings | to_entries[] | select(.value.uuid == $uuid) | .value.dev_name // empty'
 
 # Detach history operations
-export JQ_SAVE_DETACH_HISTORY='.detach_history = ([{path: $path, uuid: $uuid, name: $name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]'
+export JQ_SAVE_DETACH_HISTORY='.detach_history = ([{path: $path, uuid: $uuid, dev_name: $dev_name, timestamp: $ts}] + (.detach_history // [])) | .detach_history |= .[0:50]'
 export JQ_GET_DETACH_HISTORY='.detach_history // [] | .[0:$limit]'
 export JQ_GET_LAST_DETACH_BY_PATH='.detach_history // [] | map(select(.path == $path)) | .[0] // empty'
 
@@ -166,4 +163,4 @@ export JQ_GET_UUID_BY_MOUNTPOINT='.blockdevices[] | select(.mountpoints != null 
 export JQ_GET_ALL_DEVICE_NAMES='.blockdevices[].name'
 
 # History display operations
-export JQ_FORMAT_HISTORY_ENTRY='.[] | "Path: \(.path)\n" + "UUID: \(.uuid)\n" + (if .name and .name != "" then "Name: \(.name)\n" else "" end) + "Timestamp: \(.timestamp)\n"'
+export JQ_FORMAT_HISTORY_ENTRY='.[] | "Path: \(.path)\n" + "UUID: \(.uuid)\n" + (if .dev_name and .dev_name != "" then "Device: \(.dev_name)\n" else "" end) + "Timestamp: \(.timestamp)\n"'

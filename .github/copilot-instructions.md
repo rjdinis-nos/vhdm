@@ -90,7 +90,6 @@ All user-provided inputs are validated to prevent command injection and path tra
 - `validate_uuid(uuid)` - Validates UUID format (RFC 4122), exactly 36 hexadecimal characters
 - `validate_mount_point(mount_point)` - Validates mount point paths (absolute paths starting with `/`)
 - `validate_device_name(device)` - Validates device names (pattern: `sd[a-z]+`)
-- `validate_vhd_name(name)` - Validates VHD/WSL mount names (alphanumeric with underscores/hyphens)
 - `validate_size_string(size)` - Validates size strings (pattern: `number[K|M|G|T][B]?`)
 - `validate_filesystem_type(fs_type)` - Whitelist validation (ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat)
 - `sanitize_string(input)` - Additional sanitization layer (removes control characters)
@@ -100,7 +99,7 @@ All user-provided inputs are validated to prevent command injection and path tra
 - UUIDs: RFC 4122 format, exactly 36 characters, hexadecimal only
 - Mount points: Absolute paths starting with `/`, reject command injection chars, `..`, control characters, max 4096 chars
 - Device names: Pattern `sd[a-z]+`, max 10 characters
-- VHD names: Alphanumeric with `_` and `-`, max 64 characters, cannot start/end with special chars
+- Device names: Alphanumeric only, typically 3-4 characters (e.g., sde, sdd)
 - Size strings: Pattern `number[K|M|G|T][B]?`, max 20 characters
 - Filesystem types: Whitelist only (ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat)
 
@@ -169,7 +168,7 @@ export LOG_FILE="/var/log/wsl-disk-management.log"
 Always check state before operations to handle idempotent behavior:
 ```bash
 if ! wsl_is_vhd_attached "$uuid"; then
-    wsl_attach_vhd "$path" "$name"
+    wsl_attach_vhd "$path"
 fi
 if ! wsl_is_vhd_mounted "$uuid"; then
     wsl_mount_vhd "$uuid" "$mount_point"
@@ -257,11 +256,11 @@ All operations that attach VHDs or create temporary resources must register them
 init_resource_cleanup
 
 # Register VHD for cleanup when attaching
-register_vhd_cleanup "$vhd_path" "" "$vhd_name"
+register_vhd_cleanup "$vhd_path" "" "$dev_name"
 
 # Update registration with UUID when detected
 unregister_vhd_cleanup "$vhd_path"
-register_vhd_cleanup "$vhd_path" "$uuid" "$vhd_name"
+register_vhd_cleanup "$vhd_path" "$uuid" "$dev_name"
 
 # Unregister when operation completes successfully
 unregister_vhd_cleanup "$vhd_path"
@@ -269,7 +268,7 @@ unregister_vhd_cleanup "$vhd_path"
 
 **Functions:**
 - `init_resource_cleanup()` - Initialize cleanup system with trap handlers (EXIT, INT, TERM)
-- `register_vhd_cleanup(path, uuid, name)` - Register VHD for automatic cleanup
+- `register_vhd_cleanup(path, uuid, dev_name)` - Register VHD for automatic cleanup
 - `unregister_vhd_cleanup(path)` - Unregister VHD from cleanup tracking
 - `register_file_cleanup(path)` - Register temporary file for cleanup
 - `unregister_file_cleanup(path)` - Unregister file from cleanup tracking
@@ -334,7 +333,7 @@ Commands that support UUID discovery:
 **Note:** The `format` command does NOT support UUID discovery. It requires either `--uuid` or `--name` to be explicitly provided.
 
 ### WSL Integration Commands
-- Attach: `wsl.exe --mount --vhd "$path" --bare --name "$name"`
+- Attach: `wsl.exe --mount --vhd "$path" --bare`
 - Detach: `wsl.exe --unmount "$path"`
 - Query: `lsblk -f -J | jq` for JSON-parsed block device info
 - UUID retrieval: `sudo blkid -s UUID -o value`
@@ -390,7 +389,7 @@ sudo lsof +D /mnt/mydisk
 Complete list of all Linux and WSL commands used in the scripts:
 
 **WSL Integration Commands:**
-- `wsl.exe --mount --vhd "$path" --bare --name "$name"` - Attach VHD to WSL
+- `wsl.exe --mount --vhd "$path" --bare` - Attach VHD to WSL
 - `wsl.exe --unmount "$path"` - Detach VHD from WSL
 
 **Block Device Management:**
@@ -640,12 +639,18 @@ bash "$SCRIPT_DIR/update_test_report.sh" \
 3. Primitives: Minimal error handling, single operation
 4. WSL Helpers: Comprehensive error handling, may call primitives
 5. Commands: May orchestrate multiple operations, user-friendly output
-6. **Validate all user inputs** using validation functions from `libs/utils.sh`:
+6. **Use standardized variable names** in command functions (see [Architecture Document](copilot-code-architecture.md#standardized-variable-naming-conventions)):
+   - `vhd_path` for VHD file paths (Windows format)
+   - `uuid` for VHD UUIDs
+   - `mount_point` for mount point paths
+   - `dev_name` for device names (without `/dev/` prefix)
+   - `dev_name` for device names
+7. **Validate all user inputs** using validation functions from `libs/utils.sh`:
    - `validate_windows_path()` for Windows paths
    - `validate_uuid()` for UUIDs
    - `validate_mount_point()` for mount points
    - `validate_device_name()` for device names
-   - `validate_vhd_name()` for VHD names
+   - `validate_device_name()` for device names
    - `validate_size_string()` for size strings
    - `validate_filesystem_type()` for filesystem types
 7. **Use centralized error handling functions** from `libs/utils.sh`:

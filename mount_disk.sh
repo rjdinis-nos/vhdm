@@ -139,14 +139,12 @@ if [[ $discovery_result -ne 0 ]] || [[ -z "$UUID" ]]; then
     log_info "Attaching VHD: $DISK_PATH"
     
     # Generate a name for the attachment
-    VHD_NAME=$(basename "$DISK_PATH" .vhdx)
-    VHD_NAME=$(basename "$VHD_NAME" .vhd)
     
     # Capture state before attach for snapshot-based detection
     local old_uuids=($(wsl_get_disk_uuids))
     
     # Attach the VHD
-    if ! wsl_attach_vhd "$DISK_PATH" "$VHD_NAME" 2>/dev/null; then
+    if ! wsl_attach_vhd "$DISK_PATH" 2>/dev/null; then
         log_info "Note: VHD may already be attached, continuing..."
     fi
     

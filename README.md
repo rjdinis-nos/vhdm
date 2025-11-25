@@ -31,28 +31,27 @@ The system automatically tracks VHD path→UUID associations in a persistent JSO
 - **Fast**: Priority lookup from tracking file before device scanning
 - **Multi-VHD support**: Works with multiple VHDs attached simultaneously
 - **Mount point tracking**: Supports VHDs mounted at multiple locations
-- **Name-based lookup**: Query VHDs by WSL mount name in addition to path
+- **Device name tracking**: Tracks device names (e.g., sde, sdd) for easy reference
 - **Persistent**: Survives reboots and detach/reattach cycles
 
 **Benefits:**
 - No need to remember or specify UUIDs for most operations
-- Use path-based or name-based commands even with multiple VHDs attached
+- Use path-based commands even with multiple VHDs attached
 - Faster UUID discovery (no device scanning required)
 - Automatic cleanup when VHDs are deleted
 - **Automatic resource cleanup**: VHDs are automatically detached on script failure or interruption (Ctrl+C), preventing orphaned attachments
 
 **Usage:**
-Simply use path-based or name-based commands as normal - tracking works automatically:
+Simply use path-based commands as normal - tracking works automatically:
 ```bash
 # Path-based operations
 ./disk_management.sh mount --vhd-path C:/VMs/disk2.vhdx --mount-point /mnt/disk2
 ./disk_management.sh status --vhd-path C:/VMs/disk2.vhdx
 
-# Name-based operations (using WSL mount name)
-./disk_management.sh attach --vhd-path C:/VMs/disk.vhdx --name mydisk
-./disk_management.sh status --name mydisk
+# Attach operation
+./disk_management.sh attach --vhd-path C:/VMs/disk.vhdx
 
-# Unmount works with either
+# Unmount works with path
 ./disk_management.sh umount --vhd-path C:/VMs/disk2.vhdx
 ```
 
@@ -104,7 +103,6 @@ chmod +x disk_management.sh libs/wsl_helpers.sh
 
 **Options:**
 - `--vhd-path PATH` - VHD file path (Windows format, **required**)
-- `--name NAME` - VHD name for WSL attachment [default: disk]
 
 **Description:**
 Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) without mounting it to the filesystem. This is useful when you need the VHD attached for operations but don't need filesystem access yet.
@@ -112,16 +110,13 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Key Features:**
 - Idempotent - safe to run multiple times (detects already-attached VHDs)
 - Automatic UUID detection and reporting
-- Device name identification
+- Device name identification and tracking
 - Supports quiet and debug modes
 
 **Examples:**
 ```bash
 # Basic attach
 ./disk_management.sh attach --vhd-path C:/VMs/disk.vhdx
-
-# Attach with custom name
-./disk_management.sh attach --vhd-path C:/VMs/mydisk.vhdx --name datastore
 
 # Quiet mode for scripts
 ./disk_management.sh -q attach --vhd-path C:/VMs/disk.vhdx
@@ -243,8 +238,7 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 **Options:**
 - `--vhd-path PATH` - Show status for specific VHD path (UUID auto-discovered)
-- `--uuid UUID` - Show status for specific UUID (optional if vhd-path, name, or mount-point provided)
-- `--name NAME` - Show status for specific VHD name (UUID auto-discovered from tracking file)
+- `--uuid UUID` - Show status for specific UUID (optional if vhd-path or mount-point provided)
 - `--mount-point PATH` - Show status for specific mount point (UUID auto-discovered)
 - `--all` - Show all attached VHDs
 
@@ -255,9 +249,6 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 
 # Show status by path (UUID discovered automatically)
 ./disk_management.sh status --vhd-path C:/VMs/disk.vhdx
-
-# Show status by name (UUID discovered from tracking file)
-./disk_management.sh status --name mydisk
 
 # Show status by mount point (UUID discovered automatically)
 ./disk_management.sh status --mount-point /mnt/data
@@ -493,7 +484,6 @@ The library files in `libs/` provide reusable functions that can be sourced in o
 - `validate_uuid(uuid)` - Validates UUID format (RFC 4122)
 - `validate_mount_point(mount_point)` - Validates mount point paths
 - `validate_device_name(device)` - Validates device names (e.g., sdd, sde)
-- `validate_vhd_name(name)` - Validates VHD/WSL mount names
 - `validate_size_string(size)` - Validates size strings (e.g., "5G", "500M")
 - `validate_filesystem_type(fs_type)` - Whitelist validation for filesystem types
 - `sanitize_string(input)` - Additional sanitization layer (defense in depth)
@@ -825,7 +815,6 @@ The validation functions are located in `libs/utils.sh`:
 - `validate_uuid()` - Validates UUID format (RFC 4122)
 - `validate_mount_point()` - Validates mount point paths
 - `validate_device_name()` - Validates device names
-- `validate_vhd_name()` - Validates VHD/WSL mount names
 - `validate_size_string()` - Validates size strings
 - `validate_filesystem_type()` - Whitelist validation for filesystem types
 - `sanitize_string()` - Additional sanitization layer (defense in depth)

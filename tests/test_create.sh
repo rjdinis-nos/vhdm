@@ -284,7 +284,7 @@ sleep 2
 # Note: If multiple VHDs are attached, this test may fail due to UUID discovery ambiguity
 # The attach command should handle already-attached VHDs gracefully
 run_test "Attach created VHD" \
-    "(bash $PARENT_DIR/disk_management.sh attach --path ${TEST_VHD_BASE}_custom.vhdx --name test_custom 2>&1 || bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached') && sleep 2 && bash $PARENT_DIR/disk_management.sh status --path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached'" \
+    "(bash $PARENT_DIR/disk_management.sh attach --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 || bash $PARENT_DIR/disk_management.sh status --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached') && sleep 2 && bash $PARENT_DIR/disk_management.sh status --vhd-path ${TEST_VHD_BASE}_custom.vhdx 2>&1 | grep -iq 'attached'" \
     0
 
 # Cleanup: Remove test VHDs

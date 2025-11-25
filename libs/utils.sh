@@ -169,32 +169,6 @@ validate_device_name() {
 # Args: $1 - VHD name to validate
 # Returns: 0 if valid, 1 if invalid
 # Security: Prevents command injection in WSL mount names
-validate_vhd_name() {
-    local name="$1"
-    
-    if [[ -z "$name" ]]; then
-        return 1
-    fi
-    
-    # VHD name should be alphanumeric with underscores and hyphens
-    # Reject dangerous characters
-    if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
-        return 1
-    fi
-    
-    # Reject if too long
-    local max_length="${MAX_VHD_NAME_LENGTH:-64}"
-    if [[ ${#name} -gt $max_length ]]; then
-        return 1
-    fi
-    
-    # Reject if starts/ends with special characters
-    if [[ "$name" =~ ^[-_] ]] || [[ "$name" =~ [-_]$ ]]; then
-        return 1
-    fi
-    
-    return 0
-}
 
 # Validate size string format
 # Args: $1 - Size string to validate (e.g., "5G", "500M")

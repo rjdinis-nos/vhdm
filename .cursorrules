@@ -68,6 +68,17 @@ WSL does not provide a direct path→UUID mapping after attachment. These approa
 - Exit on errors (exit 1)
 - Comprehensive user-facing error messages
 
+## Standardized Variable Naming Conventions
+
+All command functions in `disk_management.sh` use standardized local variable names:
+- **`vhd_path`**: VHD file path (Windows format)
+- **`uuid`**: VHD filesystem UUID
+- **`mount_point`**: Mount point path
+- **`dev_name`**: Device name (without `/dev/` prefix)
+- **`name`**: VHD name for WSL attachment
+
+This ensures consistency across all functions. See `.github/copilot-code-architecture.md` for details.
+
 ## Key Patterns
 
 ### Persistent Disk Tracking

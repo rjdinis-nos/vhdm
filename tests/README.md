@@ -95,7 +95,6 @@ Tests for the attach command, validating VHD attachment to WSL without filesyste
 **Features tested:**
 - Basic attach with --path option
 - Idempotency (attaching already-attached VHDs)
-- Custom --name parameter
 - Status verification after attach
 - VHD not mounted after attach (block device only)
 - Quiet mode machine-readable output
@@ -197,7 +196,7 @@ cat ./tests/test_report.md   # View the automatically generated test report
 ### test_attach.sh (15 tests)
 1. **Attach with --path** - Tests basic attach operation with path parameter
 2. **Attach idempotency** - Verifies attaching already-attached VHD succeeds gracefully
-3. **Attach with custom --name** - Tests custom VHD name parameter
+3. **Attach VHD** - Tests basic attach operation
 4. **Verify in status** - Confirms attached VHD appears in status output
 5. **Not mounted after attach** - Verifies VHD is NOT mounted to filesystem (block device only)
 6. **Quiet mode** - Tests machine-readable output format

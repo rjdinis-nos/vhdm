@@ -38,7 +38,7 @@ The system is organized into three architectural layers:
 │  - wsl_get_block_devices(), wsl_get_disk_uuids()          │
 │  - validate_windows_path(), validate_uuid()               │
 │  - validate_mount_point(), validate_device_name()         │
-│  - validate_vhd_name(), validate_size_string()           │
+│  - validate_size_string()                                │
 │  - validate_filesystem_type(), sanitize_string()          │
 └─────────────────────────────────────────────────────────────┘
                             │
@@ -77,7 +77,7 @@ WSL does not provide a direct path→UUID mapping after attachment. This creates
 
 ✅ **SAFE - Deterministic Methods (in priority order):**
 1. **Persistent tracking file by path**: `lookup_vhd_uuid()` checks `~/.config/wsl-disk-management/vhd_mapping.json` first (FASTEST)
-2. **Persistent tracking file by name**: `lookup_vhd_uuid_by_name()` queries by WSL mount name
+2. **Persistent tracking file by device name**: `lookup_vhd_uuid_by_dev_name()` queries by device name
 3. **UUID from mount point**: `findmnt` or `lsblk` lookup of mounted filesystem
 4. **Snapshot-based detection during attach/create**: Compare before/after disk lists immediately after WSL attach operation
 5. **Explicit user-provided UUID**: User specifies `--uuid` parameter
@@ -138,9 +138,9 @@ All tests involving UUID discovery must:
 
 | Function | Arguments | Responsibility | Orchestrates | Single Operation? |
 |----------|-----------|---------------|--------------|-------------------|
-| `attach_vhd()` | `--path`, `--name` (optional) | Attach VHD to WSL as block device | No | ✅ Yes - only attaches |
-| `format_vhd_command()` | `--name` OR `--uuid`, `--type` (optional) | Format attached VHD with filesystem | No | ✅ Yes - only formats |
-| `mount_vhd()` | `--path`, `--mount-point`, `--name` (optional) | Complete mount workflow: attach + mount | Yes | ❌ No - orchestration |
+| `attach_vhd()` | `--vhd-path` | Attach VHD to WSL as block device | No | ✅ Yes - only attaches |
+| `format_vhd_command()` | `--dev-name` OR `--uuid`, `--type` (optional) | Format attached VHD with filesystem | No | ✅ Yes - only formats |
+| `mount_vhd()` | `--vhd-path`, `--mount-point` | Complete mount workflow: attach + mount | Yes | ❌ No - orchestration |
 | `umount_vhd()` | `--path` OR `--uuid` OR `--mount-point` | Complete unmount workflow: unmount + detach | Yes | ❌ No - orchestration |
 | `detach_vhd()` | `--uuid`, `--path` (optional) | Complete detach workflow: unmount if needed + detach | Yes | ❌ No - orchestration |
 | `status_vhd()` | `--path` OR `--uuid` OR `--mount-point` OR `--all` | Display VHD status information | No | ✅ Yes - query only |
@@ -152,7 +152,7 @@ All tests involving UUID discovery must:
 
 | Function | Arguments | Responsibility | Calls Primitives | Error Handling |
 |----------|-----------|---------------|------------------|----------------|
-| `wsl_attach_vhd()` | `$1: path`, `$2: name` (default: "disk") | Call wsl.exe to attach VHD | No | Minimal |
+| `wsl_attach_vhd()` | `$1: path` | Call wsl.exe to attach VHD | No | Minimal |
 | `wsl_detach_vhd()` | `$1: path`, `$2: uuid` (optional) | Call wsl.exe to detach VHD | No | Timeout handling |
 | `wsl_mount_vhd()` | `$1: uuid`, `$2: mount_point` | Mount VHD by UUID | Yes: `create_mount_point()`, `mount_filesystem()` | Comprehensive |
 | `wsl_umount_vhd()` | `$1: mount_point` | Unmount VHD with diagnostics | Yes: `umount_filesystem()` | Comprehensive (lsof) |
@@ -165,7 +165,7 @@ All tests involving UUID discovery must:
 | `wsl_count_dynamic_vhds()` | None | Count non-system disks attached | No | None (query only) |
 | `wsl_find_dynamic_vhd_uuid()` | None | **UNSAFE** Find first non-system disk UUID - only use when count==1 | No | None (query only) |
 | `format_vhd()` | `$1: device`, `$2: fs_type` (default: "ext4") | Format device with filesystem | No | Minimal |
-| `wsl_create_vhd()` | `$1: path`, `$2: size`, `$3: fs_type` (default: "ext4"), `$4: name` (default: "disk") | Create, attach, and format VHD | Yes: `wsl_attach_vhd()`, `format_vhd()` | Comprehensive |
+| `wsl_create_vhd()` | `$1: path`, `$2: size`, `$3: fs_type` (default: "ext4") | Create, attach, and format VHD | Yes: `wsl_attach_vhd()`, `format_vhd()` | Comprehensive |
 | `wsl_delete_vhd()` | `$1: path` (Windows format) | Delete VHD file | No | Minimal |
 | `wsl_get_block_devices()` | None | List all block devices | No | None (query only) |
 | `wsl_get_disk_uuids()` | None | List all disk UUIDs | No | None (query only) |
@@ -190,7 +190,6 @@ All tests involving UUID discovery must:
 | `validate_uuid()` | `$1: uuid` | Validate UUID format (RFC 4122) | utils.sh | Input validation (security) |
 | `validate_mount_point()` | `$1: mount_point` | Validate mount point path | utils.sh | Input validation (security) |
 | `validate_device_name()` | `$1: device` | Validate device name pattern | utils.sh | Input validation (security) |
-| `validate_vhd_name()` | `$1: name` | Validate VHD/WSL mount name | utils.sh | Input validation (security) |
 | `validate_size_string()` | `$1: size` | Validate size string format | utils.sh | Input validation (security) |
 | `validate_filesystem_type()` | `$1: fs_type` | Whitelist validation for filesystem types | utils.sh | Input validation (security) |
 | `sanitize_string()` | `$1: input` | Remove control characters (defense in depth) | utils.sh | Input sanitization (security) |
@@ -202,7 +201,7 @@ All tests involving UUID discovery must:
 | `print_section_header()` | `$1: title` (optional) | Print standardized section header with separator lines | utils.sh | Output formatting |
 | `debug_cmd()` | `$@: command and args` | Wrapper to log and execute commands in debug mode | wsl_helpers.sh | Debug support (uses log_debug) |
 | `init_resource_cleanup()` | None | Initialize resource cleanup system with trap handlers | utils.sh | Resource management |
-| `register_vhd_cleanup()` | `$1: path, $2: uuid, $3: name` | Register VHD for automatic cleanup | utils.sh | Resource management |
+| `register_vhd_cleanup()` | `$1: path, $2: uuid, $3: dev_name` | Register VHD for automatic cleanup | utils.sh | Resource management |
 | `unregister_vhd_cleanup()` | `$1: path` | Unregister VHD from cleanup tracking | utils.sh | Resource management |
 | `register_file_cleanup()` | `$1: file_path` | Register temporary file for cleanup | utils.sh | Resource management |
 | `unregister_file_cleanup()` | `$1: file_path` | Unregister file from cleanup tracking | utils.sh | Resource management |
@@ -449,10 +448,10 @@ if [[ -n "$uuid" ]]; then
 fi
 
 # Second, try lookup by name (extract name from tracking file first)
-local tracked_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
-if [[ -n "$tracked_name" ]]; then
-    local uuid_by_name=$(lookup_vhd_uuid_by_name "$tracked_name")
-    if [[ -n "$uuid_by_name" ]] && wsl_is_vhd_attached "$uuid_by_name"; then
+local tracked_dev_name=$(jq -r --arg path "$normalized_path" '.mappings[$path].dev_name // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+    if [[ -n "$tracked_dev_name" && "$tracked_dev_name" != "null" ]]; then
+        local uuid_by_dev_name=$(lookup_vhd_uuid_by_dev_name "$tracked_dev_name")
+        if [[ -n "$uuid_by_dev_name" ]] && wsl_is_vhd_attached "$uuid_by_dev_name"; then
         echo "$uuid_by_name"
         return 0
     fi
@@ -464,7 +463,7 @@ fi
 **Purpose**: Fast, deterministic UUID lookup without device scanning. Automatically handles multi-VHD scenarios with path and name-based discovery.
 
 **Operations that save/update tracking:**
-- `attach_vhd()` - Saves path→UUID + name after successful attach
+- `attach_vhd()` - Saves path→UUID + dev_name after successful attach
 - `mount_vhd()` - Updates mount_points after mount
 - `umount_vhd()` - Clears mount_points after unmount
 - `detach_vhd()` - Clears mount_points when detaching
@@ -529,7 +528,7 @@ Used in: All operation functions
 
 ```bash
 if ! wsl_is_vhd_attached "$uuid"; then
-    wsl_attach_vhd "$path" "$name"
+    wsl_attach_vhd "$path"
 fi
 
 if ! wsl_is_vhd_mounted "$uuid"; then
@@ -662,7 +661,6 @@ fi
 - `validate_uuid()` - RFC 4122 format, exactly 36 hexadecimal characters
 - `validate_mount_point()` - Absolute paths starting with `/`, rejects dangerous patterns
 - `validate_device_name()` - Pattern `sd[a-z]+`, max 10 characters
-- `validate_vhd_name()` - Alphanumeric with `_` and `-`, max 64 characters
 - `validate_size_string()` - Pattern `number[K|M|G|T][B]?`, max 20 characters
 - `validate_filesystem_type()` - Whitelist: ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat
 - `sanitize_string()` - Removes control characters (defense in depth)
@@ -738,11 +736,11 @@ Used in: All operations that attach VHDs or create temporary resources that need
 init_resource_cleanup
 
 # Register VHD for cleanup when attaching
-register_vhd_cleanup "$vhd_path" "" "$vhd_name"
+register_vhd_cleanup "$vhd_path" "" "$dev_name"
 
 # Update registration with UUID when detected
 unregister_vhd_cleanup "$vhd_path"
-register_vhd_cleanup "$vhd_path" "$uuid" "$vhd_name"
+register_vhd_cleanup "$vhd_path" "$uuid" "$dev_name"
 
 # Unregister when operation completes successfully
 unregister_vhd_cleanup "$vhd_path"
@@ -756,7 +754,7 @@ unregister_vhd_cleanup "$vhd_path"
 
 **Key Components** (in `libs/utils.sh`):
 - `init_resource_cleanup()` - Initializes cleanup system with trap handlers
-- `register_vhd_cleanup(path, uuid, name)` - Registers VHD for automatic cleanup
+- `register_vhd_cleanup(path, uuid, dev_name)` - Registers VHD for automatic cleanup
 - `unregister_vhd_cleanup(path)` - Unregisters VHD when operation succeeds
 - `register_file_cleanup(path)` - Registers temporary files for cleanup
 - `unregister_file_cleanup(path)` - Unregisters files when no longer needed
@@ -785,21 +783,21 @@ unregister_vhd_cleanup "$vhd_path"
 **Example Flow**:
 ```bash
 # In mount_vhd() function
-if wsl_attach_vhd "$mount_path" "$mount_name"; then
+if wsl_attach_vhd "$mount_path"; then
     # Register immediately after successful attach
-    register_vhd_cleanup "$mount_path" "" "$mount_name"
+    register_vhd_cleanup "$vhd_path" "" "$dev_name"
     
     # ... detect UUID ...
     
     # Update registration with UUID
-    unregister_vhd_cleanup "$mount_path"
-    register_vhd_cleanup "$mount_path" "$mount_uuid" "$mount_name"
+    unregister_vhd_cleanup "$vhd_path"
+    register_vhd_cleanup "$vhd_path" "$uuid" "$dev_name"
     
     # ... mount operation ...
     
-    if wsl_mount_vhd "$mount_uuid" "$mount_point"; then
+    if wsl_mount_vhd "$uuid" "$mount_point"; then
         # Unregister on success - operation completed, no cleanup needed
-        unregister_vhd_cleanup "$mount_path"
+        unregister_vhd_cleanup "$vhd_path"
     fi
 fi
 ```
@@ -881,6 +879,48 @@ fi
 - Detailed suggestions for fixes using optional help text parameter
 - State validation before operations
 - Use structured logging functions for all output
+- **Use standardized variable names** (see Standardized Variable Naming Conventions below)
+
+## Standardized Variable Naming Conventions
+
+All command functions in `disk_management.sh` use standardized local variable names for consistency and maintainability:
+
+### Core Variables
+
+- **`vhd_path`**: VHD file path in Windows format (e.g., `C:/VMs/disk.vhdx`)
+  - Used in: `attach_vhd()`, `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `create_vhd()`, `show_status()`
+  - Previously used function-specific names: `attach_path`, `detach_path`, `delete_path`, `create_path`, `umount_path`, `status_path`
+
+- **`uuid`**: VHD filesystem UUID (e.g., `57fd0f3a-4077-44b8-91ba-5abdee575293`)
+  - Used in: `attach_vhd()`, `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `format_vhd_command()`, `show_status()`
+  - Previously used function-specific names: `attach_uuid`, `detach_uuid`, `mount_uuid`, `umount_uuid`, `delete_uuid`, `format_uuid`, `status_uuid`
+
+- **`mount_point`**: Mount point path (e.g., `/mnt/data`)
+  - Used in: `mount_vhd()`, `umount_vhd()`, `show_status()`, `resize_vhd()`
+  - Previously used function-specific names: `umount_point`, `status_mount_point`
+  - Note: `resize_vhd()` uses `target_mount_point` and `temp_mount_point` for clarity (intentionally different)
+
+- **`dev_name`**: Device name without `/dev/` prefix (e.g., `sde`, `sdd`)
+  - Used in: `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `format_vhd_command()`
+  - Previously used function-specific names: `detected_dev_name`, `format_name`, `umount_dev_name`, `detach_dev_name`
+
+- **`dev_name`**: Device name for tracking (e.g., `sde`, `sdd`)
+  - Used in: `attach_vhd()`, `show_status()`, `umount_vhd()`, `detach_vhd()`
+  - Previously used function-specific names: `attach_name`, `status_name`, `umount_name`, `detach_name`
+
+### Benefits of Standardization
+
+1. **Consistency**: All functions use the same variable names for the same concepts
+2. **Maintainability**: Easier to understand and modify code across functions
+3. **Reduced Errors**: Less confusion when copying code patterns between functions
+4. **Code Clarity**: Variable names immediately convey their purpose
+
+### Implementation Notes
+
+- All command functions parse arguments into these standardized local variables
+- Helper functions may use different variable names as appropriate for their scope
+- Temporary variables (e.g., `vhd_path_wsl`, `found_path`) are allowed for intermediate conversions
+- Function-specific variables are acceptable when they represent unique concepts (e.g., `target_mount_point` vs `temp_mount_point` in `resize_vhd()`)
 - **Always use `error_exit()` instead of `return 1` or direct `exit 1`**
 
 ### Centralized Error Handling Functions

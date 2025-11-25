@@ -68,13 +68,13 @@ get_vhd_uuid() {
     local mount_point="${3:-/tmp/test_attach_mount}"
     
     # Create VHD if it doesn't exist
-    if ! bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" >/dev/null 2>&1; then
-        bash "$PARENT_DIR/disk_management.sh" create --path "$vhd_path" --size 100M >/dev/null 2>&1
+    if ! bash "$PARENT_DIR/disk_management.sh" -q status --vhd-path "$vhd_path" >/dev/null 2>&1; then
+        bash "$PARENT_DIR/disk_management.sh" create --vhd-path "$vhd_path" --size 100M >/dev/null 2>&1
         # Attach the newly created VHD
-        bash "$PARENT_DIR/disk_management.sh" attach --path "$vhd_path" --name "$vhd_name" >/dev/null 2>&1
+        bash "$PARENT_DIR/disk_management.sh" attach --vhd-path "$vhd_path" >/dev/null 2>&1
         sleep 1
         # Get UUID after attach (using status command)
-        local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+        local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --vhd-path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
         # Format the VHD using UUID (deterministic approach, no heuristics)
         if [[ -n "$uuid" ]]; then
             echo "yes" | bash "$PARENT_DIR/disk_management.sh" format --uuid "$uuid" --type ext4 >/dev/null 2>&1
@@ -82,12 +82,12 @@ get_vhd_uuid() {
     fi
     
     # Ensure VHD is attached and mounted
-    bash "$PARENT_DIR/disk_management.sh" mount --path "$vhd_path" --mount-point "$mount_point" --name "$vhd_name" >/dev/null 2>&1
+    bash "$PARENT_DIR/disk_management.sh" mount --vhd-path "$vhd_path" --mount-point "$mount_point" >/dev/null 2>&1
     # Give system time to update
     sleep 1
     # Get UUID using quiet mode status by path (more reliable)
     # Extract only the UUID (format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
-    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
+    local uuid=$(bash "$PARENT_DIR/disk_management.sh" -q status --vhd-path "$vhd_path" 2>&1 | grep -oP '[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}' | head -1)
     echo "$uuid"
 }
 
@@ -214,8 +214,8 @@ run_test "Attach already-attached VHD (idempotency)" \
     0
 
 # Test 3: Attach with custom name
-run_test "Attach VHD with custom --name" \
-    "$PARENT_DIR/disk_management.sh detach --uuid \"$VHD_UUID\" --path \"$TEST_VHD_PATH\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --path \"$TEST_VHD_PATH\" --name testdisk 2>&1 | grep -q 'attached'" \
+run_test "Attach VHD" \
+    "$PARENT_DIR/disk_management.sh detach --uuid \"$VHD_UUID\" --vhd-path \"$TEST_VHD_PATH\" >/dev/null 2>&1; $PARENT_DIR/disk_management.sh attach --vhd-path \"$TEST_VHD_PATH\" 2>&1 | grep -q 'attached'" \
     0
 
 # Test 4: Verify VHD appears in status after attach

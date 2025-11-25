@@ -189,7 +189,7 @@ if [[ "$VERBOSE" == "true" ]]; then
     echo "Creating test VHD for test 1..."
 fi
 bash "$PARENT_DIR/disk_management.sh" -q create --path "${TEST_VHD_BASE}_1.vhdx" --size 100M >/dev/null 2>&1
-bash "$PARENT_DIR/disk_management.sh" -q attach --path "${TEST_VHD_BASE}_1.vhdx" --name test_delete_1 >/dev/null 2>&1
+bash "$PARENT_DIR/disk_management.sh" -q attach --vhd-path "${TEST_VHD_BASE}_1.vhdx" >/dev/null 2>&1
 
 run_test "Attempt to delete attached VHD (should fail)" \
     "bash $PARENT_DIR/disk_management.sh delete --path ${TEST_VHD_BASE}_1.vhdx --force 2>&1" \
