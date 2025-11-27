@@ -353,7 +353,7 @@ Suggestions:
     if [[ -n "$vhd_path" ]]; then
         log_info "  Path: $vhd_path"
     else
-        log_info "  Path: Unknown (use --path to query by path)"
+        log_info "  Path: Unknown (use --vhd-path to query by path)"
     fi
     [[ -n "$uuid" ]] && log_info "  UUID: $uuid"
     [[ -n "$mount_point" ]] && log_info "  Mount Point: $mount_point"
@@ -986,7 +986,7 @@ To find device name or UUID, run: $0 status --all"
         log_info "The VHD path is required to detach from WSL."
         log_info ""
         log_info "To fully detach the VHD, run:"
-        log_info "  $0 detach --path <VHD_PATH>"
+        log_info "  $0 detach --vhd-path <VHD_PATH>"
     fi
 
     log_info ""
@@ -1738,7 +1738,7 @@ create_vhd() {
     log_info "The VHD file has been created but is not attached or formatted."
     log_info "To use it, you need to:"
     log_info "  1. Attach the VHD:"
-    log_info "     $0 attach --path $vhd_path --name <name>"
+    log_info "     $0 attach --vhd-path $vhd_path"
     log_info "  2. Format the VHD:"
     log_info "     $0 format --dev-name <device_name> --type ext4"
     log_info "  3. Mount the formatted VHD:"
@@ -2035,8 +2035,14 @@ Aborting resize operation"
     # Rename target VHD to backup
     local target_vhd_path_wsl
     target_vhd_path_wsl=$(wsl_convert_path "$target_vhd_path")
-    local backup_vhd_path_wsl="${target_vhd_path_wsl%.vhdx}_bkp.vhdx"
-    local backup_vhd_path_wsl="${backup_vhd_path_wsl%.vhd}_bkp.vhd"
+    local backup_vhd_path_wsl
+    if [[ "$target_vhd_path_wsl" == *.vhdx ]]; then
+        backup_vhd_path_wsl="${target_vhd_path_wsl%.vhdx}_bkp.vhdx"
+    elif [[ "$target_vhd_path_wsl" == *.vhd ]]; then
+        backup_vhd_path_wsl="${target_vhd_path_wsl%.vhd}_bkp.vhd"
+    else
+        backup_vhd_path_wsl="${target_vhd_path_wsl}_bkp"
+    fi
     
     log_info "Renaming target VHD to backup..."
     if [[ "$DEBUG" == "true" ]]; then
@@ -2113,6 +2119,15 @@ Aborting resize operation"
     # Mount the resized VHD
     if wsl_mount_vhd "$final_uuid" "$target_mount_point"; then
         log_success "Resized VHD mounted"
+        
+        # Update tracking file: remove temp path mapping and save final path mapping
+        # The temp VHD was renamed to target path, so we need to:
+        # 1. Remove the old temp path mapping (new_vhd_path)
+        # 2. Save the target path mapping with the new UUID
+        if [[ "$new_vhd_path" != "$target_vhd_path" ]]; then
+            tracking_file_remove_mapping "$new_vhd_path" 2>/dev/null || true
+        fi
+        tracking_file_save_mapping "$target_vhd_path" "$final_uuid" "$target_mount_point" "$final_dev_name"
         
         # Clean up detach history for this path since disk is now attached
         tracking_file_remove_detach_history "$target_vhd_path"
@@ -2444,6 +2459,7 @@ attach_vhd() {
     # Try to attach the VHD (will succeed if not attached, fail silently if already attached)
     local uuid=""
     local dev_name=""
+    local script_name="${0##*/}"
     
     if wsl_attach_vhd "$vhd_path" 2>/dev/null; then
         # Register VHD for cleanup (will be unregistered on successful completion)
@@ -2495,7 +2511,7 @@ attach_vhd() {
             # Device detection failed
             log_warn "Warning: Could not automatically detect device"
             log_info "  The VHD was attached successfully but device detection failed."
-            log_info "  You can find the device using: ./vhdm.sh status --all"
+            log_info "  You can find the device using: ./${script_name} status --all"
         fi
     else
         # Attachment failed - VHD might already be attached

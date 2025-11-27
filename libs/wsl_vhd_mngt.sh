@@ -324,7 +324,7 @@ mount_filesystem() {
         if ! safe_sudo chmod 755 "$mount_point" >/dev/null 2>&1; then
             log_error "Failed to set permissions on $mount_point"
             return 1
-        else if ! safe_sudo chown "$USER:$USER" "$mount_point" >/dev/null 2>&1; then
+        elif ! safe_sudo chown "$USER:$USER" "$mount_point" >/dev/null 2>&1; then
             log_error "Failed to set owner on $mount_point"
             return 1
         else
