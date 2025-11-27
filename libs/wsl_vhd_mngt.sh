@@ -321,7 +321,15 @@ mount_filesystem() {
     
     # Use safe_sudo wrapper for mount operation
     if safe_sudo mount UUID="$uuid" "$mount_point" >/dev/null 2>&1; then
-        return 0
+        if ! safe_sudo chmod 755 "$mount_point" >/dev/null 2>&1; then
+            log_error "Failed to set permissions on $mount_point"
+            return 1
+        else if ! safe_sudo chown "$USER:$USER" "$mount_point" >/dev/null 2>&1; then
+            log_error "Failed to set owner on $mount_point"
+            return 1
+        else
+            return 0
+        fi
     else
         log_error "Failed to mount filesystem UUID=$uuid to $mount_point"
         return 1
@@ -701,7 +709,7 @@ handle_uuid_discovery_result() {
         local multi_vhd_help="Multiple VHDs are attached. Use one of:
   1. View all attached VHDs: $script_name status --all
   2. Detach other VHDs first, then retry
-  3. Use explicit UUID if known: $script_name $context --path $path --uuid <UUID>"
+  3. Use explicit UUID if known: $script_name $context --vhd-path $path --uuid <UUID>"
         
         if [[ "$QUIET" == "true" ]]; then
             echo "ambiguous: multiple VHDs"
