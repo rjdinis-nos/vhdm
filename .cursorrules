@@ -89,12 +89,14 @@ This ensures consistency across all functions. See `.github/copilot-code-archite
 ## Key Patterns
 
 ### Persistent Disk Tracking
-- Location: `~/.config/wsl-disk-management/vhd_mapping.json`
+- Location: `~/.config/vhdm/vhd_tracking.json`
 - Tracks VHD path→UUID→mount_points associations
+- **Mappings = attached VHDs only**: When VHD is detached, mapping is removed (moved to detach_history)
 - Windows paths normalized to lowercase with forward slashes for case-insensitive matching
 - Tracking file checked FIRST before falling back to device discovery
-- Operations that save/update tracking: `attach_vhd()`, `mount_vhd()`, `umount_vhd()`, `detach_vhd()`, `delete_vhd()`, `wsl_create_vhd()`, `resize_vhd()`
-- Detach history management: `attach_vhd()`, `mount_vhd()`, `resize_vhd()` remove detach history entries; `detach_vhd()` adds detach history entries
+- Operations that save/update tracking: `attach_vhd()`, `mount_vhd()`, `create_vhd()` (with --format), `wsl_create_vhd()`, `resize_vhd()`
+- Operations that remove mappings: `detach_vhd()`, `umount_vhd()` (when detaching), `delete_vhd()`, `create_vhd()` (with --format, after detach)
+- Detach history management: `attach_vhd()`, `mount_vhd()`, `resize_vhd()` remove detach history entries; `detach_vhd()`, `umount_vhd()` (when detaching), `create_vhd()` (with --format) add detach history entries
 
 **Standardized Tracking File Function Naming:**
 All tracking file management functions follow the pattern `tracking_file_<action>_<what>()`:
@@ -263,9 +265,10 @@ unregister_vhd_cleanup "$vhd_path"
 - Checks if mounted, unmounts first if necessary
 - Requires `--path` for WSL detach operation
 
-**Create** - Single operation: Only creates VHD file
-- Does NOT auto-attach or format (separation of concerns)
-- Does NOT accept `--name` parameter (only `--path`, `--size`, `--force`)
+**Create** - Single operation or orchestration (with `--format`)
+- Without `--format`: Only creates VHD file (separation of concerns)
+- With `--format TYPE`: Creates, attaches, and formats VHD in one command
+- Accepts `--vhd-path`, `--size`, `--format`, `--force` parameters
 
 **Delete** - Single operation: Only deletes VHD file
 - Requires VHD to be detached first (safety check)
@@ -289,6 +292,7 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 - Detach: `wsl.exe --unmount "$path"`
 - Query: `lsblk -f -J | jq` for JSON-parsed block device info
 - UUID retrieval: `sudo blkid -s UUID -o value`
+- Interop check: `wsl_ensure_interop()` called automatically before wsl.exe commands
 
 ### Error Handling Strategy
 - **Primitives**: Return 0 on success, 1 on failure. Minimal error messages.
@@ -315,6 +319,7 @@ VHDs are identified primarily by **UUID**, not device names (/dev/sdX), because:
 9. **Flag exports**: QUIET and DEBUG flags must be exported at script initialization for child script access
 10. **Configuration variables**: Use `SLEEP_AFTER_ATTACH` (default: 2) and `DETACH_TIMEOUT` (default: 30) instead of hardcoded values
 11. **Error handling**: Command functions must use `error_exit()`, not direct `exit 1` or `return 1`
+12. **WSL interop**: Functions calling `wsl.exe` must call `wsl_ensure_interop()` first to ensure Windows executables can be run. This is already integrated into `wsl_attach_vhd()` and `wsl_detach_vhd()`.
 
 ## Testing
 

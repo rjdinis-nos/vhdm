@@ -23,7 +23,7 @@ A directory containing test scripts for validating functionality. See [tests/REA
 
 The system automatically tracks VHD path→UUID associations in a persistent JSON file, enabling seamless multi-VHD operations:
 
-- **Location**: `~/.config/wsl-disk-management/vhd_mapping.json`
+- **Location**: `~/.config/vhdm/vhd_tracking.json`
 - **Automatic**: No manual configuration needed - tracking happens in the background
 - **Fast**: Priority lookup from tracking file before device scanning
 - **Multi-VHD support**: Works with multiple VHDs attached simultaneously
@@ -281,25 +281,31 @@ Attaches a VHD to WSL, making it available as a block device (e.g., `/dev/sdX`) 
 **Options:**
 - `--vhd-path PATH` - VHD file path (Windows format, **required**)
 - `--size SIZE` - VHD size (e.g., 1G, 500M, 10G) [default: 1G]
+- `--format TYPE` - Format VHD with filesystem after creation (ext4, ext3, xfs, etc.) [optional]
 - `--force` - Overwrite existing VHD (auto-unmounts if attached, prompts for confirmation)
 
-**Note:** Creates VHD file only. Use 'attach' or 'mount' commands to attach and use the disk.
+**Note:** Without `--format`, creates VHD file only. With `--format`, also attaches and formats the disk.
 
 **Examples:**
 ```bash
-# Create 1GB VHD with defaults
+# Create 1GB VHD with defaults (unformatted)
 ./vhdm.sh create --vhd-path C:/VMs/newdisk.vhdx
 
-# Create 5GB VHD
+# Create 5GB VHD (unformatted)
 ./vhdm.sh create --vhd-path C:/VMs/bigdisk.vhdx --size 5G
 
-# Create VHD with force flag
+# Create and format with ext4 filesystem in one command
+./vhdm.sh create --vhd-path C:/VMs/data.vhdx --size 5G --format ext4
+
+# Create and format with xfs filesystem
+./vhdm.sh create --vhd-path C:/VMs/data.vhdx --size 10G --format xfs
+
+# Create VHD with force flag (overwrite existing)
 ./vhdm.sh create --vhd-path C:/VMs/data.vhdx --size 10G --force
 
-# Create and immediately use (requires manual mount after creation)
-./vhdm.sh create --vhd-path C:/VMs/test.vhdx --size 2G
-# Note: After creation, the VHD is attached but not mounted
-# To mount: sudo mkdir -p /mnt/test && sudo mount UUID=<reported-uuid> /mnt/test
+# After creating with --format, the VHD is attached and ready to mount:
+./vhdm.sh create --vhd-path C:/VMs/test.vhdx --size 2G --format ext4
+./vhdm.sh mount --vhd-path C:/VMs/test.vhdx --mount-point /mnt/test
 ```
 
 ---
@@ -436,6 +442,11 @@ The library files in `libs/` provide reusable functions that can be sourced in o
 - `wsl_find_uuid_by_mountpoint MOUNT_POINT` - Find UUID by mount point
 - `wsl_find_dynamic_vhd_uuid` - Find first non-system disk UUID
 - `wsl_create_vhd PATH SIZE [FS_TYPE] [NAME]` - Create and format new VHD
+
+#### WSL Interop Functions
+- `wsl_is_interop_enabled` - Check if WSL interop is enabled
+- `wsl_enable_interop` - Enable WSL interop by registering binfmt_misc entry
+- `wsl_ensure_interop` - Ensure interop is enabled before running Windows commands (called automatically by `wsl_attach_vhd` and `wsl_detach_vhd`)
 
 #### Tracking File Management Functions
 All tracking file operations follow the standardized naming pattern `tracking_file_<action>_<what>()`:
@@ -712,7 +723,7 @@ VHD_NAME="disk"                          # Default VHD name
 ### Persistent VHD Tracking
 
 VHD path→UUID associations are automatically tracked in:
-- **Location**: `~/.config/wsl-disk-management/vhd_mapping.json`
+- **Location**: `~/.config/vhdm/vhd_tracking.json`
 - **Created automatically** on first use
 - **No manual configuration needed**
 
@@ -839,6 +850,8 @@ When validation fails, the scripts provide clear error messages with format exam
 
 6. **WSL Integration**: These scripts use `wsl.exe` commands to interact with Windows, ensuring proper integration
 
+7. **WSL Interop**: The scripts automatically check and enable WSL interop (ability to run Windows executables) before running `wsl.exe` commands. If interop gets disabled, operations will auto-enable it.
+
 ---
 
 ## Troubleshooting
@@ -866,6 +879,14 @@ sudo pacman -Sy qemu-img
 # Ubuntu/Debian
 sudo apt install qemu-utils
 ```
+
+### Error: "WSL interop is not enabled"
+If WSL interop is disabled, the scripts will automatically attempt to enable it. If automatic enabling fails, you can manually enable it:
+```bash
+sudo sh -c 'echo ":WSLInterop:M::MZ::/init:PF" > /proc/sys/fs/binfmt_misc/register'
+```
+
+This registers the WSL interop handler that allows running Windows executables (like `wsl.exe`) from within WSL.
 
 ---
 

@@ -94,8 +94,10 @@ show_usage() {
     echo "  --vhd-path PATH           - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
     local default_size="${DEFAULT_VHD_SIZE:-1G}"
     echo "  --size SIZE              - [optional] VHD size (e.g., 1G, 500M, 10G) [default: $default_size]"
+    local default_fs="${DEFAULT_FILESYSTEM_TYPE:-ext4}"
+    echo "  --format TYPE            - [optional] Format VHD with filesystem after creation (ext4, ext3, xfs, etc.)"
     echo "  --force                  - [optional] Overwrite existing VHD (auto-unmounts if attached, prompts for confirmation)"
-    echo "  Note: Creates VHD file only. Use 'attach' or 'mount' commands to attach and use the disk."
+    echo "  Note: Without --format, creates VHD file only. With --format, also attaches and formats the disk."
     echo
     echo "Delete Command Options:"
     echo "  --vhd-path PATH           - [mandatory] VHD file path (Windows format, UUID will be discovered)"
@@ -129,6 +131,7 @@ show_usage() {
     echo "  $0 status --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 status --all"
     echo "  $0 create --vhd-path C:/VMs/disk.vhdx --size 5G"
+    echo "  $0 create --vhd-path C:/VMs/disk.vhdx --size 5G --format ext4"
     echo "  $0 delete --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 delete --vhd-path C:/VMs/disk.vhdx --force"
     echo "  $0 resize --mount-point /mnt/data --size 10G"
@@ -978,6 +981,9 @@ To find device name or UUID, run: $0 status --all"
         fi
         if wsl_detach_vhd "$vhd_path" "$uuid" "$dev_name"; then
             log_success "VHD detached successfully"
+            # Save to detach history and remove from active mappings
+            tracking_file_save_detach_history "$vhd_path" "$uuid" "$dev_name"
+            tracking_file_remove_mapping "$vhd_path"
         else
             error_exit "Failed to detach VHD from WSL"
         fi
@@ -1282,8 +1288,8 @@ detach_vhd() {
         if wsl_detach_vhd "$vhd_path" "$uuid" "$dev_name"; then
             log_success "VHD detached successfully"
             
-            # Remove mapping from tracking file after successful detach
-            # The mapping is no longer valid since the VHD is detached
+            # Save to detach history and remove from active mappings
+            tracking_file_save_detach_history "$vhd_path" "$uuid" "$dev_name"
             tracking_file_remove_mapping "$vhd_path"
         else
             error_exit "Failed to detach VHD from WSL"
@@ -1513,6 +1519,7 @@ create_vhd() {
     local default_size="${DEFAULT_VHD_SIZE:-1G}"
     local create_size="$default_size"
     local force="false"
+    local format_type=""  # Optional: filesystem type to format with after creation
     
     while [[ $# -gt 0 ]]; do
         case "$1" in
@@ -1534,6 +1541,16 @@ create_vhd() {
                     error_exit "Invalid size format: $2" 1 "Size must be in format: number[K|M|G|T] (e.g., 5G, 500M)"
                 fi
                 create_size="$2"
+                shift 2
+                ;;
+            --format)
+                if [[ -z "$2" || "$2" == --* ]]; then
+                    error_exit "--format requires a filesystem type value"
+                fi
+                if ! validate_filesystem_type "$2"; then
+                    error_exit "Invalid filesystem type: $2" 1 "Supported types: ext2, ext3, ext4, xfs, btrfs, ntfs, vfat, exfat"
+                fi
+                format_type="$2"
                 shift 2
                 ;;
             --force)
@@ -1585,14 +1602,14 @@ create_vhd() {
             fi
             
             # Check if VHD needs to be unmounted/detached
+            # Only set needs_unmount if we confirmed the VHD is actually attached
             local needs_unmount=false
             if [[ $discovery_result -eq 0 && -n "$existing_uuid" ]] && wsl_is_vhd_attached "$existing_uuid"; then
                 needs_unmount=true
-            elif [[ $discovery_result -eq 2 ]]; then
-                # Multiple VHDs - try to unmount by path directly using wsl.exe
-                # This works even when UUID discovery fails
-                needs_unmount=true
             fi
+            # Note: If UUID discovery failed (multiple VHDs or not found), we don't assume
+            # the VHD is attached. We'll just try to delete the file - if it's locked,
+            # the delete will fail with a clear error.
             
             if [[ "$needs_unmount" == "true" ]]; then
                 log_warn "VHD is currently attached to WSL"
@@ -1653,17 +1670,19 @@ create_vhd() {
                         log_success "VHD detached from WSL"
                         log_info ""
                     else
-                        error_exit "Failed to detach VHD from WSL"
+                        # Detach failed but we can still try to delete (VHD may already be detached)
+                        log_warn "Could not confirm VHD detachment - continuing with deletion"
+                        log_info ""
                     fi
                 else
                     # Multiple VHDs or UUID not found - try direct unmount by path
-                    log_info "Attempting to unmount by path (UUID discovery ambiguous)..."
+                    log_info "Attempting to detach by path (UUID discovery ambiguous)..."
                     if wsl.exe --unmount "$vhd_path" 2>/dev/null; then
-                        log_success "VHD detached from WSL (via direct unmount)"
+                        log_success "VHD detached from WSL"
                         log_info ""
                     else
-                        log_warn "Direct unmount failed - file may still be locked"
-                        log_info "Attempting to continue with file deletion..."
+                        log_warn "Could not confirm VHD detachment - continuing with deletion"
+                        log_info ""
                     fi
                 fi
                 
@@ -1731,22 +1750,115 @@ create_vhd() {
     
     log_success "VHD file created successfully"
     log_info ""
-    log_info "========================================"
-    log_info "  Creation completed"
-    log_info "========================================"
-    log_info ""
-    log_info "The VHD file has been created but is not attached or formatted."
-    log_info "To use it, you need to:"
-    log_info "  1. Attach the VHD:"
-    log_info "     $0 attach --vhd-path $vhd_path"
-    log_info "  2. Format the VHD:"
-    log_info "     $0 format --dev-name <device_name> --type ext4"
-    log_info "  3. Mount the formatted VHD:"
-    log_info "     $0 mount --vhd-path $vhd_path --mount-point <mount_point>"
-    log_info ""
     
-    if [[ "$QUIET" == "true" ]]; then
-        echo "$vhd_path: created"
+    # If --format option was provided, attach and format the VHD
+    if [[ -n "$format_type" ]]; then
+        log_info "========================================"
+        log_info "  Formatting VHD"
+        log_info "========================================"
+        log_info ""
+        log_info "Attaching VHD to WSL for formatting..."
+        log_info ""
+        
+        # Take snapshot of current block devices before attaching
+        local old_devs=($(wsl_get_block_devices))
+        log_debug "Captured old_devs array (count: ${#old_devs[@]}): ${old_devs[*]}"
+        
+        # Attach the VHD
+        if ! wsl_attach_vhd "$vhd_path"; then
+            error_exit "Failed to attach VHD to WSL for formatting"
+        fi
+        
+        # Register for cleanup in case script fails/interrupts before completion
+        register_vhd_cleanup "$vhd_path" "" ""
+        
+        log_success "VHD attached to WSL"
+        log_info ""
+        
+        # Detect new device using snapshot-based detection
+        local dev_name
+        dev_name=$(detect_new_device_after_attach "" "${old_devs[@]}")
+        
+        if [[ -z "$dev_name" ]]; then
+            error_exit "Failed to detect device of attached VHD"
+        fi
+        
+        log_success "Device detected: /dev/$dev_name"
+        log_info ""
+        log_info "Formatting device /dev/$dev_name with $format_type..."
+        log_info ""
+        
+        # Format the device using helper function
+        local uuid
+        uuid=$(format_vhd "$dev_name" "$format_type")
+        if [[ $? -ne 0 || -z "$uuid" ]]; then
+            error_exit "Failed to format device /dev/$dev_name with $format_type"
+        fi
+        
+        log_success "VHD formatted successfully"
+        log_info "  Device: /dev/$dev_name"
+        log_info "  UUID: $uuid"
+        log_info "  Filesystem: $format_type"
+        log_info ""
+        
+        # Update cleanup registration with UUID
+        unregister_vhd_cleanup "$vhd_path"
+        register_vhd_cleanup "$vhd_path" "$uuid" "$dev_name"
+        
+        # Save mapping to tracking file
+        tracking_file_save_mapping "$vhd_path" "$uuid" "" "$dev_name"
+        log_debug "Saved tracking file mapping: $vhd_path → $uuid"
+        
+        # Detach the VHD - leave it in clean state (not attached)
+        log_info "Detaching VHD..."
+        if wsl_detach_vhd "$vhd_path" "$uuid" "$dev_name"; then
+            log_success "VHD detached from WSL"
+            # Save to detach history and remove from active mappings
+            tracking_file_save_detach_history "$vhd_path" "$uuid" "$dev_name"
+            tracking_file_remove_mapping "$vhd_path"
+        else
+            log_warn "Could not detach VHD - it may still be attached"
+        fi
+        log_info ""
+        
+        # Unregister from cleanup - operation completed successfully
+        unregister_vhd_cleanup "$vhd_path"
+        
+        log_info "========================================"
+        log_info "  Creation completed"
+        log_info "========================================"
+        log_info ""
+        log_info "The VHD has been created and formatted."
+        log_info "  Path: $vhd_path"
+        log_info "  UUID: $uuid"
+        log_info "  Filesystem: $format_type"
+        log_info ""
+        log_info "To use the VHD, run:"
+        log_info "  $0 mount --vhd-path $vhd_path --mount-point <mount_point>"
+        log_info ""
+        
+        if [[ "$QUIET" == "true" ]]; then
+            echo "$vhd_path: created,formatted with UUID=$uuid"
+        fi
+    else
+        # No format option - just show completion message
+        log_info "========================================"
+        log_info "  Creation completed"
+        log_info "========================================"
+        log_info ""
+        log_info "The VHD file has been created but is not attached or formatted."
+        log_info "To use it, you need to:"
+        log_info "  1. Attach the VHD:"
+        log_info "     $0 attach --vhd-path $vhd_path"
+        log_info "  2. Format the VHD:"
+        log_info "     $0 format --dev-name <device_name> --type ext4"
+        log_info "  3. Mount the formatted VHD:"
+        log_info "     $0 mount --vhd-path $vhd_path --mount-point <mount_point>"
+        log_info ""
+        
+        if [[ "$QUIET" == "true" ]]; then
+            echo "$vhd_path: created"
+        fi
     fi
 }
 

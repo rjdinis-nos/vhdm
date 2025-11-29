@@ -16,10 +16,12 @@ The `vhdm.sh` script sources `libs/wsl_vhd_mngt.sh` (which sources `libs/wsl_vhd
 
 ### Persistent Disk Tracking
 The system maintains a persistent mapping file to track VHD path→UUID associations across sessions:
-- **Location**: `~/.config/wsl-disk-management/vhd_mapping.json`
-- **Format**: JSON with version and mappings object
+- **Location**: `~/.config/vhdm/vhd_tracking.json`
+- **Format**: JSON with version, mappings object, and detach_history array
 - **Normalization**: Windows paths normalized to lowercase with forward slashes for case-insensitive matching
-- **Usage**: Automatically saves mappings on attach/create, updates mount points on mount/unmount, removes on delete
+- **Mappings**: Only contains **attached** VHDs - mappings are removed when VHD is detached
+- **Detach History**: Tracks detached VHDs for reference (UUID, device name, timestamp)
+- **Usage**: Saves mappings on attach/create, updates mount points on mount, removes mappings on detach/delete
 - **Priority**: Tracking file checked first before falling back to device discovery
 - **Safety**: Validates tracked UUIDs are still attached (handles stale entries gracefully)
 
@@ -31,11 +33,22 @@ Tracking file structure:
     "c:/vms/disk1.vhdx": {
       "uuid": "uuid-1234",
       "last_attached": "2025-11-21T10:30:00Z",
-      "mount_points": "/mnt/disk1"
+      "mount_points": "/mnt/disk1",
+      "dev_name": "sde"
     }
-  }
+  },
+  "detach_history": [
+    {
+      "path": "c:/vms/disk2.vhdx",
+      "uuid": "uuid-5678",
+      "dev_name": "sdf",
+      "timestamp": "2025-11-21T11:00:00Z"
+    }
+  ]
 }
 ```
+
+**Key Design**: `mappings` only contains **attached** VHDs. When a VHD is detached, its mapping is removed and an entry is added to `detach_history`. This prevents false detection issues when checking if a VHD is attached.
 
 **Key Functions:**
 - `init_disk_tracking_file()` - Creates directory and initial JSON structure
@@ -51,9 +64,10 @@ Tracking file structure:
 **Integration Points:**
 - `attach_vhd()` - Saves mapping after successful attach, removes detach history entries
 - `mount_vhd()` - Updates mount points after mount (or when already mounted, ensuring tracking file stays in sync), removes detach history entries when disk is confirmed attached
-- `umount_vhd()` - Clears mount points after unmount
-- `detach_vhd()` - Clears mount points when detaching, saves detach history entry
+- `umount_vhd()` - Clears mount points after unmount; if detaching, removes mapping and saves to detach history
+- `detach_vhd()` - Removes mapping from tracking file, saves detach history entry
 - `delete_vhd()` - Removes mapping when VHD file is deleted
+- `create_vhd()` with `--format` - Creates, attaches, formats, then detaches (removes mapping, saves to detach history)
 - `wsl_create_vhd()` - Saves mapping after VHD creation and formatting
 - `wsl_find_uuid_by_path()` - Checks tracking file first, then falls back to device discovery
 - `resize_vhd()` - Removes detach history entries after attaching resized VHD
@@ -363,6 +377,16 @@ Commands that support UUID discovery:
 - Query: `lsblk -f -J | jq` for JSON-parsed block device info
 - UUID retrieval: `sudo blkid -s UUID -o value`
 
+### WSL Interop Check
+Before executing Windows commands (`wsl.exe`), the scripts automatically verify and enable WSL interop if needed:
+- `wsl_ensure_interop()` - Called before `wsl.exe` commands in `wsl_attach_vhd()` and `wsl_detach_vhd()`
+- Checks if `/proc/sys/fs/binfmt_misc/WSLInterop` exists
+- If not configured, automatically registers it with:
+  ```bash
+  sudo sh -c 'echo ":WSLInterop:M::MZ::/init:PF" > /proc/sys/fs/binfmt_misc/register'
+  ```
+- Provides helpful error messages if automatic enable fails
+
 ### Error Handling for Already-Attached VHDs
 If `wsl_attach_vhd` fails (VHD already attached), `mount_vhd()` searches for the UUID by looking for non-system disks matching pattern `sd[d-z]`. This is a fallback mechanism in the mount operation.
 
@@ -416,6 +440,7 @@ Complete list of all Linux and WSL commands used in the scripts:
 **WSL Integration Commands:**
 - `wsl.exe --mount --vhd "$path" --bare` - Attach VHD to WSL
 - `wsl.exe --unmount "$path"` - Detach VHD from WSL
+- `wsl_ensure_interop()` - Called automatically before wsl.exe commands to ensure interop is enabled
 
 **Block Device Management:**
 - `lsblk -f -J` - List block devices with filesystem info in JSON format
@@ -775,11 +800,11 @@ wsl_convert_path() {
 - Detaches from WSL
 - Requires `--path` for WSL detach operation
 
-**Create** - Single operation: Only creates VHD file
-- Does NOT auto-attach or format (separation of concerns)
-- Does NOT accept `--name` parameter (only `--path`, `--size`, `--force`)
+**Create** - Single operation or orchestration (with `--format`)
+- Without `--format`: Only creates VHD file (separation of concerns)
+- With `--format TYPE`: Creates, attaches, and formats VHD in one command
+- Accepts `--vhd-path`, `--size`, `--format`, `--force` parameters
 - Supports `--force` to overwrite existing (with confirmation)
-- Tests must explicitly call `attach` after `create` if attachment is needed
 
 **Delete** - Single operation: Only deletes VHD file
 - Requires VHD to be detached first (safety check)

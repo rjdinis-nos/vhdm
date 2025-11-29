@@ -25,6 +25,7 @@ The system is organized into three architectural layers:
 │  - wsl_get_vhd_info(), wsl_find_uuid_*()                   │
 │  - format_vhd(), wsl_create_vhd(), wsl_delete_vhd()        │
 │  - handle_uuid_discovery_result(), detect_new_device_after_attach() │
+│  - wsl_ensure_interop(), wsl_is_interop_enabled()          │
 │                                                             │
 │  libs/wsl_vhd_tracking.sh: Persistent tracking file        │
 │                            management functions             │
@@ -153,7 +154,7 @@ All tests involving UUID discovery must:
 | `umount_vhd()` | `--path` OR `--uuid` OR `--mount-point` | Complete unmount workflow: unmount + detach | Yes | ❌ No - orchestration |
 | `detach_vhd()` | `--uuid`, `--path` (optional) | Complete detach workflow: unmount if needed + detach | Yes | ❌ No - orchestration |
 | `status_vhd()` | `--path` OR `--uuid` OR `--mount-point` OR `--all` | Display VHD status information | No | ✅ Yes - query only |
-| `create_vhd()` | `--path`, `--size` (optional), `--force` (optional) | Create new VHD file | No | ✅ Yes - file creation only |
+| `create_vhd()` | `--vhd-path`, `--size` (optional), `--format` (optional), `--force` (optional) | Create new VHD file (optionally attach and format with `--format`) | Yes (with `--format`) | ❌ No - orchestration with `--format`, ✅ Yes without |
 | `delete_vhd()` | `--path`, `--uuid` (optional), `--force` (optional) | Delete VHD file | No | ✅ Yes - file deletion only |
 | `resize_vhd()` | `--mount-point`, `--size` | Complete resize workflow with data migration | Yes | ❌ No - complex orchestration |
 
@@ -178,6 +179,9 @@ All tests involving UUID discovery must:
 | `wsl_delete_vhd()` | `$1: path` (Windows format) | Delete VHD file | No | Minimal |
 | `wsl_get_block_devices()` | None | List all block devices | No | None (query only) |
 | `wsl_get_disk_uuids()` | None | List all disk UUIDs | No | None (query only) |
+| `wsl_is_interop_enabled()` | None | Check if WSL interop is enabled | No | None (query only) |
+| `wsl_enable_interop()` | None | Register binfmt_misc entry to enable interop | No | Minimal (sudo required) |
+| `wsl_ensure_interop()` | None | Ensure interop is enabled before Windows commands | Yes: `wsl_is_interop_enabled()`, `wsl_enable_interop()` | Comprehensive |
 
 ### Tracking File Functions (libs/wsl_vhd_tracking.sh)
 
@@ -353,7 +357,7 @@ detach_vhd()
 
 ```
 create_vhd()
-├─→ Parse arguments (--path, --size, --force)
+├─→ Parse arguments (--vhd-path, --size, --format, --force)
 ├─→ Check if VHD exists
 │   ├─→ Exists + --force: Handle overwrite
 │   │   ├─→ Find UUID if attached
@@ -365,10 +369,17 @@ create_vhd()
 ├─→ Verify qemu-img installed
 ├─→ Create parent directory (mkdir -p)
 ├─→ qemu-img create -f vhdx
+├─→ If --format provided:
+│   ├─→ Take snapshot: wsl_get_block_devices()
+│   ├─→ wsl_attach_vhd(path)
+│   ├─→ Detect device: detect_new_device_after_attach()
+│   ├─→ format_vhd(device, format_type)
+│   ├─→ tracking_file_save_mapping()
+│   └─→ Report success (file created, attached, formatted with UUID)
 └─→ Report success (file created, not attached)
 ```
 
-**Key Point**: Create is a **single operation** - only creates VHD file. Does NOT auto-attach or format (separation of concerns).
+**Key Point**: Create can be a **single operation** (without `--format`) or an **orchestration** (with `--format` - creates, attaches, and formats in one command).
 
 ### Delete Command Flow
 
@@ -426,17 +437,18 @@ resize_vhd()
 - `mount_vhd()` → `wsl_attach_vhd()` → `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()` → `tracking_file_update_mount_point()` → `tracking_file_remove_detach_history()`
 - `umount_vhd()` → `wsl_umount_vhd()` → `umount_filesystem()` + `wsl_detach_vhd()` → `tracking_file_remove_mount_point()`
 - `detach_vhd()` → `wsl_umount_vhd()` + `wsl_detach_vhd()` → `tracking_file_remove_mount_point()` → `tracking_file_save_detach_history()`
-- `create_vhd()` → `qemu-img` (direct)
+- `create_vhd()` → `qemu-img` (direct), optionally with `--format`: → `wsl_attach_vhd()` → `detect_new_device_after_attach()` → `format_vhd()` → `tracking_file_save_mapping()`
 - `delete_vhd()` → `wsl_delete_vhd()` → `rm` → `tracking_file_remove_mapping()`
 - `resize_vhd()` → orchestrates multiple operations → `tracking_file_remove_detach_history()`
 
 ### Level 2: WSL Helpers (Business Logic)
-- `wsl_attach_vhd()` → `wsl.exe --mount`
-- `wsl_detach_vhd()` → `wsl.exe --unmount`
+- `wsl_attach_vhd()` → `wsl_ensure_interop()` → `wsl.exe --mount`
+- `wsl_detach_vhd()` → `wsl_ensure_interop()` → `wsl.exe --unmount`
 - `wsl_mount_vhd()` → `create_mount_point()` + `mount_filesystem()`
 - `wsl_umount_vhd()` → `umount_filesystem()` + diagnostics
 - `wsl_create_vhd()` → `qemu-img` + `wsl_attach_vhd()` + `format_vhd()`
 - `format_vhd()` → `sudo mkfs` + `blkid`
+- `wsl_ensure_interop()` → `wsl_is_interop_enabled()` → `wsl_enable_interop()` (if needed)
 
 ### Level 2.5: Tracking File Functions (Persistent State Management)
 - `tracking_file_save_mapping()` → JSON file operations (jq)
@@ -498,14 +510,19 @@ fi
 
 **Purpose**: Fast, deterministic UUID lookup without device scanning. Automatically handles multi-VHD scenarios with path and name-based discovery.
 
+**Key Design**: `mappings` only contains attached VHDs. When a VHD is detached, its mapping is removed (moved to `detach_history`). This ensures `tracking_file_lookup_uuid_by_path()` only returns UUIDs for VHDs that are actually attached, preventing false detection issues.
+
 **Operations that save/update tracking:**
 - `attach_vhd()` - Saves path→UUID + dev_name after successful attach using `tracking_file_save_mapping()`, removes detach history using `tracking_file_remove_detach_history()`
 - `mount_vhd()` - Updates mount_points after mount (or when already mounted, ensuring tracking file stays in sync) using `tracking_file_update_mount_point()`, removes detach history when disk is confirmed attached using `tracking_file_remove_detach_history()`
-- `umount_vhd()` - Clears mount_points after unmount using `tracking_file_remove_mount_point()`
-- `detach_vhd()` - Clears mount_points when detaching using `tracking_file_remove_mount_point()`, saves detach history using `tracking_file_save_detach_history()`
+- `umount_vhd()` - Clears mount_points after unmount using `tracking_file_remove_mount_point()`; if detaching, removes mapping and saves to detach history
+- `detach_vhd()` - **Removes mapping** using `tracking_file_remove_mapping()`, saves detach history using `tracking_file_save_detach_history()`
 - `delete_vhd()` - Removes mapping completely using `tracking_file_remove_mapping()`
+- `create_vhd()` with `--format` - Creates, attaches, formats, then detaches (removes mapping, saves to detach history)
 - `wsl_create_vhd()` - Saves mapping after creation and formatting using `tracking_file_save_mapping()`
 - `resize_vhd()` - Removes detach history after attaching resized VHD using `tracking_file_remove_detach_history()`
+
+**Key Design**: `mappings` only contains **attached** VHDs. When detaching, the mapping is removed and an entry is added to `detach_history`. This prevents false "VHD is attached" detection when the VHD file exists but is not actually attached to WSL.
 
 **Note:** The `mount_vhd()` command uses the `tracking_file_update_mount_point()` helper function to update the tracking file. This helper handles both `--vhd-path` and `--dev-name` cases, and ensures the tracking file is updated even when the VHD is already mounted at the target mount point, keeping the tracking file in sync with the actual mount state.
 
@@ -884,6 +901,47 @@ if wsl_attach_vhd "$mount_path"; then
     fi
 fi
 ```
+
+### 12. WSL Interop Check Pattern
+
+Used in: All functions that execute Windows commands (`wsl.exe`)
+
+**Purpose**: Ensure WSL interop (ability to run Windows executables from WSL) is enabled before attempting to run Windows commands like `wsl.exe`. If interop is not configured, automatically enable it.
+
+**Implementation**:
+```bash
+# Before any wsl.exe command, ensure interop is available
+if ! wsl_ensure_interop; then
+    return 1
+fi
+
+# Now safe to run Windows commands
+wsl.exe --mount --vhd "$path" --bare
+```
+
+**Key Functions** (in `libs/wsl_vhd_mngt.sh`):
+- `wsl_is_interop_enabled()` - Checks if `/proc/sys/fs/binfmt_misc/WSLInterop` exists
+- `wsl_enable_interop()` - Registers the binfmt_misc entry with sudo
+- `wsl_ensure_interop()` - Main entry point that checks and enables if needed
+
+**How It Works**:
+1. Check if `/proc/sys/fs/binfmt_misc/WSLInterop` file exists (fast path)
+2. If exists, interop is already enabled - return success immediately
+3. If not exists, attempt to register it via:
+   ```bash
+   sudo sh -c 'echo ":WSLInterop:M::MZ::/init:PF" > /proc/sys/fs/binfmt_misc/register'
+   ```
+4. If registration fails, provide helpful error message with manual instructions
+
+**Integration Points**:
+- `wsl_attach_vhd()` - Calls `wsl_ensure_interop()` before `wsl.exe --mount`
+- `wsl_detach_vhd()` - Calls `wsl_ensure_interop()` before `wsl.exe --unmount`
+
+**Benefits**:
+- **Automatic recovery**: If interop gets disabled, operations will auto-enable it
+- **Fast path**: Simple file existence check when interop is already enabled (no overhead)
+- **Clear feedback**: Warning when enabling, success message after, manual instructions if automatic enable fails
+- **Security**: Uses `check_sudo_permissions()` before attempting sudo operations
 
 ## State Machine: VHD Lifecycle
 

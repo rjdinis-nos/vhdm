@@ -40,6 +40,69 @@ debug_cmd() {
     return $?
 }
 
+# ============================================================================
+# WSL INTEROP FUNCTIONS - Ensure Windows commands can be executed
+# ============================================================================
+
+# Check if WSL interop is enabled (ability to run Windows executables)
+# Returns: 0 if interop is enabled, 1 if not enabled
+wsl_is_interop_enabled() {
+    [[ -f /proc/sys/fs/binfmt_misc/WSLInterop ]]
+}
+
+# Enable WSL interop by registering the binfmt_misc entry
+# Returns: 0 on success, 1 on failure
+# Note: Requires sudo permissions to write to /proc/sys/fs/binfmt_misc/register
+wsl_enable_interop() {
+    log_debug "Enabling WSL interop..."
+    
+    # Check sudo permissions before attempting to enable interop
+    if ! check_sudo_permissions; then
+        log_error "Cannot enable WSL interop: sudo permissions required"
+        return 1
+    fi
+    
+    # Register the WSL interop binfmt_misc entry
+    # Format: :name:type:offset:magic:mask:interpreter:flags
+    # - WSLInterop: name of the entry
+    # - M: magic number matching
+    # - MZ: DOS/Windows executable magic number (first 2 bytes of PE files)
+    # - /init: WSL's interpreter for Windows executables
+    # - PF: flags (P=preserve argv[0], F=fix binary)
+    if sudo sh -c 'echo ":WSLInterop:M::MZ::/init:PF" > /proc/sys/fs/binfmt_misc/register' 2>/dev/null; then
+        log_debug "WSL interop enabled successfully"
+        return 0
+    else
+        log_error "Failed to enable WSL interop"
+        return 1
+    fi
+}
+
+# Ensure WSL interop is enabled before running Windows commands
+# This function should be called before any wsl.exe command execution
+# Returns: 0 if interop is available, 1 on failure
+# Note: Automatically enables interop if not configured
+wsl_ensure_interop() {
+    # Check if interop is already enabled
+    if wsl_is_interop_enabled; then
+        log_debug "WSL interop is enabled"
+        return 0
+    fi
+    
+    # Interop not enabled - try to enable it
+    log_warn "WSL interop is not enabled. Attempting to enable..."
+    
+    if wsl_enable_interop; then
+        log_success "WSL interop enabled successfully"
+        return 0
+    else
+        log_error "Failed to enable WSL interop. Windows commands will not work."
+        log_info "You can manually enable it with:"
+        log_info "  sudo sh -c 'echo \":WSLInterop:M::MZ::/init:PF\" > /proc/sys/fs/binfmt_misc/register'"
+        return 1
+    fi
+}
+
 # Check if a VHD is attached to WSL by UUID
 # Args: $1 - UUID of the VHD
 # Returns: 0 if attached, 1 if not attached
@@ -168,6 +231,11 @@ wsl_attach_vhd() {
         return 1
     fi
     
+    # Ensure WSL interop is enabled before running Windows commands
+    if ! wsl_ensure_interop; then
+        return 1
+    fi
+    
     if [[ -n "$error_output_var" ]]; then
         # Capture error output for caller to inspect
         error_output=$(wsl.exe --mount --vhd "$vhd_path" --bare 2>&1)
@@ -180,10 +248,15 @@ wsl_attach_vhd() {
             return 1
         fi
     else
-        # Normal mode: suppress output
-        if debug_cmd wsl.exe --mount --vhd "$vhd_path" --bare >/dev/null 2>&1; then
+        # Normal mode: show debug, suppress normal output
+        log_debug "wsl.exe --mount --vhd '$vhd_path' --bare"
+        local output
+        output=$(wsl.exe --mount --vhd "$vhd_path" --bare 2>&1)
+        local exit_code=$?
+        if [[ $exit_code -eq 0 ]]; then
             return 0
         else
+            log_debug "wsl.exe attach failed (exit $exit_code): $output"
             return 1
         fi
     fi
@@ -202,6 +275,11 @@ wsl_detach_vhd() {
     
     if [[ -z "$vhd_path" ]]; then
         log_error "VHD path is required"
+        return 1
+    fi
+    
+    # Ensure WSL interop is enabled before running Windows commands
+    if ! wsl_ensure_interop; then
         return 1
     fi
     
