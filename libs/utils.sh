@@ -631,8 +631,22 @@ safe_sudo_capture() {
 # TABLE FORMATTING FUNCTIONS - ASCII table output helpers
 # ============================================================================
 
+# Print a table title with surrounding blank lines
+# Args: $1 - Title text
+# Note: Respects QUIET mode - only prints in non-quiet mode
+# Example: print_table_title "VHD Mount Result"
+print_table_title() {
+    local title="$1"
+    
+    if [[ "$QUIET" != "true" ]]; then
+        echo ""
+        echo "$title"
+        echo ""
+    fi
+}
+
 # Print a horizontal line for table borders
-# Args: $@ - Column widths
+# Args: $@ - Column widths (as separate arguments)
 # Example: print_table_line 36 8 10 6 20
 print_table_line() {
     local widths=("$@")
@@ -672,6 +686,7 @@ print_table_row() {
 # Print a table header with proper formatting
 # Args: $1 - Column widths (comma-separated)
 #       $@ - Header names (remaining arguments)
+# Example: print_table_header "36,8,10" "UUID" "Device" "Size"
 print_table_header() {
     local widths_str="$1"
     shift
@@ -687,5 +702,18 @@ print_table_header() {
     print_table_row "$widths_str" "${headers[@]}"
     
     # Print separator line
+    print_table_line "${widths[@]}"
+}
+
+# Print a table footer (bottom border line)
+# Args: $1 - Column widths (comma-separated)
+# Example: print_table_footer "36,8,10"
+print_table_footer() {
+    local widths_str="$1"
+    
+    # Parse widths for the line
+    IFS=',' read -ra widths <<< "$widths_str"
+    
+    # Print bottom line
     print_table_line "${widths[@]}"
 }

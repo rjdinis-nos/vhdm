@@ -316,9 +316,7 @@ Run '$script_name status --all' to see all attached VHDs."
             # Verbose mode - table output
             log_debug "Displaying all attached VHDs"
             
-            echo ""
-            echo "All Attached VHD Disks"
-            echo ""
+            print_table_title "All Attached VHD Disks"
             
             # Define column widths: UUID(36), Device(8), Available(10), Used(6), Mount Point(25), Status(12)
             local col_widths="36,8,10,6,25,12"
@@ -368,8 +366,7 @@ Run '$script_name status --all' to see all attached VHDs."
             done <<< "$all_uuids"
             
             # Print table footer
-            IFS=',' read -ra widths <<< "$col_widths"
-            print_table_line "${widths[@]}"
+            print_table_footer "$col_widths"
             
             # Show path information if found
             if [[ "$paths_found" == "true" ]]; then
@@ -472,9 +469,7 @@ Suggestions:
         # Verbose mode - table output
         log_debug "Displaying status for VHD: $uuid"
         
-        echo ""
-        echo "VHD Disk Status"
-        echo ""
+        print_table_title "VHD Disk Status"
         
         if wsl_is_vhd_attached "$uuid"; then
             local device_name fsavail fsuse actual_mount_point status_text status_color
@@ -514,9 +509,7 @@ Suggestions:
             print_table_row "$kv_widths" "Used" "$fsuse"
             print_table_row "$kv_widths" "Mount Point" "$actual_mount_point"
             print_table_row "$kv_widths" "Status" "$status_text"
-            
-            IFS=',' read -ra widths <<< "$kv_widths"
-            print_table_line "${widths[@]}"
+            print_table_footer "$kv_widths"
         else
             # VHD not attached - show minimal info
             local key_width=14
@@ -530,9 +523,7 @@ Suggestions:
             fi
             print_table_row "$kv_widths" "UUID" "$uuid"
             print_table_row "$kv_widths" "Status" "Not Found"
-            
-            IFS=',' read -ra widths <<< "$kv_widths"
-            print_table_line "${widths[@]}"
+            print_table_footer "$kv_widths"
         fi
     fi
 }
@@ -826,9 +817,7 @@ To format the VHD, run:
     fi
     
     # Display result table
-    echo ""
-    echo "VHD Mount Result"
-    echo ""
+    print_table_title "VHD Mount Result"
     
     local kv_widths="16,50"
     print_table_header "$kv_widths" "Property" "Value"
@@ -839,8 +828,7 @@ To format the VHD, run:
     print_table_row "$kv_widths" "Mount Point" "$mount_point"
     print_table_row "$kv_widths" "Status" "$mount_status"
     [[ "$was_attached" == "Yes" ]] && print_table_row "$kv_widths" "Attached" "Yes (newly)"
-    IFS=',' read -ra widths <<< "$kv_widths"
-    print_table_line "${widths[@]}"
+    print_table_footer "$kv_widths"
 }
 
 # Function to unmount VHD
@@ -1073,9 +1061,7 @@ To find device name or UUID, run: $0 status --all"
     fi
     
     # Display result table
-    echo ""
-    echo "VHD Unmount Result"
-    echo ""
+    print_table_title "VHD Unmount Result"
     
     local kv_widths="16,50"
     print_table_header "$kv_widths" "Property" "Value"
@@ -1085,8 +1071,7 @@ To find device name or UUID, run: $0 status --all"
     [[ -n "$original_mount_point" ]] && print_table_row "$kv_widths" "Mount Point" "$original_mount_point"
     print_table_row "$kv_widths" "Unmount" "$unmount_status"
     print_table_row "$kv_widths" "Detach" "$detach_status"
-    IFS=',' read -ra widths <<< "$kv_widths"
-    print_table_line "${widths[@]}"
+    print_table_footer "$kv_widths"
     
     # Show note if not detached
     if [[ "$detach_status" == "still attached" ]]; then
@@ -1354,9 +1339,7 @@ Please provide the path explicitly:
     fi
     
     # Display result table
-    echo ""
-    echo "VHD Detach Result"
-    echo ""
+    print_table_title "VHD Detach Result"
     
     local kv_widths="16,50"
     print_table_header "$kv_widths" "Property" "Value"
@@ -1366,8 +1349,7 @@ Please provide the path explicitly:
     [[ -n "$original_mount_point" ]] && print_table_row "$kv_widths" "Was Mounted At" "$original_mount_point"
     print_table_row "$kv_widths" "Unmounted" "$was_mounted"
     print_table_row "$kv_widths" "Status" "detached"
-    IFS=',' read -ra widths <<< "$kv_widths"
-    print_table_line "${widths[@]}"
+    print_table_footer "$kv_widths"
 }
 
 # Function to delete VHD
@@ -1514,17 +1496,14 @@ To unmount and detach, run:
         fi
         
         # Display result table
-        echo ""
-        echo "VHD Delete Result"
-        echo ""
+        print_table_title "VHD Delete Result"
         
         local kv_widths="16,50"
         print_table_header "$kv_widths" "Property" "Value"
         print_table_row "$kv_widths" "Path" "$vhd_path"
         [[ -n "$uuid" ]] && print_table_row "$kv_widths" "UUID" "$uuid"
         print_table_row "$kv_widths" "Status" "deleted"
-        IFS=',' read -ra widths <<< "$kv_widths"
-        print_table_line "${widths[@]}"
+        print_table_footer "$kv_widths"
     else
         error_exit "Failed to delete VHD"
     fi
@@ -1767,9 +1746,7 @@ create_vhd() {
         fi
         
         # Display result table
-        echo ""
-        echo "VHD Create Result"
-        echo ""
+        print_table_title "VHD Create Result"
         
         local kv_widths="16,50"
         print_table_header "$kv_widths" "Property" "Value"
@@ -1779,8 +1756,7 @@ create_vhd() {
         print_table_row "$kv_widths" "UUID" "$uuid"
         print_table_row "$kv_widths" "Filesystem" "$format_type"
         print_table_row "$kv_widths" "Status" "created, formatted"
-        IFS=',' read -ra widths <<< "$kv_widths"
-        print_table_line "${widths[@]}"
+        print_table_footer "$kv_widths"
         
         echo ""
         echo "To use the VHD, run:"
@@ -1793,17 +1769,14 @@ create_vhd() {
             return 0
         fi
         
-        echo ""
-        echo "VHD Create Result"
-        echo ""
+        print_table_title "VHD Create Result"
         
         local kv_widths="16,50"
         print_table_header "$kv_widths" "Property" "Value"
         print_table_row "$kv_widths" "Path" "$vhd_path"
         print_table_row "$kv_widths" "Size" "$create_size"
         print_table_row "$kv_widths" "Status" "created (not formatted)"
-        IFS=',' read -ra widths <<< "$kv_widths"
-        print_table_line "${widths[@]}"
+        print_table_footer "$kv_widths"
         
         echo ""
         echo "Next steps:"
@@ -2120,9 +2093,7 @@ Please ensure the VHD was attached/mounted using vhdm.sh so it's tracked."
     fi
     
     # Display result table
-    echo ""
-    echo "VHD Resize Result"
-    echo ""
+    print_table_title "VHD Resize Result"
     
     local kv_widths="18,50"
     print_table_header "$kv_widths" "Property" "Value"
@@ -2135,8 +2106,7 @@ Please ensure the VHD was attached/mounted using vhdm.sh so it's tracked."
     print_table_row "$kv_widths" "Data Size" "$new_size_human"
     print_table_row "$kv_widths" "Backup" "$backup_vhd_path_wsl"
     print_table_row "$kv_widths" "Status" "resized"
-    IFS=',' read -ra widths <<< "$kv_widths"
-    print_table_line "${widths[@]}"
+    print_table_footer "$kv_widths"
     
     echo ""
     echo "Note: You can delete the backup once you verify the resized disk."
@@ -2328,9 +2298,7 @@ To find attached VHDs, run: $0 status --all"
     fi
     
     # Display result table
-    echo ""
-    echo "VHD Format Result"
-    echo ""
+    print_table_title "VHD Format Result"
     
     local kv_widths="16,50"
     print_table_header "$kv_widths" "Property" "Value"
@@ -2339,8 +2307,7 @@ To find attached VHDs, run: $0 status --all"
     print_table_row "$kv_widths" "Filesystem" "$format_type"
     [[ -n "$tracked_path" ]] && print_table_row "$kv_widths" "VHD Path" "$tracked_path"
     print_table_row "$kv_widths" "Status" "formatted"
-    IFS=',' read -ra widths <<< "$kv_widths"
-    print_table_line "${widths[@]}"
+    print_table_footer "$kv_widths"
 }
 
 # Function to attach VHD
@@ -2479,9 +2446,7 @@ Try running: ./vhdm.sh status --all"
     fi
     
     # Display result table
-    echo ""
-    echo "VHD Attach Result"
-    echo ""
+    print_table_title "VHD Attach Result"
     
     local kv_widths="16,50"
     print_table_header "$kv_widths" "Property" "Value"
@@ -2490,8 +2455,7 @@ Try running: ./vhdm.sh status --all"
     [[ -n "$dev_name" && "$dev_name" != "(detection failed)" ]] && print_table_row "$kv_widths" "Device" "/dev/$dev_name"
     [[ -n "$uuid" ]] && print_table_row "$kv_widths" "UUID" "$uuid"
     print_table_row "$kv_widths" "Formatted" "$is_formatted"
-    IFS=',' read -ra widths <<< "$kv_widths"
-    print_table_line "${widths[@]}"
+    print_table_footer "$kv_widths"
     
     # Show warning for unformatted VHD
     if [[ "$is_formatted" == "No" ]]; then
@@ -2568,9 +2532,7 @@ history_vhd() {
             mapping_json=$(jq -r --arg path "$normalized_path" '.mappings[$path] // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
         fi
         
-        echo ""
-        echo "VHD History: $show_path"
-        echo ""
+        print_table_title "VHD History: $show_path"
         
         if [[ -n "$mapping_json" && "$mapping_json" != "null" && "$mapping_json" != "" ]]; then
             if [[ "$QUIET" == "true" ]]; then
@@ -2592,8 +2554,7 @@ history_vhd() {
                 [[ -n "$dev_name" && "$dev_name" != "null" ]] && print_table_row "$kv_widths" "Device" "/dev/$dev_name"
                 [[ -n "$mount_points" && "$mount_points" != "null" ]] && print_table_row "$kv_widths" "Mount Points" "$mount_points"
                 [[ -n "$last_attached" && "$last_attached" != "null" ]] && print_table_row "$kv_widths" "Last Attached" "$last_attached"
-                IFS=',' read -ra widths <<< "$kv_widths"
-                print_table_line "${widths[@]}"
+                print_table_footer "$kv_widths"
             fi
         else
             echo "Current Status: Not attached"
@@ -2603,9 +2564,7 @@ history_vhd() {
         local history_json=$(tracking_file_get_last_detach_for_path "$show_path")
         
         if [[ -n "$history_json" ]]; then
-            echo ""
-            echo "Last Detach Event"
-            echo ""
+            print_table_title "Last Detach Event"
             if [[ "$QUIET" == "true" ]]; then
                 echo "{\"detach_history\": $history_json}"
             else
@@ -2618,8 +2577,7 @@ history_vhd() {
                 print_table_row "$kv_widths" "UUID" "$uuid"
                 [[ -n "$dev_name" && "$dev_name" != "null" && "$dev_name" != "" ]] && print_table_row "$kv_widths" "Device" "/dev/$dev_name"
                 print_table_row "$kv_widths" "Detached" "$timestamp"
-                IFS=',' read -ra widths <<< "$kv_widths"
-                print_table_line "${widths[@]}"
+                print_table_footer "$kv_widths"
             fi
         else
             echo ""
@@ -2637,9 +2595,7 @@ history_vhd() {
             mapping_count=$(echo "$mappings_json" | jq 'keys | length')
         fi
         
-        echo ""
-        echo "Current Mappings (Attached VHDs)"
-        echo ""
+        print_table_title "Current Mappings (Attached VHDs)"
         
         if [[ "$QUIET" == "true" ]]; then
             echo "{\"mappings\": $mappings_json,"
@@ -2664,17 +2620,14 @@ history_vhd() {
                     print_table_row "$col_widths" "$path" "$m_uuid" "$m_dev" "$m_mounts"
                 done < <(echo "$mappings_json" | jq -r 'keys[]')
                 
-                IFS=',' read -ra widths <<< "$col_widths"
-                print_table_line "${widths[@]}"
+                print_table_footer "$col_widths"
             fi
         fi
         
         # ---- Section 2: Detach History ----
         local history_json=$(tracking_file_get_detach_history "$limit")
         
-        echo ""
-        echo "Detach History (last $limit events)"
-        echo ""
+        print_table_title "Detach History (last $limit events)"
         
         if [[ "$QUIET" == "true" ]]; then
             echo "\"detach_history\": $history_json}"
@@ -2697,8 +2650,7 @@ history_vhd() {
                     print_table_row "$col_widths" "$h_timestamp" "$h_path" "$h_uuid"
                 done < <(echo "$history_json" | jq -c '.[]')
                 
-                IFS=',' read -ra widths <<< "$col_widths"
-                print_table_line "${widths[@]}"
+                print_table_footer "$col_widths"
             fi
         fi
     fi
@@ -2735,13 +2687,9 @@ sync_vhd() {
     log_debug "Synchronizing tracking file"
     
     if [[ "$dry_run" == "true" ]]; then
-        echo ""
-        echo "Sync Tracking File (DRY RUN)"
-        echo ""
+        print_table_title "Sync Tracking File (DRY RUN)"
     else
-        echo ""
-        echo "Sync Tracking File"
-        echo ""
+        print_table_title "Sync Tracking File"
     fi
     
     # Check if tracking file exists
@@ -2828,8 +2776,7 @@ sync_vhd() {
             print_table_row "$col_widths" "$m_path" "$m_reason"
         done
         
-        IFS=',' read -ra widths <<< "$col_widths"
-        print_table_line "${widths[@]}"
+        print_table_footer "$col_widths"
         echo ""
     fi
     
@@ -2848,8 +2795,7 @@ sync_vhd() {
             print_table_row "$col_widths" "$path" "File not found"
         done
         
-        IFS=',' read -ra widths <<< "$col_widths"
-        print_table_line "${widths[@]}"
+        print_table_footer "$col_widths"
         echo ""
     fi
     
@@ -2878,6 +2824,7 @@ sync_vhd() {
     total_removed=$((mappings_removed + history_removed))
     
     # ---- Summary table ----
+    echo ""
     echo "Sync Summary"
     echo ""
     
@@ -2887,8 +2834,7 @@ sync_vhd() {
     print_table_row "$kv_widths" "Mappings removed" "$mappings_removed"
     print_table_row "$kv_widths" "History paths checked" "$history_count"
     print_table_row "$kv_widths" "History entries removed" "$history_removed"
-    IFS=',' read -ra widths <<< "$kv_widths"
-    print_table_line "${widths[@]}"
+    print_table_footer "$kv_widths"
     
     echo ""
     if [[ "$dry_run" == "true" ]]; then
