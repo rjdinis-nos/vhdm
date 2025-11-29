@@ -626,3 +626,66 @@ safe_sudo_capture() {
     echo "$output"
     return 0
 }
+
+# ============================================================================
+# TABLE FORMATTING FUNCTIONS - ASCII table output helpers
+# ============================================================================
+
+# Print a horizontal line for table borders
+# Args: $@ - Column widths
+# Example: print_table_line 36 8 10 6 20
+print_table_line() {
+    local widths=("$@")
+    local line="+"
+    for width in "${widths[@]}"; do
+        line+=$(printf '%*s' "$((width + 2))" '' | tr ' ' '-')
+        line+="+"
+    done
+    echo "$line"
+}
+
+# Print a table row with proper formatting
+# Args: $1 - Column widths (comma-separated)
+#       $@ - Column values (remaining arguments)
+# Example: print_table_row "36,8,10,6,20" "uuid" "sdd" "800M" "15%" "/mnt/data"
+print_table_row() {
+    local widths_str="$1"
+    shift
+    local values=("$@")
+    
+    # Parse widths
+    IFS=',' read -ra widths <<< "$widths_str"
+    
+    local row="|"
+    for i in "${!widths[@]}"; do
+        local width="${widths[$i]}"
+        local value="${values[$i]:-}"
+        # Truncate if too long
+        if [[ ${#value} -gt $width ]]; then
+            value="${value:0:$((width-2))}.."
+        fi
+        row+=$(printf " %-${width}s |" "$value")
+    done
+    echo "$row"
+}
+
+# Print a table header with proper formatting
+# Args: $1 - Column widths (comma-separated)
+#       $@ - Header names (remaining arguments)
+print_table_header() {
+    local widths_str="$1"
+    shift
+    local headers=("$@")
+    
+    # Parse widths for the line
+    IFS=',' read -ra widths <<< "$widths_str"
+    
+    # Print top line
+    print_table_line "${widths[@]}"
+    
+    # Print header row
+    print_table_row "$widths_str" "${headers[@]}"
+    
+    # Print separator line
+    print_table_line "${widths[@]}"
+}

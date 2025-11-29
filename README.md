@@ -573,6 +573,13 @@ All logging functions support timestamps and structured output. See [Structured 
   - Returns: Formatted string (e.g., "5GB", "150MB")
   - Uses bash arithmetic for size conversion
 
+#### Table Formatting Functions
+- `print_table_line WIDTHS...` - Print horizontal line for table borders
+- `print_table_row WIDTHS_STR VALUES...` - Print a table row with proper formatting
+- `print_table_header WIDTHS_STR HEADERS...` - Print table header with top line and separator
+
+These functions are used internally by the status command to display information in ASCII table format.
+
 ### Usage Example
 ```bash
 #!/bin/bash
@@ -825,26 +832,33 @@ All tracking file operations use standardized function names following the patte
 
 ## Output Examples
 
-### Standard Mode
+### Status Command - All VHDs (Table Format)
 ```
-========================================
-  VHD Disk Mount Operation
-========================================
+All Attached VHD Disks
 
-[✓] VHD attached successfully
-  Detected UUID: 57fd0f3a-4077-44b8-91ba-5abdee575293
-  Detected Device: /dev/sdd
++--------------------------------------+----------+------------+--------+---------------------------+--------------+
+| UUID                                 | Device   | Available  | Used   | Mount Point               | Status       |
++--------------------------------------+----------+------------+--------+---------------------------+--------------+
+| 57fd0f3a-4077-44b8-91ba-5abdee575293 | sdd      | 800M       | 15%    | /mnt/mydisk               | Mounted      |
+| 72a3165c-f1be-4497-a1fb-2c55054ac472 | sde      | 1.2G       | 5%     | -                         | Attached     |
++--------------------------------------+----------+------------+--------+---------------------------+--------------+
+```
 
-  Device: /dev/sdd
-  Available: 800M
-  Used: 15%
-  Mounted at: /mnt/mydisk
+### Status Command - Single VHD (Table Format)
+```
+VHD Disk Status
 
-[✓] VHD mounted successfully
-
-========================================
-  Mount operation completed
-========================================
++----------------+----------------------------------------------------+
+| Property       | Value                                              |
++----------------+----------------------------------------------------+
+| Path           | C:/VMs/mydisk.vhdx                                 |
+| UUID           | 57fd0f3a-4077-44b8-91ba-5abdee575293               |
+| Device         | /dev/sdd                                           |
+| Available      | 800M                                               |
+| Used           | 15%                                                |
+| Mount Point    | /mnt/mydisk                                        |
+| Status         | Mounted                                            |
++----------------+----------------------------------------------------+
 ```
 
 ### Quiet Mode
