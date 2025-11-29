@@ -238,8 +238,9 @@ wsl_attach_vhd() {
     
     if [[ -n "$error_output_var" ]]; then
         # Capture error output for caller to inspect
-        error_output=$(wsl.exe --mount --vhd "$vhd_path" --bare 2>&1)
-        local exit_code=$?
+        # Use tr to remove null bytes from wsl.exe output to avoid bash warning
+        error_output=$(wsl.exe --mount --vhd "$vhd_path" --bare 2>&1 | tr -d '\0')
+        local exit_code=${PIPESTATUS[0]}
         if [[ $exit_code -eq 0 ]]; then
             return 0
         else
@@ -251,7 +252,8 @@ wsl_attach_vhd() {
         # Normal mode: show debug, suppress normal output
         log_debug "wsl.exe --mount --vhd '$vhd_path' --bare"
         local output
-        output=$(wsl.exe --mount --vhd "$vhd_path" --bare 2>&1)
+        # Use tr to remove null bytes from wsl.exe output to avoid bash warning
+        output=$(wsl.exe --mount --vhd "$vhd_path" --bare 2>&1 | tr -d '\0')
         local exit_code=$?
         if [[ $exit_code -eq 0 ]]; then
             return 0

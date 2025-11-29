@@ -290,12 +290,26 @@ Run '$script_name status --all' to see all attached VHDs."
         fi
         
         if [[ "$QUIET" == "true" ]]; then
-            # Quiet mode - simple output
+            # Quiet mode - simple output with path from tracking file
             while IFS= read -r disk_uuid; do
+                local tracked_path=""
+                if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                    tracked_path=$(jq -r --arg uuid "$disk_uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+                    [[ "$tracked_path" == "null" || -z "$tracked_path" ]] && tracked_path=""
+                fi
+                
                 if wsl_is_vhd_mounted "$disk_uuid"; then
-                    echo "$disk_uuid: attached,mounted"
+                    if [[ -n "$tracked_path" ]]; then
+                        echo "$tracked_path ($disk_uuid): attached,mounted"
+                    else
+                        echo "$disk_uuid: attached,mounted"
+                    fi
                 else
-                    echo "$disk_uuid: attached"
+                    if [[ -n "$tracked_path" ]]; then
+                        echo "$tracked_path ($disk_uuid): attached"
+                    else
+                        echo "$disk_uuid: attached"
+                    fi
                 fi
             done <<< "$all_uuids"
         else
@@ -313,14 +327,28 @@ Run '$script_name status --all' to see all attached VHDs."
             print_table_header "$col_widths" "UUID" "Device" "Available" "Used" "Mount Point" "Status"
             
             # Collect data and print rows
+            local paths_found=false
+            local path_info=""
             while IFS= read -r disk_uuid; do
-                local device_name fsavail fsuse mount_point status_text
+                local device_name fsavail fsuse mount_point status_text tracked_path
                 
                 # Get device info
                 device_name=$(lsblk -f -J | jq -r --arg UUID "$disk_uuid" "$JQ_GET_DEVICE_NAME_BY_UUID" 2>/dev/null)
                 fsavail=$(lsblk -f -J | jq -r --arg UUID "$disk_uuid" "$JQ_GET_FSAVAIL_BY_UUID" 2>/dev/null)
                 fsuse=$(lsblk -f -J | jq -r --arg UUID "$disk_uuid" "$JQ_GET_FSUSE_BY_UUID" 2>/dev/null)
                 mount_point=$(lsblk -f -J | jq -r --arg UUID "$disk_uuid" "$JQ_GET_MOUNTPOINTS_BY_UUID" 2>/dev/null | grep -v "null" | head -n 1)
+                
+                # Try to get path from tracking file
+                tracked_path=""
+                if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+                    tracked_path=$(jq -r --arg uuid "$disk_uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+                    [[ "$tracked_path" == "null" || -z "$tracked_path" ]] && tracked_path=""
+                fi
+                
+                if [[ -n "$tracked_path" ]]; then
+                    paths_found=true
+                    path_info="${path_info}  ${device_name}: ${tracked_path}\n"
+                fi
                 
                 # Handle null/empty values
                 [[ -z "$device_name" || "$device_name" == "null" ]] && device_name="-"
@@ -343,9 +371,16 @@ Run '$script_name status --all' to see all attached VHDs."
             IFS=',' read -ra widths <<< "$col_widths"
             print_table_line "${widths[@]}"
             
-            echo ""
-            echo "Note: VHD paths cannot be determined from UUID alone."
-            echo "      Use 'status --vhd-path <path>' to verify a specific VHD."
+            # Show path information if found
+            if [[ "$paths_found" == "true" ]]; then
+                echo ""
+                echo "VHD Paths (from tracking file):"
+                echo -e "$path_info"
+            else
+                echo ""
+                echo "Note: No VHD paths found in tracking file."
+                echo "      Use 'status --vhd-path <path>' to verify a specific VHD."
+            fi
         fi
         exit 0
     fi
@@ -396,17 +431,42 @@ Suggestions:
         error_exit "Unable to find VHD" 1 "$suggestions"
     fi
     
+    # Try to look up VHD path from tracking file if not provided
+    if [[ -z "$vhd_path" ]]; then
+        if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+            local found_path
+            found_path=$(jq -r --arg uuid "$uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+            
+            if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
+                vhd_path="$found_path"
+                log_debug "Found VHD path in tracking file: $vhd_path"
+            fi
+        fi
+    fi
+    
     # Show status for specific VHD
     if [[ "$QUIET" == "true" ]]; then
         # Quiet mode - simple output
         if wsl_is_vhd_attached "$uuid"; then
             if wsl_is_vhd_mounted "$uuid"; then
-                echo "$vhd_path ($uuid): attached,mounted"
+                if [[ -n "$vhd_path" ]]; then
+                    echo "$vhd_path ($uuid): attached,mounted"
+                else
+                    echo "$uuid: attached,mounted"
+                fi
             else
-                echo "$vhd_path ($uuid): attached"
+                if [[ -n "$vhd_path" ]]; then
+                    echo "$vhd_path ($uuid): attached"
+                else
+                    echo "$uuid: attached"
+                fi
             fi
         else
-            echo "$vhd_path ($uuid): not found"
+            if [[ -n "$vhd_path" ]]; then
+                echo "$vhd_path ($uuid): not found"
+            else
+                echo "$uuid: not found"
+            fi
         fi
     else
         # Verbose mode - table output
@@ -748,15 +808,16 @@ To format the VHD, run:
 
     # Quiet mode output
     if [[ "$QUIET" == "true" ]]; then
+        local display_path="${vhd_path:-$found_path}"
         if wsl_is_vhd_mounted "$uuid"; then
-            if [[ -n "$vhd_path" ]]; then
-                echo "$vhd_path ($uuid): attached,mounted"
+            if [[ -n "$display_path" ]]; then
+                echo "$display_path ($uuid): attached,mounted"
             else
                 echo "$dev_name ($uuid): mounted"
             fi
         else
-            if [[ -n "$vhd_path" ]]; then
-                echo "$vhd_path ($uuid): mount failed"
+            if [[ -n "$display_path" ]]; then
+                echo "$display_path ($uuid): mount failed"
             else
                 echo "$dev_name ($uuid): mount failed"
             fi
@@ -772,6 +833,7 @@ To format the VHD, run:
     local kv_widths="16,50"
     print_table_header "$kv_widths" "Property" "Value"
     [[ -n "$vhd_path" ]] && print_table_row "$kv_widths" "Path" "$vhd_path"
+    [[ -z "$vhd_path" && -n "$found_path" ]] && print_table_row "$kv_widths" "Path" "$found_path"
     print_table_row "$kv_widths" "UUID" "$uuid"
     [[ -n "$dev_name" ]] && print_table_row "$kv_widths" "Device" "/dev/$dev_name"
     print_table_row "$kv_widths" "Mount Point" "$mount_point"
@@ -872,7 +934,7 @@ umount_vhd() {
     # Get UUID from device name
     # ========================================================================
     if [[ -n "$dev_name" ]]; then
-        log_info "Using device name: $dev_name"
+        log_debug "Using device name: $dev_name"
         
         # Validate device exists in system
         if ! wsl_device_exists "$dev_name"; then
@@ -885,8 +947,7 @@ umount_vhd() {
             error_exit "Device $dev_name exists but has no filesystem UUID" 1 "The device may not be formatted. Use '$0 format --dev-name $dev_name --type ext4' to format it."
         fi
         
-        log_success "Found UUID: $uuid for device: $dev_name"
-        log_info ""
+        log_debug "Found UUID: $uuid for device: $dev_name"
     
     # ========================================================================
     # SCENARIO 2: --vhd-path provided
@@ -901,7 +962,6 @@ umount_vhd() {
         
         # Handle discovery result with consistent error handling
         handle_uuid_discovery_result "$discovery_result" "$uuid" "umount" "$vhd_path"
-        log_info ""
     
     # ========================================================================
     # SCENARIO 3: --mount-point provided
@@ -912,8 +972,7 @@ umount_vhd() {
         # Try to find UUID by mount point
         uuid=$(wsl_find_uuid_by_mountpoint "$mount_point")
         if [[ -n "$uuid" ]]; then
-            log_info "Discovered UUID from mount point: $uuid"
-            log_info ""
+            log_debug "Discovered UUID from mount point: $uuid"
         fi
     fi
     
@@ -931,6 +990,19 @@ To find device name or UUID, run: $0 status --all"
         error_exit "Unable to identify VHD" 1 "$uuid_help"
     fi
     
+    # Try to look up VHD path from tracking file if not provided
+    if [[ -z "$vhd_path" ]]; then
+        if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+            local found_path
+            found_path=$(jq -r --arg uuid "$uuid" "$JQ_GET_PATH_BY_UUID" "$DISK_TRACKING_FILE" 2>/dev/null | head -n 1)
+            
+            if [[ -n "$found_path" && "$found_path" != "null" && "$found_path" != "" ]]; then
+                vhd_path="$found_path"
+                log_debug "Found VHD path in tracking file: $vhd_path"
+            fi
+        fi
+    fi
+    
     log_debug "Unmount operation starting"
     
     local unmount_status="unmounted"
@@ -939,7 +1011,11 @@ To find device name or UUID, run: $0 status --all"
     
     if ! wsl_is_vhd_attached "$uuid"; then
         if [[ "$QUIET" == "true" ]]; then
-            echo "($uuid): not attached"
+            if [[ -n "$vhd_path" ]]; then
+                echo "$vhd_path ($uuid): not attached"
+            else
+                echo "($uuid): not attached"
+            fi
         else
             echo ""
             echo "VHD is not attached to WSL. Nothing to do."
@@ -988,10 +1064,10 @@ To find device name or UUID, run: $0 status --all"
     if [[ "$QUIET" == "true" ]]; then
         if [[ "$detach_status" == "detached" ]]; then
             echo "$vhd_path ($uuid): detached"
-        elif [[ -z "$vhd_path" ]]; then
-            echo "($uuid): unmounted,attached"
+        elif [[ -n "$vhd_path" ]]; then
+            echo "$vhd_path ($uuid): unmounted,attached"
         else
-            echo "$vhd_path ($uuid): umount failed"
+            echo "($uuid): unmounted,attached"
         fi
         return 0
     fi
@@ -1189,17 +1265,7 @@ detach_vhd() {
     
     # Check if VHD is attached (only if we have UUID)
     if [[ -n "$uuid" ]]; then
-        if ! wsl_is_vhd_attached "$uuid"; then
-            if [[ "$QUIET" == "true" ]]; then
-                echo "${uuid:-$dev_name}: not attached"
-            else
-                echo ""
-                echo "VHD is not attached to WSL. Nothing to do."
-            fi
-            exit 0
-        fi
-        
-        # Look up VHD path from tracking file using UUID
+        # Look up VHD path from tracking file using UUID (before "not attached" check)
         if [[ -z "$vhd_path" ]]; then
             if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
                 local found_path
@@ -1210,6 +1276,20 @@ detach_vhd() {
                     log_debug "Found VHD path in tracking file: $vhd_path"
                 fi
             fi
+        fi
+        
+        if ! wsl_is_vhd_attached "$uuid"; then
+            if [[ "$QUIET" == "true" ]]; then
+                if [[ -n "$vhd_path" ]]; then
+                    echo "$vhd_path ($uuid): not attached"
+                else
+                    echo "${uuid:-$dev_name}: not attached"
+                fi
+            else
+                echo ""
+                echo "VHD is not attached to WSL. Nothing to do."
+            fi
+            exit 0
         fi
         
         # Check if mounted and unmount first
@@ -1258,9 +1338,17 @@ Please provide the path explicitly:
     if [[ "$QUIET" == "true" ]]; then
         local identifier="${dev_name:-$uuid}"
         if ! wsl_is_vhd_attached "$uuid" 2>/dev/null; then
-            echo "$identifier: detached"
+            if [[ -n "$vhd_path" ]]; then
+                echo "$vhd_path ($identifier): detached"
+            else
+                echo "$identifier: detached"
+            fi
         else
-            echo "$identifier: detach failed"
+            if [[ -n "$vhd_path" ]]; then
+                echo "$vhd_path ($identifier): detach failed"
+            else
+                echo "$identifier: detach failed"
+            fi
         fi
         return 0
     fi
@@ -2231,7 +2319,11 @@ To find attached VHDs, run: $0 status --all"
     
     # Quiet mode output
     if [[ "$QUIET" == "true" ]]; then
-        echo "/dev/$dev_name: formatted with UUID=$new_uuid"
+        if [[ -n "$tracked_path" ]]; then
+            echo "$tracked_path (/dev/$dev_name): formatted with UUID=$new_uuid"
+        else
+            echo "/dev/$dev_name: formatted with UUID=$new_uuid"
+        fi
         return 0
     fi
     
