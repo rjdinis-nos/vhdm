@@ -415,7 +415,7 @@ For complete documentation including size calculations, safety features, and tro
 
 ---
 
-##### 11. **history** - Show detach history
+##### 11. **history** - Show tracking history (mappings + detach history)
 
 **Format:**
 ```bash
@@ -424,17 +424,22 @@ For complete documentation including size calculations, safety features, and tro
 
 **Options:**
 - `--limit N` - Number of detach events to show [default: 10, max: 50]
-- `--vhd-path PATH` - Show last detach event for specific VHD path
+- `--vhd-path PATH` - Show info for specific VHD path (mapping + detach history)
+
+**Description:**
+Shows both current mappings (attached VHDs) and detach history from the tracking file. This provides a complete view of VHD tracking state.
+
+**Note:** The history command automatically syncs the tracking file before displaying, ensuring stale entries (detached VHDs, non-existent files) are removed for accurate output.
 
 **Examples:**
 ```bash
-# Show recent detach history (last 10 events)
+# Show all mappings and recent detach history
 ./vhdm.sh history
 
 # Show last 20 detach events
 ./vhdm.sh history --limit 20
 
-# Show last detach event for specific VHD
+# Show info for specific VHD (mapping + detach history)
 ./vhdm.sh history --vhd-path C:/VMs/disk.vhdx
 
 # Quiet mode (JSON output)

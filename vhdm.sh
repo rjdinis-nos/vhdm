@@ -55,7 +55,7 @@ show_usage() {
     echo "  create [OPTIONS]         - Create a new VHD disk"
     echo "  delete [OPTIONS]         - Delete a VHD disk file"
     echo "  resize [OPTIONS]         - Resize a VHD disk by creating new disk and migrating data"
-    echo "  history [OPTIONS]        - Show detach history"
+    echo "  history [OPTIONS]        - Show tracking history (mappings + detach history)"
     echo "  sync [OPTIONS]           - Synchronize tracking file with actual system state"
     echo
     echo "Attach Command Options:"
@@ -121,8 +121,8 @@ show_usage() {
     local default_limit="${DEFAULT_HISTORY_LIMIT:-10}"
     local max_limit="${MAX_HISTORY_LIMIT:-50}"
     echo "  --limit N                - [optional] Number of detach events to show [default: $default_limit, max: $max_limit]"
-    echo "  --vhd-path PATH           - [optional] Show last detach event for specific VHD path"
-    echo "  Note: Shows detach history with timestamps, UUIDs, and device names."
+    echo "  --vhd-path PATH           - [optional] Show info for specific VHD path (mapping + detach history)"
+    echo "  Note: Shows current mappings (attached VHDs) and detach history. Syncs tracking file first."
     echo
     echo "Sync Command Options:"
     echo "  --dry-run                - [optional] Show what would be removed without making changes"
@@ -2694,18 +2694,17 @@ Try running: ./vhdm.sh status --all"
     fi
 }
 
-# Function to show detach history
+# Function to show VHD tracking history (mappings + detach history)
 # Arguments:
 #   --limit N                Number of detach events to show [default: 10, max: 50]
-#   --vhd-path PATH           Show last detach event for specific VHD path
+#   --vhd-path PATH           Show info for specific VHD path
 #
 # Logic Flow:
 # ===========
 # 1. Validate command arguments
-# 2. Show history for specific path if provided
-# 3. Show recent history if no path provided
+# 2. If path provided: show mapping + detach history for that path
+# 3. If no path: show all mappings + recent detach history
 # 4. Report success or error
-# 5. Return JSON array of detach events
 history_vhd() {
     # Parse history command arguments
     local default_limit="${DEFAULT_HISTORY_LIMIT:-10}"
@@ -2737,39 +2736,105 @@ history_vhd() {
         esac
     done
     
+    # Sync tracking file before displaying (ensure accurate data)
+    # Note: mappings are already synced on startup via auto-sync
+    # Here we also clean up detach_history entries for non-existent VHD files
+    tracking_file_cleanup_stale_mappings >/dev/null 2>&1
+    tracking_file_cleanup_stale_detach_history >/dev/null 2>&1
+    
     log_info "========================================"
-    log_info "  VHD Detach History"
+    log_info "  VHD Tracking History"
     log_info "========================================"
     log_info ""
     
     if [[ -n "$show_path" ]]; then
-        # Show history for specific path
+        # Show info for specific path
+        local normalized_path=$(normalize_vhd_path "$show_path")
+        
+        # Check if path is in current mappings (attached)
+        local mapping_json=""
+        if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+            mapping_json=$(jq -r --arg path "$normalized_path" '.mappings[$path] // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+        fi
+        
+        if [[ -n "$mapping_json" && "$mapping_json" != "null" && "$mapping_json" != "" ]]; then
+            log_info "Current Mapping (Attached):"
+            log_info "----------------------------------------"
+            if [[ "$QUIET" == "true" ]]; then
+                echo "{\"mapping\": $mapping_json}"
+            else
+                local uuid=$(echo "$mapping_json" | jq -r '.uuid // empty')
+                local dev_name=$(echo "$mapping_json" | jq -r '.dev_name // empty')
+                local mount_points=$(echo "$mapping_json" | jq -r '.mount_points // empty')
+                local last_attached=$(echo "$mapping_json" | jq -r '.last_attached // empty')
+                
+                echo "Path: $normalized_path"
+                [[ -n "$uuid" && "$uuid" != "null" ]] && echo "UUID: $uuid"
+                [[ -n "$dev_name" && "$dev_name" != "null" ]] && echo "Device: /dev/$dev_name"
+                [[ -n "$mount_points" && "$mount_points" != "null" ]] && echo "Mount Points: $mount_points"
+                [[ -n "$last_attached" && "$last_attached" != "null" ]] && echo "Last Attached: $last_attached"
+            fi
+            log_info ""
+        else
+            log_info "Not currently attached"
+            log_info ""
+        fi
+        
+        # Show detach history for this path
         local history_json=$(tracking_file_get_last_detach_for_path "$show_path")
         
         if [[ -n "$history_json" ]]; then
+            log_info "Last Detach Event:"
+            log_info "----------------------------------------"
             if [[ "$QUIET" == "true" ]]; then
-                echo "$history_json"
+                echo "{\"detach_history\": $history_json}"
             else
-                local path=$(echo "$history_json" | jq -r '.path')
                 local uuid=$(echo "$history_json" | jq -r '.uuid')
                 local dev_name=$(echo "$history_json" | jq -r '.dev_name // empty')
                 local timestamp=$(echo "$history_json" | jq -r '.timestamp')
                 
-                echo "Path: $path"
                 echo "UUID: $uuid"
-                [[ -n "$dev_name" ]] && echo "Device: /dev/$dev_name"
-                echo "Last detached: $timestamp"
+                [[ -n "$dev_name" && "$dev_name" != "null" && "$dev_name" != "" ]] && echo "Device: /dev/$dev_name"
+                echo "Detached: $timestamp"
             fi
         else
-            log_info "No detach history found for path: $show_path"
-            [[ "$QUIET" == "true" ]] && echo "{}"
+            log_info "No detach history for this path"
         fi
     else
-        # Show recent history
+        # ---- Section 1: Current Mappings ----
+        log_info "Current Mappings (Attached VHDs):"
+        log_info "----------------------------------------"
+        
+        local mappings_json=""
+        if [[ -f "$DISK_TRACKING_FILE" ]] && command -v jq &> /dev/null; then
+            mappings_json=$(jq -r '.mappings // {}' "$DISK_TRACKING_FILE" 2>/dev/null)
+        fi
+        
+        local mapping_count=0
+        if [[ -n "$mappings_json" && "$mappings_json" != "{}" ]]; then
+            mapping_count=$(echo "$mappings_json" | jq 'keys | length')
+        fi
+        
+        if [[ "$QUIET" == "true" ]]; then
+            echo "{\"mappings\": $mappings_json,"
+        else
+            if [[ $mapping_count -eq 0 ]]; then
+                log_info "No VHDs currently tracked as attached"
+            else
+                echo "$mappings_json" | jq -r 'to_entries[] | "Path: \(.key)\n  UUID: \(.value.uuid // "N/A")\n  Device: \(.value.dev_name // "N/A")\n  Mount Points: \(.value.mount_points // "N/A")\n  Last Attached: \(.value.last_attached // "N/A")\n"'
+            fi
+        fi
+        
+        log_info ""
+        
+        # ---- Section 2: Detach History ----
+        log_info "Detach History:"
+        log_info "----------------------------------------"
+        
         local history_json=$(tracking_file_get_detach_history "$limit")
         
         if [[ "$QUIET" == "true" ]]; then
-            echo "$history_json"
+            echo "\"detach_history\": $history_json}"
         else
             local count=$(echo "$history_json" | jq 'length')
             

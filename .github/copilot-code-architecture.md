@@ -157,7 +157,7 @@ All tests involving UUID discovery must:
 | `create_vhd()` | `--vhd-path`, `--size` (optional), `--format` (optional), `--force` (optional) | Create new VHD file (optionally attach and format with `--format`) | Yes (with `--format`) | ❌ No - orchestration with `--format`, ✅ Yes without |
 | `delete_vhd()` | `--path`, `--uuid` (optional), `--force` (optional) | Delete VHD file | No | ✅ Yes - file deletion only |
 | `resize_vhd()` | `--mount-point`, `--size` | Complete resize workflow with data migration | Yes | ❌ No - complex orchestration |
-| `history_vhd()` | `--limit` (optional), `--vhd-path` (optional) | Show detach history from tracking file | No | ✅ Yes - query only |
+| `history_vhd()` | `--limit` (optional), `--vhd-path` (optional) | Show tracking history (mappings + detach history) | No | ✅ Yes - query only |
 | `sync_vhd()` | `--dry-run` (optional) | Synchronize tracking file with system state | No | ✅ Yes - cleanup only |
 
 ### WSL Helper Functions (libs/wsl_vhd_mngt.sh)

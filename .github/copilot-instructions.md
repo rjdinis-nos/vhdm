@@ -821,9 +821,10 @@ wsl_convert_path() {
 - Verifies integrity via file count comparison
 - Auto-calculates minimum size (data + 30%)
 
-**History** - Query operation: Shows detach history
-- Retrieves detach events from tracking file
-- Supports `--limit` and `--vhd-path` options
+**History** - Query operation: Shows tracking history (mappings + detach history)
+- Syncs tracking file first (removes stale entries) for accurate output
+- Shows current mappings (attached VHDs) and detach history
+- Supports `--limit` (for detach events) and `--vhd-path` (for specific VHD info) options
 
 **Sync** - Maintenance operation: Synchronizes tracking file with system state
 - Removes stale mappings (VHDs no longer attached)
