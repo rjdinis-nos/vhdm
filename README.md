@@ -37,6 +37,7 @@ The system automatically tracks VHD path→UUID associations in a persistent JSO
 - Faster UUID discovery (no device scanning required)
 - Automatic cleanup when VHDs are deleted
 - **Automatic resource cleanup**: VHDs are automatically detached on script failure or interruption (Ctrl+C), preventing orphaned attachments
+- **Auto-sync on startup**: Stale mappings (detached VHDs) are automatically removed on every vhdm.sh invocation
 
 **Usage:**
 Simply use path-based commands as normal - tracking works automatically:
@@ -414,6 +415,65 @@ For complete documentation including size calculations, safety features, and tro
 
 ---
 
+##### 11. **history** - Show detach history
+
+**Format:**
+```bash
+./vhdm.sh history [OPTIONS]
+```
+
+**Options:**
+- `--limit N` - Number of detach events to show [default: 10, max: 50]
+- `--vhd-path PATH` - Show last detach event for specific VHD path
+
+**Examples:**
+```bash
+# Show recent detach history (last 10 events)
+./vhdm.sh history
+
+# Show last 20 detach events
+./vhdm.sh history --limit 20
+
+# Show last detach event for specific VHD
+./vhdm.sh history --vhd-path C:/VMs/disk.vhdx
+
+# Quiet mode (JSON output)
+./vhdm.sh -q history
+```
+
+---
+
+##### 12. **sync** - Synchronize tracking file with system state
+
+**Format:**
+```bash
+./vhdm.sh sync [OPTIONS]
+```
+
+**Options:**
+- `--dry-run` - Show what would be removed without making changes
+
+**Description:**
+The sync command ensures the tracking file accurately reflects the current system state by:
+1. Removing mappings for VHDs that are no longer attached to WSL
+2. Removing detach_history entries for VHD files that no longer exist on disk
+
+**Note:** A lightweight version of this sync (mappings only) runs automatically on every vhdm.sh invocation by default. Use `AUTO_SYNC_MAPPINGS=false` to disable automatic sync.
+
+**Examples:**
+```bash
+# Preview what would be cleaned up
+./vhdm.sh sync --dry-run
+
+# Perform full sync (mappings + history cleanup)
+./vhdm.sh sync
+
+# Quiet mode (machine-readable output)
+./vhdm.sh -q sync
+```
+
+---
+
 ## WSL Helper Functions Library
 
 The library files in `libs/` provide reusable functions that can be sourced in other scripts.
@@ -462,6 +522,10 @@ All tracking file operations follow the standardized naming pattern `tracking_fi
 - `tracking_file_remove_detach_history()` - Remove detach history entries for a path (called on attach)
 - `tracking_file_get_detach_history()` - Get detach history entries
 - `tracking_file_get_last_detach_for_path()` - Get last detach event for a path
+- `tracking_file_get_all_mapping_paths()` - Get all VHD paths from mappings
+- `tracking_file_sync_mappings_silent()` - Silently sync mappings on startup (removes stale mappings)
+- `tracking_file_cleanup_stale_mappings()` - Remove mappings for detached VHDs
+- `tracking_file_cleanup_stale_detach_history()` - Remove history for non-existent VHD files
 
 **Note**: These functions are used internally by the disk management commands. The standardized naming convention ensures consistency and maintainability across the codebase.
 
@@ -739,6 +803,15 @@ The tracking file maintains mappings across sessions, enabling:
 4. **Explicit parameter** - User-provided `--uuid`
 
 The system automatically saves mappings when VHDs are attached/created and updates them when mounted/unmounted. The mount command updates the tracking file even when the VHD is already mounted, ensuring the tracking file stays in sync with the actual mount state.
+
+**Automatic Sync:**
+By default, stale mappings (VHDs no longer attached) are automatically removed on every vhdm.sh invocation. This can be disabled by setting:
+```bash
+AUTO_SYNC_MAPPINGS=false ./vhdm.sh <command>
+```
+Or permanently in your environment: `export AUTO_SYNC_MAPPINGS=false`
+
+For full sync including history cleanup, use the `sync` command.
 
 **Internal Implementation:**
 All tracking file operations use standardized function names following the pattern `tracking_file_<action>_<what>()` for consistency and maintainability. These functions handle all persistent state management automatically in the background.

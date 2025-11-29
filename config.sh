@@ -119,6 +119,13 @@ export SLEEP_AFTER_ATTACH="${SLEEP_AFTER_ATTACH:-2}"
 # Default: 30 seconds
 export DETACH_TIMEOUT="${DETACH_TIMEOUT:-30}"
 
+# Automatic sync of mappings on startup
+# When enabled, removes stale mappings (detached VHDs) from tracking file
+# on every vhdm.sh invocation. This keeps the tracking file accurate.
+# Set to "false" to disable automatic sync (use 'sync' command manually)
+# Default: true
+export AUTO_SYNC_MAPPINGS="${AUTO_SYNC_MAPPINGS:-true}"
+
 # ============================================================================
 # RUNTIME BEHAVIOR
 # ============================================================================

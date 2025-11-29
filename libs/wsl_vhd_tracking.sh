@@ -737,5 +737,189 @@ tracking_file_get_last_detach_for_path() {
     return 1
 }
 
+# Get all VHD paths from mappings in tracking file
+# Returns: Newline-separated list of normalized VHD paths
+# Exit code: 0 if mappings exist, 1 if no mappings or error
+tracking_file_get_all_mapping_paths() {
+    tracking_file_init || return 1
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    log_debug "jq -r '.mappings | keys[]' $DISK_TRACKING_FILE"
+    
+    local paths
+    paths=$(jq -r '.mappings | keys[]' "$DISK_TRACKING_FILE" 2>/dev/null)
+    
+    if [[ -n "$paths" ]]; then
+        echo "$paths"
+        return 0
+    fi
+    
+    return 1
+}
+
+# Get UUID for a mapping path from tracking file (internal helper)
+# Args: $1 - Normalized VHD path
+# Returns: UUID if exists, empty string otherwise
+tracking_file_get_uuid_for_path() {
+    local normalized_path="$1"
+    
+    if [[ -z "$normalized_path" ]]; then
+        return 1
+    fi
+    
+    if ! command -v jq &> /dev/null; then
+        return 1
+    fi
+    
+    jq -r --arg path "$normalized_path" '.mappings[$path].uuid // empty' "$DISK_TRACKING_FILE" 2>/dev/null
+}
+
+# Clean up stale mappings (VHDs that are no longer attached)
+# Returns: Number of removed mappings via stdout, 0 on success, 1 on error
+# Note: Only removes mappings where UUID is set and VHD is not attached
+tracking_file_cleanup_stale_mappings() {
+    tracking_file_init || return 1
+    
+    if ! command -v jq &> /dev/null; then
+        log_error "jq is required for cleanup operations"
+        return 1
+    fi
+    
+    local removed_count=0
+    local paths
+    paths=$(tracking_file_get_all_mapping_paths 2>/dev/null)
+    
+    if [[ -z "$paths" ]]; then
+        echo "0"
+        return 0
+    fi
+    
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        
+        local uuid
+        uuid=$(tracking_file_get_uuid_for_path "$path")
+        
+        if [[ -n "$uuid" && "$uuid" != "null" ]]; then
+            # Check if VHD with this UUID is still attached
+            if ! wsl_is_vhd_attached "$uuid" 2>/dev/null; then
+                log_debug "Removing stale mapping: $path (UUID: $uuid not attached)"
+                if tracking_file_remove_mapping "$path"; then
+                    ((removed_count++))
+                fi
+            fi
+        else
+            # UUID is empty - check if VHD file still exists
+            # If file doesn't exist, remove the mapping
+            local vhd_path_wsl
+            vhd_path_wsl=$(wsl_convert_path "$path" 2>/dev/null)
+            if [[ -n "$vhd_path_wsl" && ! -e "$vhd_path_wsl" ]]; then
+                log_debug "Removing stale mapping: $path (file not found at $vhd_path_wsl)"
+                if tracking_file_remove_mapping "$path"; then
+                    ((removed_count++))
+                fi
+            fi
+        fi
+    done <<< "$paths"
+    
+    echo "$removed_count"
+    return 0
+}
+
+# Clean up stale detach history entries (VHD files that no longer exist)
+# Returns: Number of removed entries via stdout, 0 on success, 1 on error
+tracking_file_cleanup_stale_detach_history() {
+    tracking_file_init || return 1
+    
+    if ! command -v jq &> /dev/null; then
+        log_error "jq is required for cleanup operations"
+        return 1
+    fi
+    
+    # Get all unique paths from detach history
+    local history_paths
+    history_paths=$(jq -r '.detach_history // [] | .[].path' "$DISK_TRACKING_FILE" 2>/dev/null | sort -u)
+    
+    if [[ -z "$history_paths" ]]; then
+        echo "0"
+        return 0
+    fi
+    
+    local removed_count=0
+    local paths_to_remove=()
+    
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        
+        # Convert path to WSL format and check if file exists
+        local vhd_path_wsl
+        vhd_path_wsl=$(wsl_convert_path "$path" 2>/dev/null)
+        
+        if [[ -n "$vhd_path_wsl" && ! -e "$vhd_path_wsl" ]]; then
+            log_debug "VHD file not found: $path (checked: $vhd_path_wsl)"
+            paths_to_remove+=("$path")
+        fi
+    done <<< "$history_paths"
+    
+    # Remove history entries for non-existent VHD files
+    for path in "${paths_to_remove[@]}"; do
+        log_debug "Removing detach history for non-existent VHD: $path"
+        if tracking_file_remove_detach_history "$path"; then
+            ((removed_count++))
+        fi
+    done
+    
+    echo "$removed_count"
+    return 0
+}
+
+# Silently sync mappings on startup (lightweight version for automatic use)
+# Removes stale mappings (VHDs that are no longer attached) without any output
+# This is called automatically at vhdm.sh startup when AUTO_SYNC_MAPPINGS=true
+# Returns: 0 on success, 1 on error (silent - no output)
+tracking_file_sync_mappings_silent() {
+    # Skip if tracking file doesn't exist
+    [[ ! -f "$DISK_TRACKING_FILE" ]] && return 0
+    
+    # Skip if jq not available
+    command -v jq &> /dev/null || return 0
+    
+    local paths
+    paths=$(jq -r '.mappings | keys[]' "$DISK_TRACKING_FILE" 2>/dev/null)
+    
+    [[ -z "$paths" ]] && return 0
+    
+    while IFS= read -r path; do
+        [[ -z "$path" ]] && continue
+        
+        local uuid
+        uuid=$(jq -r --arg path "$path" '.mappings[$path].uuid // empty' "$DISK_TRACKING_FILE" 2>/dev/null)
+        
+        local should_remove=false
+        
+        if [[ -n "$uuid" && "$uuid" != "null" ]]; then
+            # Check if VHD with this UUID is still attached
+            if ! wsl_is_vhd_attached "$uuid" 2>/dev/null; then
+                should_remove=true
+            fi
+        else
+            # UUID is empty - check if VHD file still exists
+            local vhd_path_wsl
+            vhd_path_wsl=$(wsl_convert_path "$path" 2>/dev/null)
+            if [[ -n "$vhd_path_wsl" && ! -e "$vhd_path_wsl" ]]; then
+                should_remove=true
+            fi
+        fi
+        
+        if [[ "$should_remove" == "true" ]]; then
+            tracking_file_remove_mapping "$path" 2>/dev/null
+        fi
+    done <<< "$paths"
+    
+    return 0
+}
 
 

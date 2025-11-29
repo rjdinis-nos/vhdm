@@ -3,7 +3,7 @@
 ## Project Overview
 
 Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Multi-script architecture:
-- `vhdm.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize)
+- `vhdm.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize, history, sync)
 - `libs/wsl_vhd_mngt.sh` - Shared WSL-specific function library
 - `libs/wsl_vhd_tracking.sh` - Persistent tracking file management functions
 - `libs/utils.sh` - Shared utility functions for size calculations, conversions, and input validation
@@ -60,6 +60,10 @@ Tracking file structure:
 - `tracking_file_remove_mapping()` - Removes mapping when VHD is deleted
 - `tracking_file_save_detach_history()` - Saves detach event to history
 - `tracking_file_remove_detach_history()` - Removes detach history entries for a path (called on attach)
+- `tracking_file_get_all_mapping_paths()` - Gets all VHD paths from mappings
+- `tracking_file_sync_mappings_silent()` - Silently syncs mappings on startup (auto-sync)
+- `tracking_file_cleanup_stale_mappings()` - Removes mappings for detached VHDs
+- `tracking_file_cleanup_stale_detach_history()` - Removes history for non-existent VHD files
 
 **Integration Points:**
 - `attach_vhd()` - Saves mapping after successful attach, removes detach history entries
@@ -71,6 +75,8 @@ Tracking file structure:
 - `wsl_create_vhd()` - Saves mapping after VHD creation and formatting
 - `wsl_find_uuid_by_path()` - Checks tracking file first, then falls back to device discovery
 - `resize_vhd()` - Removes detach history entries after attaching resized VHD
+- `sync_vhd()` - Full sync: removes stale mappings and stale detach history entries
+- **Auto-sync on startup** - `tracking_file_sync_mappings_silent()` is called on every vhdm.sh invocation (configurable via `AUTO_SYNC_MAPPINGS`)
 
 **Note:** The `mount_vhd()` command uses `update_tracking_file_mount_point()` helper function to update the tracking file. This ensures the tracking file is updated even when the VHD is already mounted at the target mount point, keeping the tracking file in sync with the actual mount state.
 
@@ -814,3 +820,14 @@ wsl_convert_path() {
 - Creates new VHD, migrates data, preserves original as backup
 - Verifies integrity via file count comparison
 - Auto-calculates minimum size (data + 30%)
+
+**History** - Query operation: Shows detach history
+- Retrieves detach events from tracking file
+- Supports `--limit` and `--vhd-path` options
+
+**Sync** - Maintenance operation: Synchronizes tracking file with system state
+- Removes stale mappings (VHDs no longer attached)
+- Removes detach history entries (VHD files no longer exist)
+- Supports `--dry-run` option to preview changes
+- Lightweight auto-sync runs on every vhdm.sh invocation (mappings only)
+- Configurable via `AUTO_SYNC_MAPPINGS` (default: true)

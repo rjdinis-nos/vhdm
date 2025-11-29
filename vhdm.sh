@@ -30,6 +30,12 @@ export YES
 # Note: This must be called after SCRIPT_DIR is restored to avoid path issues
 init_resource_cleanup
 
+# Auto-sync mappings on startup (removes stale mappings for detached VHDs)
+# This runs silently and only if AUTO_SYNC_MAPPINGS is enabled in config
+if [[ "${AUTO_SYNC_MAPPINGS:-true}" == "true" ]]; then
+    tracking_file_sync_mappings_silent
+fi
+
 # Function to show usage
 show_usage() {
     echo "Usage: $0 [OPTIONS] COMMAND [COMMAND_OPTIONS]"
@@ -50,6 +56,7 @@ show_usage() {
     echo "  delete [OPTIONS]         - Delete a VHD disk file"
     echo "  resize [OPTIONS]         - Resize a VHD disk by creating new disk and migrating data"
     echo "  history [OPTIONS]        - Show detach history"
+    echo "  sync [OPTIONS]           - Synchronize tracking file with actual system state"
     echo
     echo "Attach Command Options:"
     echo "  --vhd-path PATH           - [mandatory] VHD file path (Windows format, e.g., C:/path/disk.vhdx)"
@@ -117,6 +124,10 @@ show_usage() {
     echo "  --vhd-path PATH           - [optional] Show last detach event for specific VHD path"
     echo "  Note: Shows detach history with timestamps, UUIDs, and device names."
     echo
+    echo "Sync Command Options:"
+    echo "  --dry-run                - [optional] Show what would be removed without making changes"
+    echo "  Note: Removes stale mappings (detached VHDs) and history entries (deleted VHD files)."
+    echo
     echo "Examples:"
     echo "  $0 attach --vhd-path C:/VMs/disk.vhdx"
     echo "  $0 format --dev-name sdd --type ext4"
@@ -138,6 +149,8 @@ show_usage() {
     echo "  $0 history"
     echo "  $0 history --limit 20"
     echo "  $0 history --vhd-path C:/VMs/disk.vhdx"
+    echo "  $0 sync"
+    echo "  $0 sync --dry-run"
     echo "  $0 -q status --all"
     echo
     exit 0
@@ -2774,7 +2787,207 @@ history_vhd() {
     log_info "========================================"
 }
 
-# Function to mount VHD
+# ============================================================================
+# SYNC COMMAND - Synchronize tracking file with actual system state
+# ============================================================================
+# Purpose: Ensure tracking file accurately reflects the current system state:
+#   1. Remove mappings for VHDs that are no longer attached to WSL
+#   2. Remove detach_history entries for VHD files that no longer exist
+# This is a maintenance/cleanup operation that should be run periodically
+# or when the tracking file may be out of sync with the actual system state.
+#
+# Usage: vhdm.sh sync [OPTIONS]
+#   --dry-run    Show what would be removed without making changes
+#
+# Exit: 0 on success, 1 on error
+sync_vhd() {
+    local dry_run=false
+    
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run)
+                dry_run=true
+                shift
+                ;;
+            *)
+                error_exit "Unknown sync option '$1'" 1 "Usage: $0 sync [--dry-run]"
+                ;;
+        esac
+    done
+    
+    log_info "========================================"
+    log_info "  Synchronizing Tracking File"
+    log_info "========================================"
+    log_info ""
+    
+    if [[ "$dry_run" == "true" ]]; then
+        log_info "DRY RUN - No changes will be made"
+        log_info ""
+    fi
+    
+    # Check if tracking file exists
+    if [[ ! -f "$DISK_TRACKING_FILE" ]]; then
+        log_info "No tracking file found at: $DISK_TRACKING_FILE"
+        log_info "Nothing to synchronize."
+        log_info "========================================"
+        exit 0
+    fi
+    
+    local total_removed=0
+    
+    # ---- Step 1: Clean up stale mappings ----
+    log_info "Checking mappings for detached VHDs..."
+    
+    local paths
+    paths=$(tracking_file_get_all_mapping_paths 2>/dev/null)
+    
+    local mapping_count=0
+    local mappings_to_remove=()
+    
+    if [[ -n "$paths" ]]; then
+        while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            ((mapping_count++))
+            
+            local uuid
+            uuid=$(tracking_file_get_uuid_for_path "$path")
+            
+            local should_remove=false
+            local remove_reason=""
+            
+            if [[ -n "$uuid" && "$uuid" != "null" ]]; then
+                # Check if VHD with this UUID is still attached
+                if ! wsl_is_vhd_attached "$uuid" 2>/dev/null; then
+                    should_remove=true
+                    remove_reason="UUID $uuid not attached"
+                fi
+            else
+                # UUID is empty - check if VHD file still exists
+                local vhd_path_wsl
+                vhd_path_wsl=$(wsl_convert_path "$path" 2>/dev/null)
+                if [[ -n "$vhd_path_wsl" && ! -e "$vhd_path_wsl" ]]; then
+                    should_remove=true
+                    remove_reason="VHD file not found"
+                fi
+            fi
+            
+            if [[ "$should_remove" == "true" ]]; then
+                if [[ "$dry_run" == "true" ]]; then
+                    log_warn "  Would remove mapping: $path ($remove_reason)"
+                else
+                    log_info "  Removing mapping: $path ($remove_reason)"
+                fi
+                mappings_to_remove+=("$path")
+            fi
+        done <<< "$paths"
+    fi
+    
+    log_info "  Checked $mapping_count mapping(s)"
+    
+    # Actually remove mappings (unless dry run)
+    local mappings_removed=0
+    if [[ "$dry_run" == "false" ]]; then
+        for path in "${mappings_to_remove[@]}"; do
+            if tracking_file_remove_mapping "$path"; then
+                ((mappings_removed++))
+            fi
+        done
+    else
+        mappings_removed=${#mappings_to_remove[@]}
+    fi
+    
+    if [[ $mappings_removed -gt 0 ]]; then
+        if [[ "$dry_run" == "true" ]]; then
+            log_info "  Would remove $mappings_removed stale mapping(s)"
+        else
+            log_success "  Removed $mappings_removed stale mapping(s)"
+        fi
+    else
+        log_info "  No stale mappings found"
+    fi
+    
+    ((total_removed += mappings_removed))
+    log_info ""
+    
+    # ---- Step 2: Clean up stale detach history ----
+    log_info "Checking detach history for missing VHD files..."
+    
+    local history_paths
+    history_paths=$(jq -r '.detach_history // [] | .[].path' "$DISK_TRACKING_FILE" 2>/dev/null | sort -u)
+    
+    local history_count=0
+    local history_to_remove=()
+    
+    if [[ -n "$history_paths" ]]; then
+        while IFS= read -r path; do
+            [[ -z "$path" ]] && continue
+            ((history_count++))
+            
+            local vhd_path_wsl
+            vhd_path_wsl=$(wsl_convert_path "$path" 2>/dev/null)
+            
+            if [[ -n "$vhd_path_wsl" && ! -e "$vhd_path_wsl" ]]; then
+                if [[ "$dry_run" == "true" ]]; then
+                    log_warn "  Would remove history for: $path (file not found)"
+                else
+                    log_info "  Removing history for: $path (file not found)"
+                fi
+                history_to_remove+=("$path")
+            fi
+        done <<< "$history_paths"
+    fi
+    
+    log_info "  Checked $history_count unique path(s) in history"
+    
+    # Actually remove history entries (unless dry run)
+    local history_removed=0
+    if [[ "$dry_run" == "false" ]]; then
+        for path in "${history_to_remove[@]}"; do
+            if tracking_file_remove_detach_history "$path"; then
+                ((history_removed++))
+            fi
+        done
+    else
+        history_removed=${#history_to_remove[@]}
+    fi
+    
+    if [[ $history_removed -gt 0 ]]; then
+        if [[ "$dry_run" == "true" ]]; then
+            log_info "  Would remove history for $history_removed path(s)"
+        else
+            log_success "  Removed history for $history_removed path(s)"
+        fi
+    else
+        log_info "  No stale history entries found"
+    fi
+    
+    ((total_removed += history_removed))
+    log_info ""
+    
+    # ---- Summary ----
+    log_info "========================================"
+    if [[ "$dry_run" == "true" ]]; then
+        if [[ $total_removed -gt 0 ]]; then
+            log_info "DRY RUN: Would remove $total_removed total entries"
+            log_info "Run without --dry-run to apply changes"
+        else
+            log_success "Tracking file is already in sync"
+        fi
+    else
+        if [[ $total_removed -gt 0 ]]; then
+            log_success "Synchronization complete: removed $total_removed entries"
+        else
+            log_success "Tracking file is already in sync"
+        fi
+    fi
+    log_info "========================================"
+    
+    # Quiet mode output
+    if [[ "$QUIET" == "true" ]]; then
+        echo "mappings_removed:$mappings_removed history_removed:$history_removed"
+    fi
+}
+
 if [[ $# -eq 0 ]]; then
     show_usage
 fi
@@ -2797,7 +3010,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help|help)
             show_usage
             ;;
-        attach|format|mount|umount|unmount|detach|status|create|delete|resize|history)
+        attach|format|mount|umount|unmount|detach|status|create|delete|resize|history|sync)
             COMMAND="$1"
             shift
             break
@@ -2841,6 +3054,9 @@ case "$COMMAND" in
         ;;
     history)
         history_vhd "$@"  # Pass remaining arguments to history_vhd
+        ;;
+    sync)
+        sync_vhd "$@"  # Pass remaining arguments to sync_vhd
         ;;
     *)
         echo -e "${RED}Error: No command specified${NC}"

@@ -11,7 +11,7 @@ The system is organized into three architectural layers:
 │                    USER COMMANDS LAYER                      │
 │  vhdm.sh: CLI commands (attach, mount, format,  │
 │                      umount, detach, status, create,        │
-│                      delete, resize)                        │
+│                      delete, resize, history, sync)         │
 └─────────────────────────────────────────────────────────────┘
                             │
                             ↓
@@ -157,6 +157,8 @@ All tests involving UUID discovery must:
 | `create_vhd()` | `--vhd-path`, `--size` (optional), `--format` (optional), `--force` (optional) | Create new VHD file (optionally attach and format with `--format`) | Yes (with `--format`) | ❌ No - orchestration with `--format`, ✅ Yes without |
 | `delete_vhd()` | `--path`, `--uuid` (optional), `--force` (optional) | Delete VHD file | No | ✅ Yes - file deletion only |
 | `resize_vhd()` | `--mount-point`, `--size` | Complete resize workflow with data migration | Yes | ❌ No - complex orchestration |
+| `history_vhd()` | `--limit` (optional), `--vhd-path` (optional) | Show detach history from tracking file | No | ✅ Yes - query only |
+| `sync_vhd()` | `--dry-run` (optional) | Synchronize tracking file with system state | No | ✅ Yes - cleanup only |
 
 ### WSL Helper Functions (libs/wsl_vhd_mngt.sh)
 
@@ -201,6 +203,11 @@ All tests involving UUID discovery must:
 | `tracking_file_remove_detach_history()` | `$1: path` (Windows format) | Remove detach history entries for a path (called on attach) | No | Minimal |
 | `tracking_file_get_detach_history()` | `$1: limit` (optional) | Get detach history from tracking file | No | None (query only) |
 | `tracking_file_get_last_detach_for_path()` | `$1: path` | Get last detach event for a VHD path | No | None (query only) |
+| `tracking_file_get_all_mapping_paths()` | None | Get all VHD paths from mappings | No | None (query only) |
+| `tracking_file_get_uuid_for_path()` | `$1: normalized_path` | Get UUID for a mapping path (internal helper) | No | None (query only) |
+| `tracking_file_sync_mappings_silent()` | None | Silently sync mappings on startup (auto-sync) | Yes: `wsl_is_vhd_attached()`, `tracking_file_remove_mapping()` | Silent |
+| `tracking_file_cleanup_stale_mappings()` | None | Remove mappings for detached VHDs | Yes: `wsl_is_vhd_attached()`, `tracking_file_remove_mapping()` | Minimal |
+| `tracking_file_cleanup_stale_detach_history()` | None | Remove history for non-existent VHD files | Yes: `wsl_convert_path()`, `tracking_file_remove_detach_history()` | Minimal |
 
 ### Primitive Functions (libs/wsl_vhd_mngt.sh & libs/utils.sh)
 
