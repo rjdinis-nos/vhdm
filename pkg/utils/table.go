@@ -2,90 +2,96 @@ package utils
 
 import (
 	"fmt"
-	"io"
-	"os"
 	"strings"
 )
 
-type TableWriter struct {
-	output  io.Writer
-	headers []string
-	widths  []int
-	rows    [][]string
-	title   string
+// Color codes
+const (
+	colorReset  = "\033[0m"
+	colorRed    = "\033[31m"
+	colorGreen  = "\033[32m"
+	colorYellow = "\033[33m"
+	colorBlue   = "\033[34m"
+)
+
+// Color functions
+func Red(s string) string    { return colorRed + s + colorReset }
+func Green(s string) string  { return colorGreen + s + colorReset }
+func Yellow(s string) string { return colorYellow + s + colorReset }
+func Blue(s string) string   { return colorBlue + s + colorReset }
+
+// PrintTableHeader prints table header
+func PrintTableHeader(widths []int, headers []string) {
+	printTableLine(widths)
+	printTableRow(widths, headers)
+	printTableLine(widths)
 }
 
-func NewTableWriter(widths ...int) *TableWriter {
-	return &TableWriter{output: os.Stdout, widths: widths, rows: make([][]string, 0)}
+// PrintTableRow prints a table row
+func PrintTableRow(widths []int, values ...string) {
+	printTableRow(widths, values)
 }
 
-func (t *TableWriter) SetOutput(w io.Writer)         { t.output = w }
-func (t *TableWriter) SetTitle(title string)         { t.title = title }
-func (t *TableWriter) SetHeaders(headers ...string)  { t.headers = headers }
-func (t *TableWriter) AddRow(values ...string)       { t.rows = append(t.rows, values) }
+// PrintTableFooter prints table footer
+func PrintTableFooter(widths []int) {
+	printTableLine(widths)
+}
 
-func (t *TableWriter) formatLine() string {
-	var sb strings.Builder
-	sb.WriteString("+")
-	for _, w := range t.widths {
-		sb.WriteString(strings.Repeat("-", w+2))
-		sb.WriteString("+")
+func printTableLine(widths []int) {
+	fmt.Print("+")
+	for _, w := range widths {
+		fmt.Print(strings.Repeat("-", w+2))
+		fmt.Print("+")
 	}
-	return sb.String()
+	fmt.Println()
 }
 
-func (t *TableWriter) formatRow(values []string) string {
-	var sb strings.Builder
-	sb.WriteString("|")
-	for i, w := range t.widths {
-		value := ""
+func printTableRow(widths []int, values []string) {
+	fmt.Print("|")
+	for i, w := range widths {
+		val := ""
 		if i < len(values) {
-			value = values[i]
+			val = values[i]
 		}
-		if len(value) > w {
-			value = value[:w-2] + ".."
+		// Truncate if too long (accounting for color codes)
+		displayLen := visibleLen(val)
+		if displayLen > w {
+			val = truncate(val, w-2) + ".."
 		}
-		sb.WriteString(fmt.Sprintf(" %-*s |", w, value))
+		fmt.Printf(" %-*s |", w+len(val)-visibleLen(val), val)
 	}
-	return sb.String()
+	fmt.Println()
 }
 
-func (t *TableWriter) Render() {
-	if t.title != "" {
-		fmt.Fprintln(t.output)
-		fmt.Fprintln(t.output, t.title)
-		fmt.Fprintln(t.output)
+func visibleLen(s string) int {
+	// Remove ANSI color codes for length calculation
+	clean := s
+	for _, code := range []string{colorReset, colorRed, colorGreen, colorYellow, colorBlue} {
+		clean = strings.ReplaceAll(clean, code, "")
 	}
-	line := t.formatLine()
-	if len(t.headers) > 0 {
-		fmt.Fprintln(t.output, line)
-		fmt.Fprintln(t.output, t.formatRow(t.headers))
-		fmt.Fprintln(t.output, line)
-	} else {
-		fmt.Fprintln(t.output, line)
-	}
-	for _, row := range t.rows {
-		fmt.Fprintln(t.output, t.formatRow(row))
-	}
-	fmt.Fprintln(t.output, line)
+	return len(clean)
 }
 
-func PrintTable(title string, headers []string, rows [][]string, widths ...int) {
-	tw := NewTableWriter(widths...)
-	tw.SetTitle(title)
-	tw.SetHeaders(headers...)
-	for _, row := range rows {
-		tw.AddRow(row...)
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
 	}
-	tw.Render()
+	return s[:maxLen]
 }
 
-func KeyValueTable(title string, pairs [][2]string, keyWidth, valueWidth int) {
-	tw := NewTableWriter(keyWidth, valueWidth)
-	tw.SetTitle(title)
-	tw.SetHeaders("Property", "Value")
+// KeyValueTable prints a key-value table
+func KeyValueTable(title string, pairs [][2]string, keyWidth, valWidth int) {
+	if title != "" {
+		fmt.Println()
+		fmt.Println(title)
+		fmt.Println()
+	}
+	
 	for _, pair := range pairs {
-		tw.AddRow(pair[0], pair[1])
+		key, val := pair[0], pair[1]
+		if len(val) > valWidth {
+			val = val[:valWidth-2] + ".."
+		}
+		fmt.Printf("  %-*s: %s\n", keyWidth, key, val)
 	}
-	tw.Render()
 }

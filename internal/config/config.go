@@ -1,4 +1,4 @@
-// Package config handles configuration management for vhdm.
+// Package config handles application configuration.
 package config
 
 import (
@@ -8,83 +8,73 @@ import (
 	"time"
 )
 
+// Config holds all application configuration
 type Config struct {
-	DefaultVHDSize      string
-	DefaultFilesystem   string
-	DefaultHistoryLimit int
-	MaxPathLength       int
-	MaxSizeStringLength int
-	MaxDeviceNameLength int
-	MaxHistoryLimit     int
-	TrackingFile        string
-	SleepAfterAttach    time.Duration
-	DetachTimeout       time.Duration
-	AutoSyncMappings    bool
-	Quiet               bool
-	Debug               bool
-	Yes                 bool
+	// Flags
+	Quiet bool
+	Debug bool
+	Yes   bool
+
+	// Paths
+	TrackingFile string
+
+	// Timeouts
+	SleepAfterAttach time.Duration
+	DetachTimeout    time.Duration
+
+	// Defaults
+	DefaultVHDSize string
+	DefaultFSType  string
+	HistoryLimit   int
 }
 
-func DefaultTrackingFile() string {
+// Load loads configuration from environment
+func Load() (*Config, error) {
+	cfg := &Config{
+		Quiet:            envBool("VHDM_QUIET", false),
+		Debug:            envBool("VHDM_DEBUG", false),
+		Yes:              envBool("VHDM_YES", false),
+		SleepAfterAttach: time.Duration(envInt("VHDM_SLEEP_AFTER_ATTACH", 2)) * time.Second,
+		DetachTimeout:    time.Duration(envInt("VHDM_DETACH_TIMEOUT", 30)) * time.Second,
+		DefaultVHDSize:   envStr("VHDM_DEFAULT_SIZE", "1G"),
+		DefaultFSType:    envStr("VHDM_DEFAULT_FSTYPE", "ext4"),
+		HistoryLimit:     envInt("VHDM_HISTORY_LIMIT", 10),
+	}
+
+	// Set default tracking file path
 	home, err := os.UserHomeDir()
 	if err != nil {
 		home = "/tmp"
 	}
-	return filepath.Join(home, ".config", "vhdm", "vhd_tracking.json")
-}
+	defaultTrackingFile := filepath.Join(home, ".config", "vhdm", "vhd_tracking.json")
+	cfg.TrackingFile = envStr("VHDM_TRACKING_FILE", defaultTrackingFile)
 
-func New() *Config {
-	return &Config{
-		DefaultVHDSize:      "1G",
-		DefaultFilesystem:   "ext4",
-		DefaultHistoryLimit: 10,
-		MaxPathLength:       4096,
-		MaxSizeStringLength: 20,
-		MaxDeviceNameLength: 10,
-		MaxHistoryLimit:     50,
-		TrackingFile:        DefaultTrackingFile(),
-		SleepAfterAttach:    2 * time.Second,
-		DetachTimeout:       30 * time.Second,
-		AutoSyncMappings:    true,
-	}
-}
-
-func Load() (*Config, error) {
-	cfg := New()
-	cfg.loadFromEnv()
 	return cfg, nil
 }
 
-func (c *Config) loadFromEnv() {
-	if v := os.Getenv("DEFAULT_VHD_SIZE"); v != "" {
-		c.DefaultVHDSize = v
+func (c *Config) SetQuiet(v bool) { c.Quiet = v }
+func (c *Config) SetDebug(v bool) { c.Debug = v }
+func (c *Config) SetYes(v bool)   { c.Yes = v }
+
+func envStr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
 	}
-	if v := os.Getenv("DEFAULT_FILESYSTEM_TYPE"); v != "" {
-		c.DefaultFilesystem = v
-	}
-	if v := os.Getenv("DEFAULT_HISTORY_LIMIT"); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			c.DefaultHistoryLimit = i
-		}
-	}
-	if v := os.Getenv("DISK_TRACKING_FILE"); v != "" {
-		c.TrackingFile = v
-	}
-	if v := os.Getenv("SLEEP_AFTER_ATTACH"); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			c.SleepAfterAttach = time.Duration(i) * time.Second
-		}
-	}
-	if v := os.Getenv("DETACH_TIMEOUT"); v != "" {
-		if i, err := strconv.Atoi(v); err == nil {
-			c.DetachTimeout = time.Duration(i) * time.Second
-		}
-	}
-	if v := os.Getenv("AUTO_SYNC_MAPPINGS"); v != "" {
-		c.AutoSyncMappings = v == "true" || v == "1"
-	}
+	return def
 }
 
-func (c *Config) SetQuiet(quiet bool) { c.Quiet = quiet }
-func (c *Config) SetDebug(debug bool) { c.Debug = debug }
-func (c *Config) SetYes(yes bool)     { c.Yes = yes }
+func envBool(key string, def bool) bool {
+	if v := os.Getenv(key); v != "" {
+		return v == "1" || v == "true" || v == "yes"
+	}
+	return def
+}
+
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if i, err := strconv.Atoi(v); err == nil {
+			return i
+		}
+	}
+	return def
+}

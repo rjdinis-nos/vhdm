@@ -1,77 +1,119 @@
-// Package types contains shared types and error definitions for vhdm.
+// Package types defines common data structures and error types.
 package types
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 )
 
-// VHDState represents the state of a VHD
-type VHDState int
+// VHDState represents the current state of a VHD
+type VHDState string
 
 const (
-	StateUnknown VHDState = iota
-	StateDetached
-	StateAttachedUnformatted
-	StateAttachedFormatted
-	StateMounted
+	StateNotFound           VHDState = "not found"
+	StateDetached           VHDState = "detached"
+	StateAttachedUnformatted VHDState = "attached (unformatted)"
+	StateAttachedFormatted   VHDState = "attached"
+	StateMounted            VHDState = "mounted"
 )
 
-func (s VHDState) String() string {
-	switch s {
-	case StateDetached:
-		return "detached"
-	case StateAttachedUnformatted:
-		return "attached (unformatted)"
-	case StateAttachedFormatted:
-		return "attached"
-	case StateMounted:
-		return "mounted"
-	default:
-		return "unknown"
-	}
-}
-
-// VHDInfo contains information about a VHD
+// VHDInfo holds detailed information about a VHD
 type VHDInfo struct {
-	Path       string
-	UUID       string
-	DeviceName string
-	MountPoint string
-	FSAvail    string
-	FSUse      string
-	State      VHDState
+	Path       string   `json:"path,omitempty"`
+	UUID       string   `json:"uuid,omitempty"`
+	DeviceName string   `json:"deviceName,omitempty"`
+	MountPoint string   `json:"mountPoint,omitempty"`
+	FSAvail    string   `json:"fsAvail,omitempty"`
+	FSUse      string   `json:"fsUse,omitempty"`
+	State      VHDState `json:"state"`
 }
 
-// AttachResult contains the result of an attach operation
+// MountPoints handles both string and array formats for mount_points
+type MountPoints []string
+
+func (m *MountPoints) UnmarshalJSON(data []byte) error {
+	// Try array first
+	var arr []string
+	if err := json.Unmarshal(data, &arr); err == nil {
+		*m = arr
+		return nil
+	}
+	
+	// Try string
+	var s string
+	if err := json.Unmarshal(data, &s); err == nil {
+		if s != "" {
+			*m = []string{s}
+		} else {
+			*m = []string{}
+		}
+		return nil
+	}
+	
+	return fmt.Errorf("mount_points must be string or array")
+}
+
+func (m MountPoints) MarshalJSON() ([]byte, error) {
+	// Always marshal as string for compatibility with bash script
+	if len(m) == 0 {
+		return json.Marshal("")
+	}
+	return json.Marshal(strings.Join(m, ","))
+}
+
+// TrackingEntry represents a single entry in the VHD tracking file
+type TrackingEntry struct {
+	UUID         string      `json:"uuid"`
+	LastAttached string      `json:"last_attached"`
+	MountPoints  MountPoints `json:"mount_points"`
+	DeviceName   string      `json:"dev_name"`
+}
+
+// DetachHistoryEntry represents a single entry in the detach history
+type DetachHistoryEntry struct {
+	Path       string `json:"path"`
+	UUID       string `json:"uuid"`
+	DeviceName string `json:"dev_name"`
+	Timestamp  string `json:"timestamp"`
+}
+
+// TrackingFile represents the structure of the VHD tracking JSON file
+type TrackingFile struct {
+	Version       string                   `json:"version"`
+	Mappings      map[string]TrackingEntry `json:"mappings"`
+	DetachHistory []DetachHistoryEntry     `json:"detach_history"`
+}
+
+// AttachResult holds the result of an attach operation
 type AttachResult struct {
+	WasNew     bool
 	DeviceName string
 	UUID       string
-	WasNew     bool
 }
 
-// Sentinel errors for VHD operations
+// Common errors
 var (
-	ErrVHDNotFound        = errors.New("VHD not found")
-	ErrVHDNotAttached     = errors.New("VHD not attached")
-	ErrVHDNotMounted      = errors.New("VHD not mounted")
-	ErrVHDAlreadyAttached = errors.New("VHD already attached")
-	ErrVHDAlreadyMounted  = errors.New("VHD already mounted")
-	ErrVHDNotFormatted    = errors.New("VHD not formatted")
-	ErrMultipleVHDs       = errors.New("multiple VHDs attached")
-	ErrInteropDisabled    = errors.New("WSL interop disabled")
-	ErrDeviceNotFound     = errors.New("device not found")
-	ErrMountFailed        = errors.New("mount operation failed")
-	ErrUnmountFailed      = errors.New("unmount operation failed")
-	ErrFormatFailed       = errors.New("format operation failed")
+	ErrVHDNotFound        = errors.New("VHD file not found")
+	ErrVHDNotAttached     = errors.New("VHD is not attached")
+	ErrVHDAlreadyAttached = errors.New("VHD is already attached")
+	ErrVHDNotMounted      = errors.New("VHD is not mounted")
+	ErrVHDNotFormatted    = errors.New("VHD is not formatted")
+	ErrMultipleVHDs       = errors.New("multiple VHDs attached - specify UUID or path")
+	ErrDeviceNotFound     = errors.New("device not found after attach")
 	ErrDetachTimeout      = errors.New("detach operation timed out")
 )
 
-// VHDError represents a VHD operation error with context
+// IsAlreadyAttached checks if error indicates already attached
+func IsAlreadyAttached(err error) bool {
+	return errors.Is(err, ErrVHDAlreadyAttached)
+}
+
+// VHDError is a structured error with context
 type VHDError struct {
 	Op   string
 	Path string
-	UUID string
 	Err  error
 	Help string
 }
@@ -80,9 +122,6 @@ func (e *VHDError) Error() string {
 	if e.Path != "" {
 		return fmt.Sprintf("%s %s: %v", e.Op, e.Path, e.Err)
 	}
-	if e.UUID != "" {
-		return fmt.Sprintf("%s (UUID: %s): %v", e.Op, e.UUID, e.Err)
-	}
 	return fmt.Sprintf("%s: %v", e.Op, e.Err)
 }
 
@@ -90,22 +129,7 @@ func (e *VHDError) Unwrap() error {
 	return e.Err
 }
 
-// IsAlreadyAttached checks if the error indicates VHD is already attached
-func IsAlreadyAttached(err error) bool {
-	return errors.Is(err, ErrVHDAlreadyAttached)
-}
-
-// IsNotFound checks if the error indicates VHD was not found
-func IsNotFound(err error) bool {
-	return errors.Is(err, ErrVHDNotFound)
-}
-
-// IsMultipleVHDs checks if the error indicates multiple VHDs are attached
-func IsMultipleVHDs(err error) bool {
-	return errors.Is(err, ErrMultipleVHDs)
-}
-
-// NewVHDError creates a new VHDError
-func NewVHDError(op, path string, err error, help string) *VHDError {
-	return &VHDError{Op: op, Path: path, Err: err, Help: help}
+// HelpText returns help text for the error
+func (e *VHDError) HelpText() string {
+	return e.Help
 }

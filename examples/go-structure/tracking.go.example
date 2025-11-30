@@ -1,0 +1,306 @@
+// Example: internal/tracking/tracking.go
+// Tracking file management
+
+package tracking
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+// TrackingFile represents the JSON tracking file structure
+type TrackingFile struct {
+	Version       string              `json:"version"`
+	Mappings      map[string]*Mapping `json:"mappings"`
+	DetachHistory []DetachEvent       `json:"detach_history"`
+}
+
+// Mapping represents a VHD path to UUID mapping
+type Mapping struct {
+	UUID         string `json:"uuid"`
+	LastAttached string `json:"last_attached"`
+	MountPoints  string `json:"mount_points"`
+	DevName      string `json:"dev_name"`
+}
+
+// DetachEvent represents a detach history entry
+type DetachEvent struct {
+	Path      string `json:"path"`
+	UUID      string `json:"uuid"`
+	DevName   string `json:"dev_name"`
+	Timestamp string `json:"timestamp"`
+}
+
+// Tracker manages the tracking file
+type Tracker struct {
+	filePath string
+	mu       sync.Mutex
+}
+
+// New creates a new Tracker
+func New(filePath string) (*Tracker, error) {
+	t := &Tracker{
+		filePath: filePath,
+	}
+	
+	// Initialize tracking file if needed
+	if err := t.Init(); err != nil {
+		return nil, err
+	}
+	
+	return t, nil
+}
+
+// Init initializes the tracking file
+func (t *Tracker) Init() error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	// Create directory if needed
+	dir := filepath.Dir(t.filePath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("failed to create tracking directory: %w", err)
+	}
+	
+	// Create file if it doesn't exist
+	if _, err := os.Stat(t.filePath); os.IsNotExist(err) {
+		data := &TrackingFile{
+			Version:       "1.0",
+			Mappings:      make(map[string]*Mapping),
+			DetachHistory: []DetachEvent{},
+		}
+		return t.writeFile(data)
+	}
+	
+	return nil
+}
+
+// normalizePath normalizes a Windows path for consistent tracking
+func normalizePath(path string) string {
+	// Convert backslashes to forward slashes
+	path = strings.ReplaceAll(path, "\\", "/")
+	// Convert to lowercase for case-insensitive matching
+	return strings.ToLower(path)
+}
+
+// readFile reads the tracking file
+func (t *Tracker) readFile() (*TrackingFile, error) {
+	data, err := os.ReadFile(t.filePath)
+	if err != nil {
+		return nil, err
+	}
+	
+	var tf TrackingFile
+	if err := json.Unmarshal(data, &tf); err != nil {
+		return nil, err
+	}
+	
+	if tf.Mappings == nil {
+		tf.Mappings = make(map[string]*Mapping)
+	}
+	
+	return &tf, nil
+}
+
+// writeFile writes the tracking file atomically
+func (t *Tracker) writeFile(data *TrackingFile) error {
+	content, err := json.MarshalIndent(data, "", "  ")
+	if err != nil {
+		return err
+	}
+	
+	// Write to temp file first
+	tempFile := t.filePath + ".tmp"
+	if err := os.WriteFile(tempFile, content, 0644); err != nil {
+		return err
+	}
+	
+	// Atomic rename
+	return os.Rename(tempFile, t.filePath)
+}
+
+// SaveMapping saves a path→UUID mapping
+func (t *Tracker) SaveMapping(path, uuid, mountPoints, devName string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return err
+	}
+	
+	normalized := normalizePath(path)
+	tf.Mappings[normalized] = &Mapping{
+		UUID:         uuid,
+		LastAttached: time.Now().UTC().Format(time.RFC3339),
+		MountPoints:  mountPoints,
+		DevName:      devName,
+	}
+	
+	return t.writeFile(tf)
+}
+
+// LookupUUID looks up UUID by VHD path
+func (t *Tracker) LookupUUID(path string) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return "", err
+	}
+	
+	normalized := normalizePath(path)
+	if mapping, ok := tf.Mappings[normalized]; ok {
+		return mapping.UUID, nil
+	}
+	
+	return "", nil
+}
+
+// LookupUUIDByDevName looks up UUID by device name
+func (t *Tracker) LookupUUIDByDevName(devName string) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return "", err
+	}
+	
+	for _, mapping := range tf.Mappings {
+		if mapping.DevName == devName {
+			return mapping.UUID, nil
+		}
+	}
+	
+	return "", nil
+}
+
+// UpdateMountPoint updates the mount point for a VHD
+func (t *Tracker) UpdateMountPoint(path, mountPoint string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return err
+	}
+	
+	normalized := normalizePath(path)
+	if mapping, ok := tf.Mappings[normalized]; ok {
+		mapping.MountPoints = mountPoint
+		return t.writeFile(tf)
+	}
+	
+	return fmt.Errorf("mapping not found for path: %s", path)
+}
+
+// RemoveMapping removes a VHD mapping
+func (t *Tracker) RemoveMapping(path string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return err
+	}
+	
+	normalized := normalizePath(path)
+	delete(tf.Mappings, normalized)
+	
+	return t.writeFile(tf)
+}
+
+// SaveDetachHistory saves a detach event to history
+func (t *Tracker) SaveDetachHistory(path, uuid, devName string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return err
+	}
+	
+	event := DetachEvent{
+		Path:      normalizePath(path),
+		UUID:      uuid,
+		DevName:   devName,
+		Timestamp: time.Now().UTC().Format(time.RFC3339),
+	}
+	
+	// Prepend to history (most recent first)
+	tf.DetachHistory = append([]DetachEvent{event}, tf.DetachHistory...)
+	
+	// Keep only last 50 entries
+	if len(tf.DetachHistory) > 50 {
+		tf.DetachHistory = tf.DetachHistory[:50]
+	}
+	
+	return t.writeFile(tf)
+}
+
+// RemoveDetachHistory removes detach history for a path
+func (t *Tracker) RemoveDetachHistory(path string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return err
+	}
+	
+	normalized := normalizePath(path)
+	var filtered []DetachEvent
+	
+	for _, event := range tf.DetachHistory {
+		if event.Path != normalized {
+			filtered = append(filtered, event)
+		}
+	}
+	
+	tf.DetachHistory = filtered
+	return t.writeFile(tf)
+}
+
+// GetDetachHistory returns recent detach events
+func (t *Tracker) GetDetachHistory(limit int) ([]DetachEvent, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return nil, err
+	}
+	
+	if limit > len(tf.DetachHistory) {
+		limit = len(tf.DetachHistory)
+	}
+	
+	return tf.DetachHistory[:limit], nil
+}
+
+// SyncMappingsSilent removes stale mappings silently
+func (t *Tracker) SyncMappingsSilent() {
+	// This would check each mapping against actual system state
+	// and remove entries for VHDs that are no longer attached
+}
+
+// GetAllMappings returns all current mappings
+func (t *Tracker) GetAllMappings() (map[string]*Mapping, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	
+	tf, err := t.readFile()
+	if err != nil {
+		return nil, err
+	}
+	
+	return tf.Mappings, nil
+}
+

@@ -1,0 +1,30 @@
+// Example: cmd/vhdm/main.go
+// This is an example of what the Go entry point would look like
+
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"github.com/user/vhdm/internal/cli"
+)
+
+// Version information (set at build time)
+var (
+	version = "dev"
+	commit  = "none"
+	date    = "unknown"
+)
+
+func main() {
+	// Create root command with version info
+	rootCmd := cli.NewRootCommand(version, commit, date)
+	
+	// Execute
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+}
+

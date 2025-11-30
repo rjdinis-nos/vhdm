@@ -1,4 +1,4 @@
-// Package tracking manages the persistent VHD tracking file.
+// Package tracking manages persistent VHD state tracking.
 package tracking
 
 import (
@@ -6,254 +6,277 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
-	"github.com/rjdinis/vhdm/pkg/utils"
+	"github.com/rjdinis/vhdm/internal/types"
 )
 
-type TrackingFile struct {
-	Version       string              `json:"version"`
-	Mappings      map[string]*Mapping `json:"mappings"`
-	DetachHistory []DetachEvent       `json:"detach_history"`
-}
-
-type Mapping struct {
-	UUID         string `json:"uuid"`
-	LastAttached string `json:"last_attached"`
-	MountPoints  string `json:"mount_points"`
-	DevName      string `json:"dev_name"`
-}
-
-type DetachEvent struct {
-	Path      string `json:"path"`
-	UUID      string `json:"uuid"`
-	DevName   string `json:"dev_name"`
-	Timestamp string `json:"timestamp"`
-}
-
-const (
-	trackingVersion   = "1.0"
-	maxHistoryEntries = 50
-)
-
+// Tracker manages VHD tracking state
 type Tracker struct {
 	filePath string
-	mu       sync.Mutex
+	mu       sync.RWMutex
 }
 
+// New creates a new Tracker
 func New(filePath string) (*Tracker, error) {
 	t := &Tracker{filePath: filePath}
-	if err := t.Init(); err != nil {
+	if err := t.init(); err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (t *Tracker) Init() error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+func (t *Tracker) init() error {
 	dir := filepath.Dir(t.filePath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return fmt.Errorf("failed to create tracking directory: %w", err)
 	}
+
 	if _, err := os.Stat(t.filePath); os.IsNotExist(err) {
-		data := &TrackingFile{
-			Version:       trackingVersion,
-			Mappings:      make(map[string]*Mapping),
-			DetachHistory: []DetachEvent{},
+		tf := &types.TrackingFile{
+			Version:       "1.0",
+			Mappings:      make(map[string]types.TrackingEntry),
+			DetachHistory: []types.DetachHistoryEntry{},
 		}
-		return t.writeFileLocked(data)
+		return t.write(tf)
 	}
 	return nil
 }
 
-func (t *Tracker) FilePath() string { return t.filePath }
+func (t *Tracker) read() (*types.TrackingFile, error) {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
-func (t *Tracker) readFileLocked() (*TrackingFile, error) {
 	data, err := os.ReadFile(t.filePath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return &TrackingFile{
-				Version:       trackingVersion,
-				Mappings:      make(map[string]*Mapping),
-				DetachHistory: []DetachEvent{},
-			}, nil
-		}
-		return nil, err
+		return nil, fmt.Errorf("failed to read tracking file: %w", err)
 	}
-	var tf TrackingFile
+
+	var tf types.TrackingFile
 	if err := json.Unmarshal(data, &tf); err != nil {
 		return nil, fmt.Errorf("failed to parse tracking file: %w", err)
 	}
+	
 	if tf.Mappings == nil {
-		tf.Mappings = make(map[string]*Mapping)
+		tf.Mappings = make(map[string]types.TrackingEntry)
 	}
 	return &tf, nil
 }
 
-func (t *Tracker) writeFileLocked(data *TrackingFile) error {
-	content, err := json.MarshalIndent(data, "", "  ")
+func (t *Tracker) write(tf *types.TrackingFile) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	data, err := json.MarshalIndent(tf, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal tracking data: %w", err)
+		return fmt.Errorf("failed to marshal tracking file: %w", err)
 	}
-	tempFile := t.filePath + ".tmp"
-	if err := os.WriteFile(tempFile, content, 0644); err != nil {
+
+	tmpFile := t.filePath + ".tmp"
+	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
-	if err := os.Rename(tempFile, t.filePath); err != nil {
-		os.Remove(tempFile)
+	
+	if err := os.Rename(tmpFile, t.filePath); err != nil {
+		os.Remove(tmpFile)
 		return fmt.Errorf("failed to rename temp file: %w", err)
 	}
 	return nil
 }
 
 func normalizePath(path string) string {
-	return utils.NormalizePath(path)
+	return strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
 }
 
-func (t *Tracker) SaveMapping(path, uuid, mountPoints, devName string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
+// SaveMapping saves or updates a VHD mapping
+func (t *Tracker) SaveMapping(path, uuid, mountPoint, devName string) error {
+	tf, err := t.read()
 	if err != nil {
 		return err
 	}
+
 	normalized := normalizePath(path)
-	tf.Mappings[normalized] = &Mapping{
+	entry := types.TrackingEntry{
 		UUID:         uuid,
-		LastAttached: time.Now().UTC().Format(time.RFC3339),
-		MountPoints:  mountPoints,
-		DevName:      devName,
+		LastAttached: time.Now().Format(time.RFC3339),
+		DeviceName:   devName,
 	}
-	return t.writeFileLocked(tf)
+	if mountPoint != "" {
+		entry.MountPoints = []string{mountPoint}
+	}
+	tf.Mappings[normalized] = entry
+
+	return t.write(tf)
 }
 
+// LookupUUIDByPath looks up UUID by VHD path
 func (t *Tracker) LookupUUIDByPath(path string) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
+	tf, err := t.read()
 	if err != nil {
 		return "", err
 	}
+
 	normalized := normalizePath(path)
-	if mapping, ok := tf.Mappings[normalized]; ok && mapping.UUID != "" {
-		return mapping.UUID, nil
+	if entry, ok := tf.Mappings[normalized]; ok {
+		return entry.UUID, nil
 	}
 	return "", nil
 }
 
+// LookupPathByUUID looks up VHD path by UUID
 func (t *Tracker) LookupPathByUUID(uuid string) (string, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
+	tf, err := t.read()
 	if err != nil {
 		return "", err
 	}
-	for path, mapping := range tf.Mappings {
-		if mapping.UUID == uuid {
+
+	for path, entry := range tf.Mappings {
+		if entry.UUID == uuid {
 			return path, nil
 		}
 	}
 	return "", nil
 }
 
-func (t *Tracker) GetMapping(path string) (*Mapping, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
+// LookupPathByDevName looks up VHD path by device name
+func (t *Tracker) LookupPathByDevName(devName string) (string, error) {
+	tf, err := t.read()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
-	normalized := normalizePath(path)
-	if mapping, ok := tf.Mappings[normalized]; ok {
-		return &Mapping{
-			UUID:         mapping.UUID,
-			LastAttached: mapping.LastAttached,
-			MountPoints:  mapping.MountPoints,
-			DevName:      mapping.DevName,
-		}, nil
-	}
-	return nil, nil
-}
 
-func (t *Tracker) GetAllMappings() (map[string]*Mapping, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string]*Mapping, len(tf.Mappings))
-	for k, v := range tf.Mappings {
-		result[k] = &Mapping{
-			UUID:         v.UUID,
-			LastAttached: v.LastAttached,
-			MountPoints:  v.MountPoints,
-			DevName:      v.DevName,
+	for path, entry := range tf.Mappings {
+		if entry.DeviceName == devName {
+			return path, nil
 		}
 	}
-	return result, nil
+	return "", nil
 }
 
-func (t *Tracker) RemoveMapping(path string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
+// LookupDevNameByPath looks up device name by VHD path
+func (t *Tracker) LookupDevNameByPath(path string) (string, error) {
+	tf, err := t.read()
 	if err != nil {
-		return err
+		return "", err
 	}
-	delete(tf.Mappings, normalizePath(path))
-	return t.writeFileLocked(tf)
-}
 
-func (t *Tracker) SaveDetachHistory(path, uuid, devName string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
-	if err != nil {
-		return err
-	}
-	event := DetachEvent{
-		Path:      normalizePath(path),
-		UUID:      uuid,
-		DevName:   devName,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-	}
-	tf.DetachHistory = append([]DetachEvent{event}, tf.DetachHistory...)
-	if len(tf.DetachHistory) > maxHistoryEntries {
-		tf.DetachHistory = tf.DetachHistory[:maxHistoryEntries]
-	}
-	return t.writeFileLocked(tf)
-}
-
-func (t *Tracker) RemoveDetachHistory(path string) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
-	if err != nil {
-		return err
-	}
 	normalized := normalizePath(path)
-	var filtered []DetachEvent
-	for _, event := range tf.DetachHistory {
-		if event.Path != normalized {
-			filtered = append(filtered, event)
+	if entry, ok := tf.Mappings[normalized]; ok {
+		return entry.DeviceName, nil
+	}
+	return "", nil
+}
+
+// GetEntry gets a tracking entry by path
+func (t *Tracker) GetEntry(path string) (types.TrackingEntry, error) {
+	tf, err := t.read()
+	if err != nil {
+		return types.TrackingEntry{}, err
+	}
+
+	normalized := normalizePath(path)
+	if entry, ok := tf.Mappings[normalized]; ok {
+		return entry, nil
+	}
+	return types.TrackingEntry{}, fmt.Errorf("not found")
+}
+
+// GetAllPaths returns all tracked VHD paths
+func (t *Tracker) GetAllPaths() ([]string, error) {
+	tf, err := t.read()
+	if err != nil {
+		return nil, err
+	}
+
+	paths := make([]string, 0, len(tf.Mappings))
+	for path := range tf.Mappings {
+		paths = append(paths, path)
+	}
+	return paths, nil
+}
+
+// UpdateMountPoints updates mount points for a VHD
+func (t *Tracker) UpdateMountPoints(path string, mountPoints []string) error {
+	tf, err := t.read()
+	if err != nil {
+		return err
+	}
+
+	normalized := normalizePath(path)
+	if entry, ok := tf.Mappings[normalized]; ok {
+		entry.MountPoints = mountPoints
+		tf.Mappings[normalized] = entry
+		return t.write(tf)
+	}
+	return nil
+}
+
+// RemoveMapping removes a VHD mapping
+func (t *Tracker) RemoveMapping(path string) error {
+	tf, err := t.read()
+	if err != nil {
+		return err
+	}
+
+	normalized := normalizePath(path)
+	delete(tf.Mappings, normalized)
+	return t.write(tf)
+}
+
+// SaveDetachHistory saves a detach event
+func (t *Tracker) SaveDetachHistory(path, uuid, devName string) error {
+	tf, err := t.read()
+	if err != nil {
+		return err
+	}
+
+	entry := types.DetachHistoryEntry{
+		Path:       normalizePath(path),
+		UUID:       uuid,
+		DeviceName: devName,
+		Timestamp:  time.Now().Format(time.RFC3339),
+	}
+	
+	// Prepend new entry
+	tf.DetachHistory = append([]types.DetachHistoryEntry{entry}, tf.DetachHistory...)
+	
+	// Trim to max 50 entries
+	if len(tf.DetachHistory) > 50 {
+		tf.DetachHistory = tf.DetachHistory[:50]
+	}
+	
+	return t.write(tf)
+}
+
+// RemoveDetachHistory removes detach history for a path
+func (t *Tracker) RemoveDetachHistory(path string) error {
+	tf, err := t.read()
+	if err != nil {
+		return err
+	}
+
+	normalized := normalizePath(path)
+	var filtered []types.DetachHistoryEntry
+	for _, entry := range tf.DetachHistory {
+		if entry.Path != normalized {
+			filtered = append(filtered, entry)
 		}
 	}
 	tf.DetachHistory = filtered
-	return t.writeFileLocked(tf)
+	return t.write(tf)
 }
 
-func (t *Tracker) GetDetachHistory(limit int) ([]DetachEvent, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	tf, err := t.readFileLocked()
+// GetDetachHistory returns recent detach history
+func (t *Tracker) GetDetachHistory(limit int) ([]types.DetachHistoryEntry, error) {
+	tf, err := t.read()
 	if err != nil {
 		return nil, err
 	}
+
 	if limit <= 0 || limit > len(tf.DetachHistory) {
-		limit = len(tf.DetachHistory)
+		return tf.DetachHistory, nil
 	}
 	return tf.DetachHistory[:limit], nil
 }

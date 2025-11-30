@@ -1,17 +1,19 @@
+// Example: internal/cli/attach.go
+// Attach command implementation
+
 package cli
 
 import (
 	"fmt"
 
 	"github.com/spf13/cobra"
-
-	"github.com/rjdinis/vhdm/internal/types"
-	"github.com/rjdinis/vhdm/internal/validation"
-	"github.com/rjdinis/vhdm/pkg/utils"
+	"github.com/user/vhdm/internal/types"
+	"github.com/user/vhdm/internal/validation"
 )
 
 func newAttachCmd() *cobra.Command {
 	var vhdPath string
+
 	cmd := &cobra.Command{
 		Use:   "attach",
 		Short: "Attach a VHD to WSL (without mounting)",
@@ -19,18 +21,20 @@ func newAttachCmd() *cobra.Command {
 
 The VHD will be accessible as /dev/sdX after attachment.
 Use 'mount' command to attach AND mount in one step.`,
-		Example: "  vhdm attach --vhd-path C:/VMs/disk.vhdx",
+		Example: `  vhdm attach --vhd-path C:/VMs/disk.vhdx`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAttach(vhdPath)
 		},
 	}
+
 	cmd.Flags().StringVar(&vhdPath, "vhd-path", "", "VHD file path (Windows format)")
 	cmd.MarkFlagRequired("vhd-path")
+
 	return cmd
 }
 
 func runAttach(vhdPath string) error {
-	ctx := getContext()
+	ctx := appCtx
 	log := ctx.Logger
 
 	// Validate path
@@ -56,42 +60,29 @@ func runAttach(vhdPath string) error {
 		}
 	}
 
-	// Take snapshot of current devices before attach
+	// Take snapshot of current devices
 	oldDevices, err := ctx.WSL.GetBlockDevices()
 	if err != nil {
 		return fmt.Errorf("failed to get block devices: %w", err)
 	}
 
 	// Attempt to attach
-	_, err = ctx.WSL.AttachVHD(vhdPath)
+	result, err := ctx.WSL.AttachVHD(vhdPath)
 	if err != nil {
+		// Check if already attached
 		if types.IsAlreadyAttached(err) {
-			// VHD is already attached - find its UUID
-			log.Debug("VHD is already attached, looking up UUID...")
-			
-			// Try tracking file first
-			uuid, _ := ctx.Tracker.LookupUUIDByPath(vhdPath)
-			if uuid == "" {
-				// Fall back to device discovery
-				uuid, _ = ctx.WSL.FindUUIDByPath(vhdPath)
+			// Find existing UUID
+			uuid, findErr := ctx.WSL.FindUUIDByPath(vhdPath)
+			if findErr != nil {
+				return findErr
 			}
 			
-			devName := ""
-			if uuid != "" {
-				devName, _ = ctx.WSL.GetDeviceByUUID(uuid)
+			if quiet {
+				fmt.Printf("%s (%s): already attached\n", vhdPath, uuid)
+			} else {
+				log.Info("VHD is already attached")
+				printAttachResult(vhdPath, uuid, "", false)
 			}
-			
-			if ctx.Config.Quiet {
-				if uuid != "" {
-					fmt.Printf("%s (%s): already attached\n", vhdPath, uuid)
-				} else {
-					fmt.Printf("%s: already attached\n", vhdPath)
-				}
-				return nil
-			}
-
-			log.Info("VHD is already attached")
-			printAttachResult(vhdPath, uuid, devName, false, uuid == "")
 			return nil
 		}
 		return &types.VHDError{
@@ -119,7 +110,7 @@ func runAttach(vhdPath string) error {
 	ctx.Tracker.RemoveDetachHistory(vhdPath)
 
 	// Output
-	if ctx.Config.Quiet {
+	if quiet {
 		if uuid != "" {
 			fmt.Printf("%s (%s): attached\n", vhdPath, uuid)
 		} else {
@@ -128,44 +119,31 @@ func runAttach(vhdPath string) error {
 		return nil
 	}
 
-	log.Success("VHD attached successfully")
-	printAttachResult(vhdPath, uuid, devName, true, uuid == "")
+	printAttachResult(vhdPath, uuid, devName, true)
 	return nil
 }
 
-func printAttachResult(path, uuid, devName string, newlyAttached, unformatted bool) {
+func printAttachResult(path, uuid, devName string, newlyAttached bool) {
+	// Table output for verbose mode
 	fmt.Println()
 	fmt.Println("VHD Attach Result")
 	fmt.Println()
-	
-	pairs := [][2]string{
-		{"Path", path},
-	}
-	
+	fmt.Printf("| %-14s | %-50s |\n", "Property", "Value")
+	fmt.Println("+----------------+----------------------------------------------------+")
+	fmt.Printf("| %-14s | %-50s |\n", "Path", path)
 	if uuid != "" {
-		pairs = append(pairs, [2]string{"UUID", uuid})
-	} else if unformatted {
-		pairs = append(pairs, [2]string{"UUID", "(unformatted)"})
+		fmt.Printf("| %-14s | %-50s |\n", "UUID", uuid)
+	} else {
+		fmt.Printf("| %-14s | %-50s |\n", "UUID", "(unformatted)")
 	}
-	
 	if devName != "" {
-		pairs = append(pairs, [2]string{"Device", "/dev/" + devName})
+		fmt.Printf("| %-14s | %-50s |\n", "Device", "/dev/"+devName)
 	}
-	
 	status := "attached"
 	if newlyAttached {
 		status = "attached (newly)"
 	}
-	if unformatted {
-		status += " - needs formatting"
-	}
-	pairs = append(pairs, [2]string{"Status", status})
-	
-	utils.KeyValueTable("", pairs, 14, 50)
-	
-	if unformatted {
-		fmt.Println()
-		fmt.Printf("To format this VHD, run:\n")
-		fmt.Printf("  vhdm format --dev-name %s --type ext4\n", devName)
-	}
+	fmt.Printf("| %-14s | %-50s |\n", "Status", status)
+	fmt.Println("+----------------+----------------------------------------------------+")
 }
+
