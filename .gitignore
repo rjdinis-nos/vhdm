@@ -1,2 +1,15 @@
 tests/.env.test
 tests/vhd_mapping.json
+# Go binary
+/vhdm
+
+# Go build cache
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+go.work
+go.work.sum
