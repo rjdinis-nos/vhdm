@@ -34,6 +34,12 @@ type VHDInfo struct {
 type MountPoints []string
 
 func (m *MountPoints) UnmarshalJSON(data []byte) error {
+	// Handle null
+	if string(data) == "null" {
+		*m = []string{}
+		return nil
+	}
+	
 	// Try array first
 	var arr []string
 	if err := json.Unmarshal(data, &arr); err == nil {
