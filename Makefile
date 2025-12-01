@@ -18,6 +18,9 @@ endif
 PREFIX := /usr/local
 BINDIR := $(PREFIX)/bin
 
+# XDG user install location (XDG_BIN_HOME or ~/.local/bin)
+XDG_BIN_HOME := $(or $(XDG_BIN_HOME),$(HOME)/.local/bin)
+
 .PHONY: all build clean test test-unit test-integration install uninstall \
         completion-bash completion-zsh completion-fish help dev lint fmt
 
@@ -94,19 +97,23 @@ install: build ## Install binary (requires sudo)
 	@echo "  # Fish (~/.config/fish/config.fish)"
 	@echo "  vhdm completion fish | source"
 
-install-user: build ## Install to user's GOBIN (no sudo required)
-	@echo "Installing $(BINARY_NAME) to $(GOBIN)..."
-	@mkdir -p $(GOBIN)
-	cp $(BINARY_NAME) $(GOBIN)/$(BINARY_NAME)
+install-user: build ## Install to XDG_BIN_HOME or ~/.local/bin (no sudo required)
+	@echo "Installing $(BINARY_NAME) to $(XDG_BIN_HOME)..."
+	@mkdir -p $(XDG_BIN_HOME)
+	cp $(BINARY_NAME) $(XDG_BIN_HOME)/$(BINARY_NAME)
 	@echo ""
 	@echo "Installation complete!"
-	@echo "Make sure $(GOBIN) is in your PATH."
+	@echo "Make sure $(XDG_BIN_HOME) is in your PATH."
 	@echo ""
-	@echo "To enable shell completions, run:"
-	@echo "  # Bash"
-	@echo "  echo 'source <(vhdm completion bash)' >> ~/.bashrc"
-	@echo "  # Zsh"  
-	@echo "  echo 'source <(vhdm completion zsh)' >> ~/.zshrc"
+	@echo "To enable shell completions, add to your shell config:"
+	@echo "  # Bash (~/.bashrc)"
+	@echo "  source <(vhdm completion bash)"
+	@echo ""
+	@echo "  # Zsh (~/.zshrc)"
+	@echo "  source <(vhdm completion zsh)"
+	@echo ""
+	@echo "  # Fish (~/.config/fish/config.fish)"
+	@echo "  vhdm completion fish | source"
 
 uninstall: ## Uninstall binary (requires sudo)
 	@echo "Uninstalling $(BINARY_NAME)..."
@@ -149,4 +156,4 @@ help: ## Show this help
 	@echo "  make build          # Build the binary"
 	@echo "  make test           # Run unit tests"
 	@echo "  make install        # Install system-wide (requires sudo)"
-	@echo "  make install-user   # Install to ~/go/bin"
+	@echo "  make install-user   # Install to ~/.local/bin (or XDG_BIN_HOME)"
