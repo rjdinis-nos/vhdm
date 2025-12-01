@@ -17,9 +17,6 @@ endif
 # Install locations
 PREFIX := /usr/local
 BINDIR := $(PREFIX)/bin
-COMPLETION_DIR_BASH := /etc/bash_completion.d
-COMPLETION_DIR_ZSH := /usr/share/zsh/site-functions
-COMPLETION_DIR_FISH := /usr/share/fish/vendor_completions.d
 
 .PHONY: all build clean test test-unit test-integration install uninstall \
         completion-bash completion-zsh completion-fish help dev lint fmt
@@ -79,31 +76,23 @@ fmt: ## Format code
 
 ## Install targets
 
-install: build ## Install binary and completions (requires sudo)
+install: build ## Install binary (requires sudo)
 	@echo "Installing $(BINARY_NAME) to $(BINDIR)..."
 	sudo install -d $(BINDIR)
 	sudo install -m 755 $(BINARY_NAME) $(BINDIR)/$(BINARY_NAME)
-	@echo "Installing shell completions..."
-	@if [ -d "$(COMPLETION_DIR_BASH)" ]; then \
-		sudo ./$(BINARY_NAME) completion bash > /tmp/vhdm.bash && \
-		sudo install -m 644 /tmp/vhdm.bash $(COMPLETION_DIR_BASH)/vhdm && \
-		rm /tmp/vhdm.bash && \
-		echo "  Bash completions installed to $(COMPLETION_DIR_BASH)/vhdm"; \
-	fi
-	@if [ -d "$(COMPLETION_DIR_ZSH)" ]; then \
-		sudo ./$(BINARY_NAME) completion zsh > /tmp/_vhdm && \
-		sudo install -m 644 /tmp/_vhdm $(COMPLETION_DIR_ZSH)/_vhdm && \
-		rm /tmp/_vhdm && \
-		echo "  Zsh completions installed to $(COMPLETION_DIR_ZSH)/_vhdm"; \
-	fi
-	@if [ -d "$(COMPLETION_DIR_FISH)" ]; then \
-		sudo ./$(BINARY_NAME) completion fish > /tmp/vhdm.fish && \
-		sudo install -m 644 /tmp/vhdm.fish $(COMPLETION_DIR_FISH)/vhdm.fish && \
-		rm /tmp/vhdm.fish && \
-		echo "  Fish completions installed to $(COMPLETION_DIR_FISH)/vhdm.fish"; \
-	fi
+	@echo ""
 	@echo "Installation complete!"
 	@echo "Run 'vhdm --help' to get started."
+	@echo ""
+	@echo "To enable shell completions, add to your shell config:"
+	@echo "  # Bash (~/.bashrc)"
+	@echo "  source <(vhdm completion bash)"
+	@echo ""
+	@echo "  # Zsh (~/.zshrc)"
+	@echo "  source <(vhdm completion zsh)"
+	@echo ""
+	@echo "  # Fish (~/.config/fish/config.fish)"
+	@echo "  vhdm completion fish | source"
 
 install-user: build ## Install to user's GOBIN (no sudo required)
 	@echo "Installing $(BINARY_NAME) to $(GOBIN)..."
@@ -119,13 +108,12 @@ install-user: build ## Install to user's GOBIN (no sudo required)
 	@echo "  # Zsh"  
 	@echo "  echo 'source <(vhdm completion zsh)' >> ~/.zshrc"
 
-uninstall: ## Uninstall binary and completions (requires sudo)
+uninstall: ## Uninstall binary (requires sudo)
 	@echo "Uninstalling $(BINARY_NAME)..."
 	sudo rm -f $(BINDIR)/$(BINARY_NAME)
-	sudo rm -f $(COMPLETION_DIR_BASH)/vhdm
-	sudo rm -f $(COMPLETION_DIR_ZSH)/_vhdm
-	sudo rm -f $(COMPLETION_DIR_FISH)/vhdm.fish
 	@echo "Uninstallation complete!"
+	@echo ""
+	@echo "Note: Remove completion lines from your shell config if added."
 
 ## Completion generation
 
