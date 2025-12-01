@@ -53,6 +53,7 @@ resize, status, history, and sync.`,
 
 	rootCmd.AddCommand(
 		newVersionCmd(version, commit, date),
+		newCompletionCmd(),
 		newStatusCmd(),
 		newAttachCmd(),
 		newDetachCmd(),
