@@ -8,38 +8,42 @@ import (
 
 	"github.com/rjdinis/vhdm/internal/types"
 	"github.com/rjdinis/vhdm/internal/validation"
+	"github.com/rjdinis/vhdm/internal/wsl"
 	"github.com/rjdinis/vhdm/pkg/utils"
 )
 
 func newStatusCmd() *cobra.Command {
 	var (
-		vhdPath    string
-		uuid       string
-		mountPoint string
-		showAll    bool
+		vhdPath      string
+		uuid         string
+		mountPoint   string
+		showAll      bool
+		historyLimit int
 	)
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show VHD disk status",
-		Long: `Show current VHD disk status.
+		Long: `Show current VHD disk status including all disks, tracked VHDs, and detach history.
 
-Without flags, shows all tracked VHDs.
+Without flags, shows all disks, tracked VHDs, and recent detach history.
 Use specific flags to query particular VHDs.`,
-		Example: `  vhdm status --all
+		Example: `  vhdm status
+  vhdm status --history-limit 20
   vhdm status --vhd-path C:/VMs/disk.vhdx
   vhdm status --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(vhdPath, uuid, mountPoint, showAll)
+			return runStatus(vhdPath, uuid, mountPoint, showAll, historyLimit)
 		},
 	}
 	cmd.Flags().StringVar(&vhdPath, "vhd-path", "", "VHD file path")
 	cmd.Flags().StringVar(&uuid, "uuid", "", "VHD UUID")
 	cmd.Flags().StringVar(&mountPoint, "mount-point", "", "Mount point path")
 	cmd.Flags().BoolVar(&showAll, "all", false, "Show all tracked VHDs")
+	cmd.Flags().IntVar(&historyLimit, "history-limit", 10, "Number of detach history entries to show")
 	return cmd
 }
 
-func runStatus(vhdPath, uuid, mountPoint string, showAll bool) error {
+func runStatus(vhdPath, uuid, mountPoint string, showAll bool, historyLimit int) error {
 	ctx := getContext()
 	log := ctx.Logger
 
@@ -63,27 +67,24 @@ func runStatus(vhdPath, uuid, mountPoint string, showAll bool) error {
 	log.Debug("Status operation starting")
 
 	if showAll {
-		return showAllStatus(ctx)
+		return showAllStatus(ctx, historyLimit)
 	}
 
 	// Single VHD status
 	return showSingleStatus(ctx, vhdPath, uuid, mountPoint)
 }
 
-func showAllStatus(ctx *AppContext) error {
+func showAllStatus(ctx *AppContext, historyLimit int) error {
+	// Get all disks first (including system disks)
+	allDisks, err := ctx.WSL.GetAllDisks()
+	if err != nil {
+		ctx.Logger.Debug("Failed to get disks: %v", err)
+	}
+
+	// Get tracked VHDs
 	paths, err := ctx.Tracker.GetAllPaths()
 	if err != nil {
 		return fmt.Errorf("failed to get tracked VHDs: %w", err)
-	}
-
-	if len(paths) == 0 {
-		if ctx.Config.Quiet {
-			fmt.Println("no tracked VHDs")
-		} else {
-			ctx.Logger.Info("No tracked VHDs found")
-			ctx.Logger.Info("Use 'vhdm attach' or 'vhdm mount' to attach a VHD")
-		}
-		return nil
 	}
 
 	var vhds []types.VHDInfo
@@ -92,7 +93,23 @@ func showAllStatus(ctx *AppContext) error {
 		vhds = append(vhds, info)
 	}
 
+	// Get detach history
+	history, err := ctx.Tracker.GetDetachHistory(historyLimit)
+	if err != nil {
+		ctx.Logger.Debug("Failed to get detach history: %v", err)
+	}
+
 	if ctx.Config.Quiet {
+		// Print all disks in quiet mode
+		for _, disk := range allDisks {
+			mps := filterEmptyMountPoints(disk.MountPoints)
+			mp := strings.Join(mps, ",")
+			if mp == "" {
+				mp = "(not mounted)"
+			}
+			fmt.Printf("%s: %s at %s\n", disk.Name, disk.FSType, mp)
+		}
+		// Print tracked VHDs
 		for _, vhd := range vhds {
 			status := strings.ToLower(string(vhd.State))
 			if vhd.UUID != "" {
@@ -101,10 +118,28 @@ func showAllStatus(ctx *AppContext) error {
 				fmt.Printf("%s: %s\n", vhd.Path, status)
 			}
 		}
+		// Print detach history count
+		fmt.Printf("detach_history: %d\n", len(history))
 		return nil
 	}
 
-	printStatusTable(vhds)
+	// Print all disks table
+	if len(allDisks) > 0 {
+		printAllDisksTable(allDisks)
+	}
+
+	// Print tracked VHDs table
+	if len(vhds) > 0 {
+		printStatusTable(vhds)
+	} else {
+		fmt.Println()
+		ctx.Logger.Info("No tracked VHDs found")
+		ctx.Logger.Info("Use 'vhdm attach' or 'vhdm mount' to attach a VHD")
+	}
+
+	// Print detach history table
+	printDetachHistoryTable(history)
+
 	return nil
 }
 
@@ -166,18 +201,19 @@ func getVHDStatus(ctx *AppContext, path string) types.VHDInfo {
 		attached, _ := ctx.WSL.IsAttached(info.UUID)
 		if attached {
 			info.State = types.StateAttachedFormatted
-			
-			// Check if mounted
-			mp, _ := ctx.WSL.GetMountPoint(info.UUID)
-			if mp != "" {
-				info.State = types.StateMounted
-				info.MountPoint = mp
-			}
 
-			// Get device info
-			devName, _ := ctx.WSL.GetDeviceByUUID(info.UUID)
-			if devName != "" {
-				info.DeviceName = devName
+			// Get full disk info (mount points, available space, usage)
+			diskInfo, _ := ctx.WSL.GetVHDInfo(info.UUID)
+			if diskInfo != nil {
+				if diskInfo.MountPoint != "" {
+					info.State = types.StateMounted
+					info.MountPoint = diskInfo.MountPoint
+				}
+				if diskInfo.DeviceName != "" {
+					info.DeviceName = diskInfo.DeviceName
+				}
+				info.FSAvail = diskInfo.FSAvail
+				info.FSUse = diskInfo.FSUse
 			}
 		} else {
 			info.State = types.StateDetached
@@ -190,17 +226,68 @@ func getVHDStatus(ctx *AppContext, path string) types.VHDInfo {
 	return info
 }
 
+// filterEmptyMountPoints removes empty strings from mount points
+func filterEmptyMountPoints(mps []string) []string {
+	var result []string
+	for _, mp := range mps {
+		if mp != "" {
+			result = append(result, mp)
+		}
+	}
+	return result
+}
+
+func printAllDisksTable(disks []wsl.BlockDevice) {
+	fmt.Println()
+	fmt.Println("WSL Attached Disks")
+	fmt.Println()
+
+	// Calculate column widths
+	colWidths := []int{10, 36, 10, 40, 10, 8}
+	headers := []string{"Device", "UUID", "Type", "Mount Points", "Available", "Use%"}
+
+	utils.PrintTableHeader(colWidths, headers)
+
+	for _, disk := range disks {
+		uuid := disk.UUID
+		if uuid == "" {
+			uuid = "-"
+		}
+		fsType := disk.FSType
+		if fsType == "" {
+			fsType = "-"
+		}
+		// Get all non-empty mount points
+		mps := filterEmptyMountPoints(disk.MountPoints)
+		mp := "-"
+		if len(mps) > 0 {
+			mp = strings.Join(mps, ", ")
+		}
+		avail := disk.FSAvail
+		if avail == "" {
+			avail = "-"
+		}
+		useP := disk.FSUseP
+		if useP == "" {
+			useP = "-"
+		}
+		utils.PrintTableRow(colWidths, disk.Name, uuid, fsType, mp, avail, useP)
+	}
+
+	utils.PrintTableFooter(colWidths)
+}
+
 func printStatusTable(vhds []types.VHDInfo) {
 	fmt.Println()
 	fmt.Println("Tracked VHD Disks")
 	fmt.Println()
-	
+
 	// Calculate column widths
 	colWidths := []int{40, 36, 8, 20, 12}
 	headers := []string{"Path", "UUID", "Device", "Mount Point", "Status"}
-	
+
 	utils.PrintTableHeader(colWidths, headers)
-	
+
 	for _, vhd := range vhds {
 		uuid := vhd.UUID
 		if uuid == "" {
@@ -216,32 +303,64 @@ func printStatusTable(vhds []types.VHDInfo) {
 		}
 		utils.PrintTableRow(colWidths, vhd.Path, uuid, dev, mp, colorizeStatus(string(vhd.State)))
 	}
-	
+
+	utils.PrintTableFooter(colWidths)
+}
+
+func printDetachHistoryTable(history []types.DetachHistoryEntry) {
+	fmt.Println()
+	fmt.Println("Detach History")
+	fmt.Println()
+
+	if len(history) == 0 {
+		fmt.Println("  No detach history")
+		return
+	}
+
+	colWidths := []int{40, 36, 8, 20}
+	headers := []string{"Path", "UUID", "Device", "Timestamp"}
+	utils.PrintTableHeader(colWidths, headers)
+
+	for _, entry := range history {
+		uuid := entry.UUID
+		dev := entry.DeviceName
+		if dev == "" {
+			dev = "-"
+		}
+		// Format timestamp (truncate to datetime)
+		ts := entry.Timestamp
+		if len(ts) > 19 {
+			ts = ts[:19]
+		}
+		utils.PrintTableRow(colWidths, entry.Path, uuid, dev, ts)
+	}
 	utils.PrintTableFooter(colWidths)
 }
 
 func printSingleStatus(info types.VHDInfo) {
+	// Helper to show "-" for empty values
+	valOrDash := func(s string) string {
+		if s == "" {
+			return "-"
+		}
+		return s
+	}
+
+	device := "-"
+	if info.DeviceName != "" {
+		device = "/dev/" + info.DeviceName
+	}
+
 	pairs := [][2]string{
 		{"Path", info.Path},
+		{"UUID", valOrDash(info.UUID)},
+		{"Device", device},
+		{"Mount Point", valOrDash(info.MountPoint)},
+		{"Available", valOrDash(info.FSAvail)},
+		{"Usage", valOrDash(info.FSUse)},
+		{"Status", colorizeStatus(string(info.State))},
 	}
-	
-	if info.UUID != "" {
-		pairs = append(pairs, [2]string{"UUID", info.UUID})
-	}
-	if info.DeviceName != "" {
-		pairs = append(pairs, [2]string{"Device", "/dev/" + info.DeviceName})
-	}
-	if info.MountPoint != "" {
-		pairs = append(pairs, [2]string{"Mount Point", info.MountPoint})
-	}
-	if info.FSAvail != "" {
-		pairs = append(pairs, [2]string{"Available", info.FSAvail})
-	}
-	if info.FSUse != "" {
-		pairs = append(pairs, [2]string{"Usage", info.FSUse})
-	}
-	pairs = append(pairs, [2]string{"Status", colorizeStatus(string(info.State))})
-	
+
 	utils.KeyValueTable("VHD Status", pairs, 14, 50)
 }
 

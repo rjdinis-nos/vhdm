@@ -44,10 +44,11 @@ func (c *Client) FileExists(wslPath string) bool {
 
 // lsblkOutput represents the JSON output from lsblk
 type lsblkOutput struct {
-	BlockDevices []blockDevice `json:"blockdevices"`
+	BlockDevices []BlockDevice `json:"blockdevices"`
 }
 
-type blockDevice struct {
+// BlockDevice represents a block device from lsblk output
+type BlockDevice struct {
 	Name        string   `json:"name"`
 	UUID        string   `json:"uuid"`
 	FSType      string   `json:"fstype"`
@@ -62,63 +63,68 @@ var dynamicVHDPattern = regexp.MustCompile(`^sd[d-z][a-z]*$`)
 // GetBlockDevices returns list of block device names
 func (c *Client) GetBlockDevices() ([]string, error) {
 	c.logger.Debug("Running: lsblk -J")
-	
+
 	cmd := exec.Command("lsblk", "-J")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("lsblk failed: %w", err)
 	}
-	
+
 	var result lsblkOutput
 	if err := json.Unmarshal(output, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse lsblk output: %w", err)
 	}
-	
+
 	devices := make([]string, 0, len(result.BlockDevices))
 	for _, dev := range result.BlockDevices {
 		devices = append(devices, dev.Name)
 	}
-	
+
 	return devices, nil
 }
 
 // GetBlockDevicesWithInfo returns detailed block device information
-func (c *Client) GetBlockDevicesWithInfo() ([]blockDevice, error) {
+func (c *Client) GetBlockDevicesWithInfo() ([]BlockDevice, error) {
 	c.logger.Debug("Running: lsblk -f -J")
-	
+
 	cmd := exec.Command("lsblk", "-f", "-J")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("lsblk failed: %w", err)
 	}
-	
+
 	var result lsblkOutput
 	if err := json.Unmarshal(output, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse lsblk output: %w", err)
 	}
-	
+
 	return result.BlockDevices, nil
+}
+
+// GetAllDisks returns all block devices (including system disks)
+func (c *Client) GetAllDisks() ([]BlockDevice, error) {
+	return c.GetBlockDevicesWithInfo()
 }
 
 // GetUUIDByDevice gets the UUID of a device
 func (c *Client) GetUUIDByDevice(devName string) (string, error) {
 	// Remove /dev/ prefix if present
 	devName = strings.TrimPrefix(devName, "/dev/")
-	
+
 	c.logger.Debug("Running: sudo blkid -s UUID -o value /dev/%s", devName)
-	
+
 	cmd := exec.Command("sudo", "blkid", "-s", "UUID", "-o", "value", "/dev/"+devName)
 	output, err := cmd.Output()
 	if err != nil {
 		// Device may not be formatted
 		return "", nil
 	}
-	
+
 	uuid := strings.TrimSpace(string(output))
 	if uuid == "" {
 		return "", nil
 	}
-	
+
 	return uuid, nil
 }
 
@@ -128,13 +134,13 @@ func (c *Client) GetDeviceByUUID(uuid string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	for _, dev := range devices {
 		if dev.UUID == uuid {
 			return dev.Name, nil
 		}
 	}
-	
+
 	return "", nil
 }
 
@@ -144,13 +150,13 @@ func (c *Client) IsAttached(uuid string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	for _, dev := range devices {
 		if dev.UUID == uuid {
 			return true, nil
 		}
 	}
-	
+
 	return false, nil
 }
 
@@ -169,7 +175,7 @@ func (c *Client) GetMountPoint(uuid string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	for _, dev := range devices {
 		if dev.UUID == uuid && len(dev.MountPoints) > 0 {
 			for _, mp := range dev.MountPoints {
@@ -179,7 +185,7 @@ func (c *Client) GetMountPoint(uuid string) (string, error) {
 			}
 		}
 	}
-	
+
 	return "", nil
 }
 
@@ -189,7 +195,7 @@ func (c *Client) GetVHDInfo(uuid string) (*types.VHDInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	for _, dev := range devices {
 		if dev.UUID == uuid {
 			info := &types.VHDInfo{
@@ -198,7 +204,7 @@ func (c *Client) GetVHDInfo(uuid string) (*types.VHDInfo, error) {
 				FSAvail:    dev.FSAvail,
 				FSUse:      dev.FSUseP,
 			}
-			
+
 			if len(dev.MountPoints) > 0 {
 				for _, mp := range dev.MountPoints {
 					if mp != "" {
@@ -208,15 +214,15 @@ func (c *Client) GetVHDInfo(uuid string) (*types.VHDInfo, error) {
 					}
 				}
 			}
-			
+
 			if info.State != types.StateMounted {
 				info.State = types.StateAttachedFormatted
 			}
-			
+
 			return info, nil
 		}
 	}
-	
+
 	return nil, nil
 }
 
@@ -226,14 +232,14 @@ func (c *Client) CountDynamicVHDs() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	
+
 	count := 0
 	for _, dev := range devices {
 		if dynamicVHDPattern.MatchString(dev) {
 			count++
 		}
 	}
-	
+
 	return count, nil
 }
 
@@ -244,13 +250,13 @@ func (c *Client) FindDynamicVHDUUID() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	for _, dev := range devices {
 		if dynamicVHDPattern.MatchString(dev.Name) && dev.UUID != "" {
 			return dev.UUID, nil
 		}
 	}
-	
+
 	return "", types.ErrVHDNotFound
 }
 
@@ -261,20 +267,20 @@ func (c *Client) FindUUIDByPath(path string) (string, error) {
 	if !c.FileExists(wslPath) {
 		return "", types.ErrVHDNotFound
 	}
-	
+
 	count, err := c.CountDynamicVHDs()
 	if err != nil {
 		return "", err
 	}
-	
+
 	if count > 1 {
 		return "", types.ErrMultipleVHDs
 	}
-	
+
 	if count == 0 {
 		return "", types.ErrVHDNotAttached
 	}
-	
+
 	// Safe: exactly one VHD
 	return c.FindDynamicVHDUUID()
 }
@@ -288,18 +294,18 @@ func (c *Client) DetectNewDevice(oldDevices []string) (string, error) {
 			oldDevMap[dev] = true
 		}
 	}
-	
+
 	c.logger.Debug("Old VHD devices: %v", oldDevMap)
-	
+
 	// Sleep to let kernel recognize device
 	time.Sleep(c.sleepAfterAttach)
-	
+
 	// Get new device list
 	newDevices, err := c.GetBlockDevices()
 	if err != nil {
 		return "", err
 	}
-	
+
 	// Find new device
 	for _, dev := range newDevices {
 		if !oldDevMap[dev] && dynamicVHDPattern.MatchString(dev) {
@@ -307,6 +313,6 @@ func (c *Client) DetectNewDevice(oldDevices []string) (string, error) {
 			return dev, nil
 		}
 	}
-	
+
 	return "", types.ErrDeviceNotFound
 }

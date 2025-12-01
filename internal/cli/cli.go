@@ -33,7 +33,7 @@ func NewRootCommand(version, commit, date string) *cobra.Command {
 		Long: `vhdm is a comprehensive CLI for managing VHD/VHDX files in WSL2.
 
 Operations include attach, mount, format, unmount, detach, create, delete, 
-resize, status, history, and sync.`,
+resize, status, and sync.`,
 		Version: fmt.Sprintf("%s (commit: %s, built: %s)", version, commit, date),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if cmd.Name() == "help" || cmd.Name() == "version" || cmd.Name() == "completion" {
@@ -63,7 +63,6 @@ resize, status, history, and sync.`,
 		newCreateCmd(),
 		newDeleteCmd(),
 		newResizeCmd(),
-		newHistoryCmd(),
 		newSyncCmd(),
 	)
 
