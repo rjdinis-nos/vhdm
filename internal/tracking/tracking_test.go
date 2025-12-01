@@ -209,72 +209,157 @@ func TestUpdateMountPoints(t *testing.T) {
 	}
 }
 
-func TestDetachHistory(t *testing.T) {
+func TestUpdateLastSeen(t *testing.T) {
 	tracker, cleanup := setupTestTracker(t)
 	defer cleanup()
 	
-	// Add some history
-	entries := []struct {
-		path    string
-		uuid    string
-		devName string
-	}{
-		{"C:/VMs/disk1.vhdx", "11111111-1111-1111-1111-111111111111", "sdd"},
-		{"C:/VMs/disk2.vhdx", "22222222-2222-2222-2222-222222222222", "sde"},
-		{"C:/VMs/disk3.vhdx", "33333333-3333-3333-3333-333333333333", "sdf"},
-	}
+	vhdPath := "C:/VMs/test.vhdx"
+	uuid := "761c723c-80c8-41dc-b322-6f04d1160e43"
 	
-	for _, e := range entries {
-		err := tracker.SaveDetachHistory(e.path, e.uuid, e.devName)
-		if err != nil {
-			t.Fatalf("SaveDetachHistory failed: %v", err)
-		}
-	}
+	// Add mapping
+	tracker.SaveMapping(vhdPath, uuid, "/mnt/test", "sdd")
 	
-	// Get history (limit 2)
-	history, err := tracker.GetDetachHistory(2)
+	// Get initial LastSeen
+	entry1, err := tracker.GetEntry(vhdPath)
 	if err != nil {
-		t.Fatalf("GetDetachHistory failed: %v", err)
+		t.Fatalf("GetEntry failed: %v", err)
+	}
+	initialLastSeen := entry1.LastSeen
+	
+	// Wait a bit and update LastSeen
+	// (In real usage there would be time difference)
+	err = tracker.UpdateLastSeen(vhdPath)
+	if err != nil {
+		t.Fatalf("UpdateLastSeen failed: %v", err)
 	}
 	
-	if len(history) != 2 {
-		t.Errorf("Expected 2 history entries, got %d", len(history))
+	// Verify LastSeen was updated
+	entry2, err := tracker.GetEntry(vhdPath)
+	if err != nil {
+		t.Fatalf("GetEntry failed: %v", err)
 	}
 	
-	// Most recent should be first
-	if history[0].UUID != "33333333-3333-3333-3333-333333333333" {
-		t.Errorf("Expected most recent entry first, got %s", history[0].UUID)
+	if entry2.LastSeen == "" {
+		t.Error("LastSeen should not be empty after update")
+	}
+	
+	// UUID should remain unchanged
+	if entry2.UUID != uuid {
+		t.Errorf("UUID changed: got %s, want %s", entry2.UUID, uuid)
+	}
+	
+	// LastSeen should be >= initial (they might be same if test runs fast)
+	if entry2.LastSeen < initialLastSeen {
+		t.Errorf("LastSeen went backwards: got %s, was %s", entry2.LastSeen, initialLastSeen)
 	}
 }
 
-func TestRemoveDetachHistory(t *testing.T) {
+func TestUpdateLastSeenNonExistent(t *testing.T) {
 	tracker, cleanup := setupTestTracker(t)
 	defer cleanup()
 	
-	// Add history for same path twice
-	path := "C:/VMs/disk.vhdx"
-	tracker.SaveDetachHistory(path, "11111111-1111-1111-1111-111111111111", "sdd")
-	tracker.SaveDetachHistory(path, "22222222-2222-2222-2222-222222222222", "sdd")
-	tracker.SaveDetachHistory("C:/VMs/other.vhdx", "33333333-3333-3333-3333-333333333333", "sde")
-	
-	// Remove history for path
-	err := tracker.RemoveDetachHistory(path)
+	// Update LastSeen for non-existent path should not error
+	err := tracker.UpdateLastSeen("C:/VMs/nonexistent.vhdx")
 	if err != nil {
-		t.Fatalf("RemoveDetachHistory failed: %v", err)
+		t.Errorf("UpdateLastSeen for non-existent path should not error: %v", err)
+	}
+}
+
+func TestCleanupNonExistent(t *testing.T) {
+	tracker, cleanup := setupTestTracker(t)
+	defer cleanup()
+	
+	// Add some mappings
+	tracker.SaveMapping("C:/VMs/exists.vhdx", "11111111-1111-1111-1111-111111111111", "", "sdd")
+	tracker.SaveMapping("C:/VMs/missing.vhdx", "22222222-2222-2222-2222-222222222222", "", "sde")
+	tracker.SaveMapping("C:/VMs/alsomissing.vhdx", "33333333-3333-3333-3333-333333333333", "", "sdf")
+	
+	// Mock fileExists function: only "exists.vhdx" exists
+	fileExists := func(path string) bool {
+		return path == normalizePath("C:/VMs/exists.vhdx")
 	}
 	
-	// Verify only other entry remains
-	history, err := tracker.GetDetachHistory(10)
+	// Run cleanup
+	removed, err := tracker.CleanupNonExistent(fileExists)
 	if err != nil {
-		t.Fatalf("GetDetachHistory failed: %v", err)
+		t.Fatalf("CleanupNonExistent failed: %v", err)
 	}
 	
-	if len(history) != 1 {
-		t.Errorf("Expected 1 history entry, got %d", len(history))
+	// Should have removed 2 entries
+	if len(removed) != 2 {
+		t.Errorf("Expected 2 removed paths, got %d: %v", len(removed), removed)
 	}
 	
-	if history[0].Path != normalizePath("C:/VMs/other.vhdx") {
-		t.Errorf("Expected other.vhdx entry, got %s", history[0].Path)
+	// Verify only "exists.vhdx" remains
+	paths, err := tracker.GetAllPaths()
+	if err != nil {
+		t.Fatalf("GetAllPaths failed: %v", err)
+	}
+	
+	if len(paths) != 1 {
+		t.Errorf("Expected 1 path remaining, got %d", len(paths))
+	}
+	
+	// Verify the remaining path is the one that exists
+	uuid, _ := tracker.LookupUUIDByPath("C:/VMs/exists.vhdx")
+	if uuid != "11111111-1111-1111-1111-111111111111" {
+		t.Errorf("Wrong UUID for remaining path: %s", uuid)
+	}
+	
+	// Verify removed paths are gone
+	uuid, _ = tracker.LookupUUIDByPath("C:/VMs/missing.vhdx")
+	if uuid != "" {
+		t.Errorf("missing.vhdx should be removed, but got UUID: %s", uuid)
+	}
+}
+
+func TestCleanupNonExistentNoChanges(t *testing.T) {
+	tracker, cleanup := setupTestTracker(t)
+	defer cleanup()
+	
+	// Add a mapping
+	tracker.SaveMapping("C:/VMs/exists.vhdx", "11111111-1111-1111-1111-111111111111", "", "sdd")
+	
+	// All files exist
+	fileExists := func(path string) bool {
+		return true
+	}
+	
+	// Run cleanup
+	removed, err := tracker.CleanupNonExistent(fileExists)
+	if err != nil {
+		t.Fatalf("CleanupNonExistent failed: %v", err)
+	}
+	
+	// Should have removed nothing
+	if len(removed) != 0 {
+		t.Errorf("Expected 0 removed paths, got %d", len(removed))
+	}
+}
+
+func TestLastSeenFieldInEntry(t *testing.T) {
+	tracker, cleanup := setupTestTracker(t)
+	defer cleanup()
+	
+	vhdPath := "C:/VMs/test.vhdx"
+	uuid := "761c723c-80c8-41dc-b322-6f04d1160e43"
+	
+	// Save mapping
+	tracker.SaveMapping(vhdPath, uuid, "/mnt/test", "sdd")
+	
+	// Get entry and verify LastSeen is set
+	entry, err := tracker.GetEntry(vhdPath)
+	if err != nil {
+		t.Fatalf("GetEntry failed: %v", err)
+	}
+	
+	if entry.LastSeen == "" {
+		t.Error("LastSeen should be set automatically by SaveMapping")
+	}
+	
+	// Verify it looks like an RFC3339 timestamp
+	if len(entry.LastSeen) < 19 {
+		t.Errorf("LastSeen doesn't look like RFC3339: %s", entry.LastSeen)
 	}
 }
 

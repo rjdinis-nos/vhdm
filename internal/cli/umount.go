@@ -14,6 +14,7 @@ func newUmountCmd() *cobra.Command {
 	var (
 		vhdPath    string
 		uuid       string
+		devName    string
 		mountPoint string
 		doDetach   bool
 		force      bool
@@ -27,26 +28,28 @@ func newUmountCmd() *cobra.Command {
 By default, only unmounts. Use --vhd-path to also detach after unmounting.`,
 		Example: `  vhdm umount --mount-point /mnt/data
   vhdm umount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293
+  vhdm umount --dev-name sde
   vhdm umount --vhd-path C:/VMs/disk.vhdx  # unmount and detach`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runUmount(vhdPath, uuid, mountPoint, doDetach, force)
+			return runUmount(vhdPath, uuid, devName, mountPoint, doDetach, force)
 		},
 	}
 	cmd.Flags().StringVar(&vhdPath, "vhd-path", "", "VHD file path (unmount + detach)")
 	cmd.Flags().StringVar(&uuid, "uuid", "", "VHD UUID")
+	cmd.Flags().StringVar(&devName, "dev-name", "", "Device name (e.g., sde)")
 	cmd.Flags().StringVar(&mountPoint, "mount-point", "", "Mount point path")
 	cmd.Flags().BoolVar(&doDetach, "detach", false, "Also detach after unmounting")
 	cmd.Flags().BoolVar(&force, "force", false, "Force unmount (lazy)")
 	return cmd
 }
 
-func runUmount(vhdPath, uuid, mountPoint string, doDetach, force bool) error {
+func runUmount(vhdPath, uuid, devName, mountPoint string, doDetach, force bool) error {
 	ctx := getContext()
 	log := ctx.Logger
 
 	// Validate inputs
-	if vhdPath == "" && uuid == "" && mountPoint == "" {
-		return fmt.Errorf("at least one of --vhd-path, --uuid, or --mount-point is required")
+	if vhdPath == "" && uuid == "" && devName == "" && mountPoint == "" {
+		return fmt.Errorf("at least one of --vhd-path, --uuid, --dev-name, or --mount-point is required")
 	}
 
 	if vhdPath != "" {
@@ -60,6 +63,11 @@ func runUmount(vhdPath, uuid, mountPoint string, doDetach, force bool) error {
 			return &types.VHDError{Op: "umount", Err: err}
 		}
 	}
+	if devName != "" {
+		if err := validation.ValidateDeviceName(devName); err != nil {
+			return &types.VHDError{Op: "umount", Err: err}
+		}
+	}
 	if mountPoint != "" {
 		if err := validation.ValidateMountPoint(mountPoint); err != nil {
 			return &types.VHDError{Op: "umount", Err: err}
@@ -68,11 +76,12 @@ func runUmount(vhdPath, uuid, mountPoint string, doDetach, force bool) error {
 
 	log.Debug("Umount operation starting")
 
-	var devName string
-
 	// Find UUID if not provided
 	if uuid == "" {
-		if mountPoint != "" {
+		if devName != "" {
+			uuid, _ = ctx.WSL.GetUUIDByDevice(devName)
+		}
+		if uuid == "" && mountPoint != "" {
 			uuid, _ = ctx.WSL.FindUUIDByMountPoint(mountPoint)
 		}
 		if uuid == "" && vhdPath != "" {
@@ -85,8 +94,8 @@ func runUmount(vhdPath, uuid, mountPoint string, doDetach, force bool) error {
 		mountPoint, _ = ctx.WSL.GetMountPoint(uuid)
 	}
 
-	// Find device name
-	if uuid != "" {
+	// Find device name if not yet determined
+	if devName == "" && uuid != "" {
 		devName, _ = ctx.WSL.GetDeviceByUUID(uuid)
 	}
 
@@ -129,15 +138,13 @@ func runUmount(vhdPath, uuid, mountPoint string, doDetach, force bool) error {
 
 	// Detach if requested
 	if doDetach && vhdPath != "" {
-		// Save detach history
-		if uuid != "" {
-			ctx.Tracker.SaveDetachHistory(vhdPath, uuid, devName)
-		}
-		ctx.Tracker.RemoveMapping(vhdPath)
-
 		if err := ctx.WSL.DetachVHD(vhdPath); err != nil {
 			log.Warn("Failed to detach: %v", err)
 		} else {
+			// Update tracking - keep entry but clear device/mount info
+			if uuid != "" {
+				ctx.Tracker.SaveMapping(vhdPath, uuid, "", "")
+			}
 			log.Success("VHD unmounted and detached")
 			printUmountResult(vhdPath, uuid, devName, mountPoint, true)
 			return nil

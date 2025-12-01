@@ -14,36 +14,34 @@ import (
 
 func newStatusCmd() *cobra.Command {
 	var (
-		vhdPath      string
-		uuid         string
-		mountPoint   string
-		showAll      bool
-		historyLimit int
+		vhdPath    string
+		uuid       string
+		mountPoint string
+		showAll    bool
 	)
 	cmd := &cobra.Command{
 		Use:   "status",
 		Short: "Show VHD disk status",
-		Long: `Show current VHD disk status including all disks, tracked VHDs, and detach history.
+		Long: `Show current VHD disk status including all WSL disks and tracked VHDs.
 
-Without flags, shows all disks, tracked VHDs, and recent detach history.
-Use specific flags to query particular VHDs.`,
+Without flags, shows all disks and tracked VHDs.
+Use specific flags to query particular VHDs.
+VHDs that no longer exist are automatically removed from tracking.`,
 		Example: `  vhdm status
-  vhdm status --history-limit 20
   vhdm status --vhd-path C:/VMs/disk.vhdx
   vhdm status --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runStatus(vhdPath, uuid, mountPoint, showAll, historyLimit)
+			return runStatus(vhdPath, uuid, mountPoint, showAll)
 		},
 	}
 	cmd.Flags().StringVar(&vhdPath, "vhd-path", "", "VHD file path")
 	cmd.Flags().StringVar(&uuid, "uuid", "", "VHD UUID")
 	cmd.Flags().StringVar(&mountPoint, "mount-point", "", "Mount point path")
 	cmd.Flags().BoolVar(&showAll, "all", false, "Show all tracked VHDs")
-	cmd.Flags().IntVar(&historyLimit, "history-limit", 10, "Number of detach history entries to show")
 	return cmd
 }
 
-func runStatus(vhdPath, uuid, mountPoint string, showAll bool, historyLimit int) error {
+func runStatus(vhdPath, uuid, mountPoint string, showAll bool) error {
 	ctx := getContext()
 	log := ctx.Logger
 
@@ -67,14 +65,27 @@ func runStatus(vhdPath, uuid, mountPoint string, showAll bool, historyLimit int)
 	log.Debug("Status operation starting")
 
 	if showAll {
-		return showAllStatus(ctx, historyLimit)
+		return showAllStatus(ctx)
 	}
 
 	// Single VHD status
 	return showSingleStatus(ctx, vhdPath, uuid, mountPoint)
 }
 
-func showAllStatus(ctx *AppContext, historyLimit int) error {
+func showAllStatus(ctx *AppContext) error {
+	// Auto-cleanup: remove tracked VHDs where file no longer exists
+	fileExists := func(path string) bool {
+		wslPath := ctx.WSL.ConvertPath(path)
+		return ctx.WSL.FileExists(wslPath)
+	}
+	removed, err := ctx.Tracker.CleanupNonExistent(fileExists)
+	if err != nil {
+		ctx.Logger.Debug("Failed to cleanup non-existent VHDs: %v", err)
+	}
+	for _, path := range removed {
+		ctx.Logger.Debug("Removed non-existent VHD from tracking: %s", path)
+	}
+
 	// Get all disks first (including system disks)
 	allDisks, err := ctx.WSL.GetAllDisks()
 	if err != nil {
@@ -91,12 +102,6 @@ func showAllStatus(ctx *AppContext, historyLimit int) error {
 	for _, path := range paths {
 		info := getVHDStatus(ctx, path)
 		vhds = append(vhds, info)
-	}
-
-	// Get detach history
-	history, err := ctx.Tracker.GetDetachHistory(historyLimit)
-	if err != nil {
-		ctx.Logger.Debug("Failed to get detach history: %v", err)
 	}
 
 	if ctx.Config.Quiet {
@@ -118,8 +123,6 @@ func showAllStatus(ctx *AppContext, historyLimit int) error {
 				fmt.Printf("%s: %s\n", vhd.Path, status)
 			}
 		}
-		// Print detach history count
-		fmt.Printf("detach_history: %d\n", len(history))
 		return nil
 	}
 
@@ -136,9 +139,6 @@ func showAllStatus(ctx *AppContext, historyLimit int) error {
 		ctx.Logger.Info("No tracked VHDs found")
 		ctx.Logger.Info("Use 'vhdm attach' or 'vhdm mount' to attach a VHD")
 	}
-
-	// Print detach history table
-	printDetachHistoryTable(history)
 
 	return nil
 }
@@ -187,6 +187,7 @@ func getVHDStatus(ctx *AppContext, path string) types.VHDInfo {
 		info.UUID = entry.UUID
 		info.DeviceName = entry.DeviceName
 		info.MountPoint = strings.Join(entry.MountPoints, ",")
+		info.LastSeen = entry.LastSeen
 	}
 
 	// Check VHD file exists
@@ -283,8 +284,8 @@ func printStatusTable(vhds []types.VHDInfo) {
 	fmt.Println()
 
 	// Calculate column widths
-	colWidths := []int{40, 36, 8, 20, 12}
-	headers := []string{"Path", "UUID", "Device", "Mount Point", "Status"}
+	colWidths := []int{40, 36, 8, 20, 12, 20}
+	headers := []string{"Path", "UUID", "Device", "Mount Point", "Status", "Last Seen"}
 
 	utils.PrintTableHeader(colWidths, headers)
 
@@ -301,39 +302,17 @@ func printStatusTable(vhds []types.VHDInfo) {
 		if mp == "" {
 			mp = "-"
 		}
-		utils.PrintTableRow(colWidths, vhd.Path, uuid, dev, mp, colorizeStatus(string(vhd.State)))
-	}
-
-	utils.PrintTableFooter(colWidths)
-}
-
-func printDetachHistoryTable(history []types.DetachHistoryEntry) {
-	fmt.Println()
-	fmt.Println("Detach History")
-	fmt.Println()
-
-	if len(history) == 0 {
-		fmt.Println("  No detach history")
-		return
-	}
-
-	colWidths := []int{40, 36, 8, 20}
-	headers := []string{"Path", "UUID", "Device", "Timestamp"}
-	utils.PrintTableHeader(colWidths, headers)
-
-	for _, entry := range history {
-		uuid := entry.UUID
-		dev := entry.DeviceName
-		if dev == "" {
-			dev = "-"
+		// Format LastSeen timestamp (truncate to datetime)
+		lastSeen := vhd.LastSeen
+		if len(lastSeen) > 19 {
+			lastSeen = lastSeen[:19]
 		}
-		// Format timestamp (truncate to datetime)
-		ts := entry.Timestamp
-		if len(ts) > 19 {
-			ts = ts[:19]
+		if lastSeen == "" {
+			lastSeen = "-"
 		}
-		utils.PrintTableRow(colWidths, entry.Path, uuid, dev, ts)
+		utils.PrintTableRow(colWidths, vhd.Path, uuid, dev, mp, colorizeStatus(string(vhd.State)), lastSeen)
 	}
+
 	utils.PrintTableFooter(colWidths)
 }
 
@@ -351,6 +330,12 @@ func printSingleStatus(info types.VHDInfo) {
 		device = "/dev/" + info.DeviceName
 	}
 
+	// Format LastSeen timestamp
+	lastSeen := info.LastSeen
+	if len(lastSeen) > 19 {
+		lastSeen = lastSeen[:19]
+	}
+
 	pairs := [][2]string{
 		{"Path", info.Path},
 		{"UUID", valOrDash(info.UUID)},
@@ -358,6 +343,7 @@ func printSingleStatus(info types.VHDInfo) {
 		{"Mount Point", valOrDash(info.MountPoint)},
 		{"Available", valOrDash(info.FSAvail)},
 		{"Usage", valOrDash(info.FSUse)},
+		{"Last Seen", valOrDash(lastSeen)},
 		{"Status", colorizeStatus(string(info.State))},
 	}
 

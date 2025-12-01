@@ -27,6 +27,7 @@ type VHDInfo struct {
 	MountPoint string   `json:"mountPoint,omitempty"`
 	FSAvail    string   `json:"fsAvail,omitempty"`
 	FSUse      string   `json:"fsUse,omitempty"`
+	LastSeen   string   `json:"lastSeen,omitempty"`
 	State      VHDState `json:"state"`
 }
 
@@ -71,25 +72,16 @@ func (m MountPoints) MarshalJSON() ([]byte, error) {
 
 // TrackingEntry represents a single entry in the VHD tracking file
 type TrackingEntry struct {
-	UUID         string      `json:"uuid"`
-	LastAttached string      `json:"last_attached"`
-	MountPoints  MountPoints `json:"mount_points"`
-	DeviceName   string      `json:"dev_name"`
-}
-
-// DetachHistoryEntry represents a single entry in the detach history
-type DetachHistoryEntry struct {
-	Path       string `json:"path"`
-	UUID       string `json:"uuid"`
-	DeviceName string `json:"dev_name"`
-	Timestamp  string `json:"timestamp"`
+	UUID        string      `json:"uuid"`
+	LastSeen    string      `json:"last_seen"`
+	MountPoints MountPoints `json:"mount_points"`
+	DeviceName  string      `json:"dev_name"`
 }
 
 // TrackingFile represents the structure of the VHD tracking JSON file
 type TrackingFile struct {
-	Version       string                   `json:"version"`
-	Mappings      map[string]TrackingEntry `json:"mappings"`
-	DetachHistory []DetachHistoryEntry     `json:"detach_history"`
+	Version  string                   `json:"version"`
+	Mappings map[string]TrackingEntry `json:"mappings"`
 }
 
 // AttachResult holds the result of an attach operation
@@ -114,6 +106,11 @@ var (
 // IsAlreadyAttached checks if error indicates already attached
 func IsAlreadyAttached(err error) bool {
 	return errors.Is(err, ErrVHDAlreadyAttached)
+}
+
+// IsNotAttached checks if error indicates VHD is not attached
+func IsNotAttached(err error) bool {
+	return errors.Is(err, ErrVHDNotAttached)
 }
 
 // VHDError is a structured error with context

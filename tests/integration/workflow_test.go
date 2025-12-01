@@ -252,14 +252,14 @@ func TestIdempotentOperations(t *testing.T) {
 	})
 }
 
-// TestHistoryTracking tests history command
-func TestHistoryTracking(t *testing.T) {
+// TestStatusTracking tests status command and tracking persistence
+func TestStatusTracking(t *testing.T) {
 	skipIfNotIntegration(t)
 	
 	env := NewTestEnvironment(t)
 	
 	// Change VHD path
-	env.vhdPath = strings.Replace(env.vhdPath, ".vhdx", "_history.vhdx", 1)
+	env.vhdPath = strings.Replace(env.vhdPath, ".vhdx", "_tracking.vhdx", 1)
 	
 	t.Run("Create and format VHD", func(t *testing.T) {
 		_, err := env.RunVHDM("create",
@@ -269,10 +269,24 @@ func TestHistoryTracking(t *testing.T) {
 		env.AssertSuccess(err, "create")
 	})
 	
-	t.Run("History shows mapping", func(t *testing.T) {
-		output, err := env.RunVHDM("history")
-		env.AssertSuccess(err, "history")
-		env.AssertContains(output, "Current Mappings")
+	t.Run("Status shows tracked VHD as attached", func(t *testing.T) {
+		output, err := env.RunVHDM("status", "--all")
+		env.AssertSuccess(err, "status")
+		env.AssertContains(output, "Tracked VHD Disks")
+		env.AssertContains(output, "Last Seen")
+	})
+	
+	t.Run("Mount VHD", func(t *testing.T) {
+		_, err := env.RunVHDM("mount",
+			"--vhd-path", env.vhdPath,
+			"--mount-point", env.mountPoint)
+		env.AssertSuccess(err, "mount")
+	})
+	
+	t.Run("Status shows mounted state", func(t *testing.T) {
+		output, err := env.RunVHDM("status", "--all")
+		env.AssertSuccess(err, "status")
+		env.AssertContains(output, "mounted")
 	})
 	
 	t.Run("Detach VHD", func(t *testing.T) {
@@ -281,9 +295,10 @@ func TestHistoryTracking(t *testing.T) {
 		env.AssertSuccess(err, "detach")
 	})
 	
-	t.Run("History shows detach event", func(t *testing.T) {
-		output, err := env.RunVHDM("history")
-		env.AssertSuccess(err, "history")
-		env.AssertContains(output, "Detach History")
+	t.Run("Status shows detached state but still tracked", func(t *testing.T) {
+		output, err := env.RunVHDM("status", "--all")
+		env.AssertSuccess(err, "status")
+		env.AssertContains(output, "Tracked VHD Disks")
+		env.AssertContains(output, "detached")
 	})
 }

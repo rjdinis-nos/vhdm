@@ -14,6 +14,7 @@ func newMountCmd() *cobra.Command {
 	var (
 		vhdPath    string
 		uuid       string
+		devName    string
 		mountPoint string
 	)
 	cmd := &cobra.Command{
@@ -27,25 +28,27 @@ This is an orchestration command that:
 
 The VHD must be formatted before mounting.`,
 		Example: `  vhdm mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
-  vhdm mount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --mount-point /mnt/data`,
+  vhdm mount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --mount-point /mnt/data
+  vhdm mount --dev-name sde --mount-point /mnt/data`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runMount(vhdPath, uuid, mountPoint)
+			return runMount(vhdPath, uuid, devName, mountPoint)
 		},
 	}
 	cmd.Flags().StringVar(&vhdPath, "vhd-path", "", "VHD file path (Windows format)")
 	cmd.Flags().StringVar(&uuid, "uuid", "", "VHD UUID")
+	cmd.Flags().StringVar(&devName, "dev-name", "", "Device name (e.g., sde)")
 	cmd.Flags().StringVar(&mountPoint, "mount-point", "", "Mount point path")
 	cmd.MarkFlagRequired("mount-point")
 	return cmd
 }
 
-func runMount(vhdPath, uuid, mountPoint string) error {
+func runMount(vhdPath, uuid, devName, mountPoint string) error {
 	ctx := getContext()
 	log := ctx.Logger
 
 	// Validate inputs
-	if vhdPath == "" && uuid == "" {
-		return fmt.Errorf("at least one of --vhd-path or --uuid is required")
+	if vhdPath == "" && uuid == "" && devName == "" {
+		return fmt.Errorf("at least one of --vhd-path, --uuid, or --dev-name is required")
 	}
 
 	if vhdPath != "" {
@@ -58,24 +61,38 @@ func runMount(vhdPath, uuid, mountPoint string) error {
 			return &types.VHDError{Op: "mount", Err: err}
 		}
 	}
+	if devName != "" {
+		if err := validation.ValidateDeviceName(devName); err != nil {
+			return &types.VHDError{Op: "mount", Err: err}
+		}
+	}
 	if err := validation.ValidateMountPoint(mountPoint); err != nil {
 		return &types.VHDError{Op: "mount", Err: err}
 	}
 
 	log.Debug("Mount operation starting")
 
-	var devName string
 	var wasAttached bool
 
 	// Step 1: Attach if needed
 	if vhdPath != "" {
-		// Check if already attached
+		// Check if already attached - first check tracking, then verify in system
 		existingUUID, _ := ctx.Tracker.LookupUUIDByPath(vhdPath)
 		if existingUUID != "" {
-			uuid = existingUUID
-			wasAttached = true
-			log.Debug("VHD already attached with UUID: %s", uuid)
-		} else {
+			// Verify the UUID is actually attached in the system
+			attached, _ := ctx.WSL.IsAttached(existingUUID)
+			if attached {
+				uuid = existingUUID
+				wasAttached = true
+				log.Debug("VHD already attached with UUID: %s", uuid)
+			} else {
+				log.Debug("UUID %s found in tracking but not attached, will attach", existingUUID)
+				// Fall through to attach
+				existingUUID = ""
+			}
+		}
+		
+		if existingUUID == "" {
 			// Try to attach
 			oldDevices, err := ctx.WSL.GetBlockDevices()
 			if err != nil {
@@ -101,6 +118,13 @@ func runMount(vhdPath, uuid, mountPoint string) error {
 				log.Debug("Attached new device: %s (UUID: %s)", devName, uuid)
 			}
 		}
+	}
+
+	// If devName provided but no UUID yet, get UUID from device
+	if devName != "" && uuid == "" {
+		uuid, _ = ctx.WSL.GetUUIDByDevice(devName)
+		wasAttached = true // device already exists, so it's attached
+		log.Debug("Using device %s (UUID: %s)", devName, uuid)
 	}
 
 	// Check if VHD has UUID (formatted)
@@ -149,7 +173,6 @@ func runMount(vhdPath, uuid, mountPoint string) error {
 		if err := ctx.Tracker.SaveMapping(vhdPath, uuid, mountPoint, devName); err != nil {
 			log.Warn("Failed to save tracking: %v", err)
 		}
-		ctx.Tracker.RemoveDetachHistory(vhdPath)
 	}
 
 	// Output

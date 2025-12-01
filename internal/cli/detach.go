@@ -113,18 +113,13 @@ func runDetach(vhdPath, uuid, devName string) error {
 		return fmt.Errorf("VHD path is required for detach. Use --vhd-path or ensure the VHD is tracked")
 	}
 
-	// Save detach history before detaching
-	if uuid != "" {
-		ctx.Tracker.SaveDetachHistory(vhdPath, uuid, devName)
-	}
-
-	// Remove mapping from tracking
-	ctx.Tracker.RemoveMapping(vhdPath)
-
 	// Detach from WSL
 	if err := ctx.WSL.DetachVHD(vhdPath); err != nil {
-		if types.IsAlreadyAttached(err) {
-			// Already detached
+		if types.IsNotAttached(err) {
+			// Already detached - update tracking to reflect current state
+			if uuid != "" {
+				ctx.Tracker.SaveMapping(vhdPath, uuid, "", "")
+			}
 			if ctx.Config.Quiet {
 				fmt.Printf("%s: already detached\n", vhdPath)
 			} else {
@@ -133,6 +128,11 @@ func runDetach(vhdPath, uuid, devName string) error {
 			return nil
 		}
 		return fmt.Errorf("failed to detach: %w", err)
+	}
+
+	// Update tracking - keep entry but clear device/mount info
+	if uuid != "" {
+		ctx.Tracker.SaveMapping(vhdPath, uuid, "", "")
 	}
 
 	// Output

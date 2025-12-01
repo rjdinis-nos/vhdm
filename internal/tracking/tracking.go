@@ -36,9 +36,8 @@ func (t *Tracker) init() error {
 
 	if _, err := os.Stat(t.filePath); os.IsNotExist(err) {
 		tf := &types.TrackingFile{
-			Version:       "1.0",
-			Mappings:      make(map[string]types.TrackingEntry),
-			DetachHistory: []types.DetachHistoryEntry{},
+			Version:  "1.0",
+			Mappings: make(map[string]types.TrackingEntry),
 		}
 		return t.write(tf)
 	}
@@ -99,9 +98,9 @@ func (t *Tracker) SaveMapping(path, uuid, mountPoint, devName string) error {
 
 	normalized := normalizePath(path)
 	entry := types.TrackingEntry{
-		UUID:         uuid,
-		LastAttached: time.Now().Format(time.RFC3339),
-		DeviceName:   devName,
+		UUID:       uuid,
+		LastSeen:   time.Now().Format(time.RFC3339),
+		DeviceName: devName,
 	}
 	if mountPoint != "" {
 		entry.MountPoints = []string{mountPoint}
@@ -225,58 +224,43 @@ func (t *Tracker) RemoveMapping(path string) error {
 	return t.write(tf)
 }
 
-// SaveDetachHistory saves a detach event
-func (t *Tracker) SaveDetachHistory(path, uuid, devName string) error {
-	tf, err := t.read()
-	if err != nil {
-		return err
-	}
-
-	entry := types.DetachHistoryEntry{
-		Path:       normalizePath(path),
-		UUID:       uuid,
-		DeviceName: devName,
-		Timestamp:  time.Now().Format(time.RFC3339),
-	}
-	
-	// Prepend new entry
-	tf.DetachHistory = append([]types.DetachHistoryEntry{entry}, tf.DetachHistory...)
-	
-	// Trim to max 50 entries
-	if len(tf.DetachHistory) > 50 {
-		tf.DetachHistory = tf.DetachHistory[:50]
-	}
-	
-	return t.write(tf)
-}
-
-// RemoveDetachHistory removes detach history for a path
-func (t *Tracker) RemoveDetachHistory(path string) error {
+// UpdateLastSeen updates the LastSeen timestamp for a VHD
+func (t *Tracker) UpdateLastSeen(path string) error {
 	tf, err := t.read()
 	if err != nil {
 		return err
 	}
 
 	normalized := normalizePath(path)
-	var filtered []types.DetachHistoryEntry
-	for _, entry := range tf.DetachHistory {
-		if entry.Path != normalized {
-			filtered = append(filtered, entry)
-		}
+	if entry, ok := tf.Mappings[normalized]; ok {
+		entry.LastSeen = time.Now().Format(time.RFC3339)
+		tf.Mappings[normalized] = entry
+		return t.write(tf)
 	}
-	tf.DetachHistory = filtered
-	return t.write(tf)
+	return nil
 }
 
-// GetDetachHistory returns recent detach history
-func (t *Tracker) GetDetachHistory(limit int) ([]types.DetachHistoryEntry, error) {
+// CleanupNonExistent removes tracked VHDs where the file no longer exists
+// Returns the list of removed paths
+func (t *Tracker) CleanupNonExistent(fileExists func(string) bool) ([]string, error) {
 	tf, err := t.read()
 	if err != nil {
 		return nil, err
 	}
 
-	if limit <= 0 || limit > len(tf.DetachHistory) {
-		return tf.DetachHistory, nil
+	var removed []string
+	for path := range tf.Mappings {
+		if !fileExists(path) {
+			delete(tf.Mappings, path)
+			removed = append(removed, path)
+		}
 	}
-	return tf.DetachHistory[:limit], nil
+
+	if len(removed) > 0 {
+		if err := t.write(tf); err != nil {
+			return nil, err
+		}
+	}
+
+	return removed, nil
 }

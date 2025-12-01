@@ -115,9 +115,6 @@ func runAttach(vhdPath string) error {
 		log.Warn("Failed to save tracking info: %v", err)
 	}
 
-	// Remove from detach history
-	ctx.Tracker.RemoveDetachHistory(vhdPath)
-
 	// Output
 	if ctx.Config.Quiet {
 		if uuid != "" {

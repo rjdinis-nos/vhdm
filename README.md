@@ -8,9 +8,9 @@ A comprehensive command-line tool for managing VHD/VHDX virtual disk files in WS
 - **Mount/Unmount** - Mount VHD filesystems with automatic attach
 - **Create/Delete** - Create new VHD files with optional formatting
 - **Format** - Format VHDs with ext4, xfs, btrfs, etc.
-- **Resize** - Resize VHDs with data migration and backup
-- **Status** - View all tracked VHDs and their states
-- **History** - Track attach/detach events
+- **Resize** - Resize VHDs with data migration, backup, and auto-remount
+- **Status** - View all tracked VHDs with their states and last seen timestamps
+- **Auto-Tracking** - VHDs are automatically tracked and kept in sync
 - **Shell Completion** - Bash, Zsh, Fish, and PowerShell support
 
 ## Installation
@@ -93,16 +93,14 @@ vhdm [OPTIONS] COMMAND [COMMAND_OPTIONS]
 | Command | Description |
 |---------|-------------|
 | `attach` | Attach VHD to WSL as block device |
-| `detach` | Detach VHD from WSL |
+| `detach` | Detach VHD from WSL (auto-unmounts if mounted) |
 | `mount` | Attach and mount VHD (orchestration) |
-| `umount` | Unmount VHD (and detach with `--vhd-path`) |
+| `umount` | Unmount VHD (optionally detach with `--detach`) |
 | `format` | Format VHD with filesystem |
 | `create` | Create new VHD file |
 | `delete` | Delete VHD file |
-| `resize` | Resize VHD with data migration |
-| `status` | Show VHD status |
-| `history` | Show tracking history |
-| `sync` | Sync tracking file with system state |
+| `resize` | Resize VHD with data migration (auto-remounts) |
+| `status` | Show VHD status and tracking info |
 | `completion` | Generate shell completion scripts |
 
 ## Examples
@@ -164,27 +162,30 @@ vhdm umount --vhd-path C:/VMs/disk.vhdx
 vhdm detach --vhd-path C:/VMs/disk.vhdx
 ```
 
-### History and Tracking
+### Tracking and Status
 
 ```bash
-# View history
-vhdm history
+# View all tracked VHDs with their status
+vhdm status
 
-# View detach history (last 20 entries)
-vhdm history --limit 20
+# Status shows:
+# - WSL Attached Disks (all block devices)
+# - Tracked VHD Disks (with Last Seen timestamp)
 
-# Sync tracking file (remove stale entries)
-vhdm sync
-
-# Dry-run sync
-vhdm sync --dry-run
+# VHDs are automatically tracked when attached/mounted
+# Non-existent VHDs are automatically removed from tracking
 ```
 
 ### Resize VHD
 
 ```bash
-# Resize to 20GB (creates backup)
-vhdm resize --vhd-path C:/VMs/disk.vhdx --size 20G
+# Resize to 20GB (creates backup, auto-remounts)
+vhdm resize --vhd-path C:/VMs/disk.vhdx --size 20G -y
+
+# If the VHD was mounted, it will be:
+# 1. Unmounted and detached
+# 2. Resized with data migration
+# 3. Re-attached and re-mounted to the same mount point
 ```
 
 ## Path Formats
@@ -254,11 +255,17 @@ tests/integration/  # Integration tests
 
 1. **Sudo required**: Mount/unmount operations require sudo permissions
 
-2. **VHD tracking**: The tool tracks VHD→UUID associations in `~/.config/vhdm/vhd_tracking.json`
+2. **VHD tracking**: The tool tracks VHDs in `~/.config/vhdm/vhd_tracking.json`
+   - VHDs remain tracked even when detached (status shows "detached")
+   - Tracking is automatically updated on attach/mount/detach operations
+   - Non-existent VHD files are automatically removed from tracking
 
-3. **UUID changes**: Formatting a VHD generates a new UUID
+3. **UUID changes**: Formatting or resizing a VHD generates a new UUID
 
-4. **Resize backups**: Resize creates a backup (`*_bkp.vhdx`) - verify and delete manually
+4. **Resize behavior**:
+   - Creates a backup (`*_bkp.vhdx`) - verify and delete manually
+   - If mounted, auto-unmounts before resize and re-mounts after
+   - If resize fails, the original VHD is restored to its mount point
 
 5. **Before unmounting**: Ensure no processes are using the mount point:
    ```bash
@@ -266,6 +273,8 @@ tests/integration/  # Integration tests
    ```
 
 6. **Multiple VHDs**: When multiple VHDs are attached, always specify `--vhd-path` or `--uuid`
+
+7. **Last Seen**: Tracking records when each VHD was last attached/mounted
 
 ## Bash Version
 
