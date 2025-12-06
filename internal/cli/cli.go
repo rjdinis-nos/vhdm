@@ -63,6 +63,7 @@ resize, and status.`,
 		newCreateCmd(),
 		newDeleteCmd(),
 		newResizeCmd(),
+		newServiceCmd(),
 	)
 
 	return rootCmd
@@ -76,16 +77,16 @@ func initContext() (*AppContext, error) {
 	cfg.SetQuiet(quiet)
 	cfg.SetDebug(debug)
 	cfg.SetYes(yes)
-	
+
 	logger := logging.New(cfg.Quiet, cfg.Debug)
-	
+
 	tracker, err := tracking.New(cfg.TrackingFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize tracking: %w", err)
 	}
-	
+
 	wslClient := wsl.NewClient(logger, cfg.SleepAfterAttach, cfg.DetachTimeout)
-	
+
 	return &AppContext{
 		Config:  cfg,
 		Logger:  logger,

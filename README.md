@@ -11,6 +11,7 @@ A comprehensive command-line tool for managing VHD/VHDX virtual disk files in WS
 - **Resize** - Resize VHDs with data migration, backup, and auto-remount
 - **Status** - View all tracked VHDs with their states and last seen timestamps
 - **Auto-Tracking** - VHDs are automatically tracked and kept in sync
+- **Systemd Services** - Auto-mount VHDs on boot with systemd user services
 - **Shell Completion** - Bash, Zsh, Fish, and PowerShell support
 
 ## Installation
@@ -101,6 +102,7 @@ vhdm [OPTIONS] COMMAND [COMMAND_OPTIONS]
 | `delete` | Delete VHD file |
 | `resize` | Resize VHD with data migration (auto-remounts) |
 | `status` | Show VHD status, tracking info, and WSL distributions |
+| `service` | Manage systemd services for auto-mounting VHDs on boot |
 | `completion` | Generate shell completion scripts |
 
 ## Examples
@@ -187,6 +189,31 @@ vhdm resize --vhd-path C:/VMs/disk.vhdx --size 20G -y
 # 1. Unmounted and detached
 # 2. Resized with data migration
 # 3. Re-attached and re-mounted to the same mount point
+```
+
+### Auto-Mount on Boot (Systemd Service)
+
+```bash
+# Create a systemd service to auto-mount VHD on boot
+vhdm service create --vhd-path C:/VMs/data.vhdx --mount-point /mnt/data
+
+# Enable the service to start on boot
+vhdm service enable --name vhdm-mount-data
+
+# List all VHD mount services
+vhdm service list
+
+# Check service status
+vhdm service status --name vhdm-mount-data
+
+# Disable auto-mount on boot
+vhdm service disable --name vhdm-mount-data
+
+# Remove the service completely
+vhdm service remove --name vhdm-mount-data
+
+# Start service manually (without waiting for boot)
+systemctl --user start vhdm-mount-data.service
 ```
 
 ## Path Formats
