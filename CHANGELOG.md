@@ -18,6 +18,8 @@ All notable changes to this project will be documented in this file.
 - Auto-cleanup of non-existent VHDs from tracking
 - Tracking stays in sync automatically (no manual sync needed)
 - VHDs remain tracked even when detached (status shows "detached")
+- WSL Distributions section showing all registered WSL distros from Windows registry
+- Distribution information includes name, base path, and VHD path
 
 #### Resize Improvements
 - Auto-unmount and detach before resize if VHD is mounted

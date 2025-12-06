@@ -165,6 +165,7 @@ All tests involving UUID discovery must:
 | Function | Arguments | Responsibility | Calls Primitives | Error Handling |
 |----------|-----------|---------------|------------------|----------------|
 | `wsl_attach_vhd()` | `$1: path` | Call wsl.exe to attach VHD | No | Minimal |
+| `GetWSLDistributions()` | None | Query Windows registry for WSL distributions | No | Comprehensive |
 | `wsl_detach_vhd()` | `$1: path`, `$2: uuid` (optional) | Call wsl.exe to detach VHD | No | Timeout handling |
 | `wsl_mount_vhd()` | `$1: uuid`, `$2: mount_point` | Mount VHD by UUID | Yes: `create_mount_point()`, `mount_filesystem()` | Comprehensive |
 | `wsl_umount_vhd()` | `$1: mount_point` | Unmount VHD with diagnostics | Yes: `umount_filesystem()` | Comprehensive (lsof) |
@@ -436,6 +437,35 @@ resize_vhd()
 
 **Key Point**: Resize is a **complex orchestration** performing 10+ operations. Original VHD preserved as backup. Data integrity verified via file count comparison.
 
+### Status Command Flow
+
+```
+status_vhd()
+├─→ Parse arguments (--path, --uuid, --mount-point, --all)
+├─→ Default to --all if no specific flags provided
+├─→ If --all (show all status):
+│   ├─→ Auto-cleanup non-existent VHDs from tracking
+│   ├─→ Get all block devices: wsl_get_all_disks()
+│   ├─→ Get all tracked VHD paths: tracker.GetAllPaths()
+│   ├─→ Query status for each tracked VHD
+│   ├─→ Print "WSL Attached Disks" table (all block devices)
+│   ├─→ Print "Tracked VHD Disks" table (with Last Seen)
+│   ├─→ Get WSL distributions: GetWSLDistributions()
+│   │   ├─→ Query Windows registry: reg.exe query HKEY_CURRENT_USER\...\Lxss
+│   │   ├─→ Parse distribution subkey GUIDs
+│   │   ├─→ For each distribution GUID:
+│   │   │   ├─→ Query distribution details (DistributionName, BasePath, VhdFileName)
+│   │   │   └─→ Construct full VHD path
+│   │   └─→ Return list of WSLDistribution structs
+│   └─→ Print "WSL Distributions" table (name, base path, VHD path)
+└─→ If single VHD query:
+    ├─→ Lookup path from UUID or mount point if needed
+    ├─→ Get VHD status information
+    └─→ Print single VHD status details
+```
+
+**Key Point**: Status is a **query operation** with three sections: WSL Attached Disks (all block devices), Tracked VHD Disks (managed by vhdm), and WSL Distributions (registered distros from Windows registry).
+
 ## Function Invocation Hierarchy
 
 ### Level 1: User Commands (Entry Points)
@@ -447,6 +477,7 @@ resize_vhd()
 - `create_vhd()` → `qemu-img` (direct), optionally with `--format`: → `wsl_attach_vhd()` → `detect_new_device_after_attach()` → `format_vhd()` → `tracking_file_save_mapping()`
 - `delete_vhd()` → `wsl_delete_vhd()` → `rm` → `tracking_file_remove_mapping()`
 - `resize_vhd()` → orchestrates multiple operations → `tracking_file_remove_detach_history()`
+- `status_vhd()` → `GetWSLDistributions()` → `reg.exe query` (Windows registry operations)
 
 ### Level 2: WSL Helpers (Business Logic)
 - `wsl_attach_vhd()` → `wsl_ensure_interop()` → `wsl.exe --mount`
@@ -456,6 +487,7 @@ resize_vhd()
 - `wsl_create_vhd()` → `qemu-img` + `wsl_attach_vhd()` + `format_vhd()`
 - `format_vhd()` → `sudo mkfs` + `blkid`
 - `wsl_ensure_interop()` → `wsl_is_interop_enabled()` → `wsl_enable_interop()` (if needed)
+- `GetWSLDistributions()` → `reg.exe query` + `parseDistributionKeys()` + `queryDistributionDetails()`
 
 ### Level 2.5: Tracking File Functions (Persistent State Management)
 - `tracking_file_save_mapping()` → JSON file operations (jq)

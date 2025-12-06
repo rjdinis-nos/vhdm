@@ -140,6 +140,14 @@ func showAllStatus(ctx *AppContext) error {
 		ctx.Logger.Info("Use 'vhdm attach' or 'vhdm mount' to attach a VHD")
 	}
 
+	// Get and print WSL distributions
+	distributions, err := ctx.WSL.GetWSLDistributions()
+	if err != nil {
+		ctx.Logger.Debug("Failed to get WSL distributions: %v", err)
+	} else if len(distributions) > 0 {
+		printWSLDistributionsTable(distributions)
+	}
+
 	return nil
 }
 
@@ -311,6 +319,36 @@ func printStatusTable(vhds []types.VHDInfo) {
 			lastSeen = "-"
 		}
 		utils.PrintTableRow(colWidths, vhd.Path, uuid, dev, mp, colorizeStatus(string(vhd.State)), lastSeen)
+	}
+
+	utils.PrintTableFooter(colWidths)
+}
+
+func printWSLDistributionsTable(dists []wsl.WSLDistribution) {
+	fmt.Println()
+	fmt.Println("WSL Distributions")
+	fmt.Println()
+
+	// Calculate column widths
+	colWidths := []int{25, 60, 60}
+	headers := []string{"Distribution Name", "Base Path", "VHD Path"}
+
+	utils.PrintTableHeader(colWidths, headers)
+
+	for _, dist := range dists {
+		name := dist.Name
+		if name == "" {
+			name = "-"
+		}
+		basePath := dist.BasePath
+		if basePath == "" {
+			basePath = "-"
+		}
+		vhdPath := dist.VHDPath
+		if vhdPath == "" {
+			vhdPath = "-"
+		}
+		utils.PrintTableRow(colWidths, name, basePath, vhdPath)
 	}
 
 	utils.PrintTableFooter(colWidths)

@@ -826,6 +826,17 @@ wsl_convert_path() {
 - Shows current mappings (attached VHDs) and detach history
 - Supports `--limit` (for detach events) and `--vhd-path` (for specific VHD info) options
 
+**Status** - Query operation: Shows comprehensive VHD and system information
+- Three information sections displayed:
+  1. WSL Attached Disks - All block devices (including system disks)
+  2. Tracked VHD Disks - VHDs managed by vhdm with Last Seen timestamps
+  3. WSL Distributions - WSL distros from Windows registry (name, base path, VHD path)
+- Auto-cleanup of non-existent VHDs from tracking before display
+- WSL distributions queried via `reg.exe query HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Lxss`
+- Distribution details include DistributionName, BasePath, and VhdFileName from registry
+- Supports single VHD queries via `--path`, `--uuid`, or `--mount-point`
+- In quiet mode, only shows disk and tracked VHD info (no distributions table)
+
 **Sync** - Maintenance operation: Synchronizes tracking file with system state
 - Removes stale mappings (VHDs no longer attached)
 - Removes detach history entries (VHD files no longer exist)

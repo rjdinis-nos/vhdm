@@ -100,7 +100,7 @@ vhdm [OPTIONS] COMMAND [COMMAND_OPTIONS]
 | `create` | Create new VHD file |
 | `delete` | Delete VHD file |
 | `resize` | Resize VHD with data migration (auto-remounts) |
-| `status` | Show VHD status and tracking info |
+| `status` | Show VHD status, tracking info, and WSL distributions |
 | `completion` | Generate shell completion scripts |
 
 ## Examples
@@ -171,6 +171,7 @@ vhdm status
 # Status shows:
 # - WSL Attached Disks (all block devices)
 # - Tracked VHD Disks (with Last Seen timestamp)
+# - WSL Distributions (from Windows registry)
 
 # VHDs are automatically tracked when attached/mounted
 # Non-existent VHDs are automatically removed from tracking
