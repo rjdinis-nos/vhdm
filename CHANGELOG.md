@@ -30,6 +30,12 @@ All notable changes to this project will be documented in this file.
 - Gracefully handles already-detached VHDs (no error)
 - Auto-unmounts if VHD is mounted before detaching
 
+### Fixed
+- Device name normalization in detach, mount, umount, and format commands
+  - Commands now properly handle `--dev-name` with or without `/dev/` prefix
+  - Fixed tracking file lookup when using `--dev-name=/dev/sdd` format
+  - Device names are normalized after validation for consistent tracking
+
 #### Build System
 - Makefile with build, test, install, and lint targets
 - Install script for one-command installation

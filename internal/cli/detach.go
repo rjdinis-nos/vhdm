@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -58,6 +59,8 @@ func runDetach(vhdPath, uuid, devName string) error {
 		if err := validation.ValidateDeviceName(devName); err != nil {
 			return &types.VHDError{Op: "detach", Err: err}
 		}
+		// Normalize device name (strip /dev/ prefix if present)
+		devName = strings.TrimPrefix(devName, "/dev/")
 	}
 
 	log.Debug("Detach operation starting")
@@ -142,7 +145,7 @@ func runDetach(vhdPath, uuid, devName string) error {
 	}
 
 	log.Success("VHD detached successfully")
-	
+
 	pairs := [][2]string{
 		{"Path", vhdPath},
 	}
@@ -153,8 +156,8 @@ func runDetach(vhdPath, uuid, devName string) error {
 		pairs = append(pairs, [2]string{"Device", "/dev/" + devName})
 	}
 	pairs = append(pairs, [2]string{"Status", "detached"})
-	
+
 	utils.KeyValueTable("VHD Detach Result", pairs, 14, 50)
-	
+
 	return nil
 }

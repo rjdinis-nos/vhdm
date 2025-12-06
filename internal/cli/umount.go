@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -67,6 +68,8 @@ func runUmount(vhdPath, uuid, devName, mountPoint string, doDetach, force bool) 
 		if err := validation.ValidateDeviceName(devName); err != nil {
 			return &types.VHDError{Op: "umount", Err: err}
 		}
+		// Normalize device name (strip /dev/ prefix if present)
+		devName = strings.TrimPrefix(devName, "/dev/")
 	}
 	if mountPoint != "" {
 		if err := validation.ValidateMountPoint(mountPoint); err != nil {
@@ -111,7 +114,7 @@ func runUmount(vhdPath, uuid, devName, mountPoint string, doDetach, force bool) 
 		} else {
 			log.Info("VHD is not mounted")
 		}
-		
+
 		// Even if not mounted, might want to detach
 		if doDetach && vhdPath != "" {
 			log.Info("Detaching VHD...")
@@ -164,7 +167,7 @@ func runUmount(vhdPath, uuid, devName, mountPoint string, doDetach, force bool) 
 
 func printUmountResult(path, uuid, devName, mountPoint string, wasDetached bool) {
 	pairs := [][2]string{}
-	
+
 	if path != "" {
 		pairs = append(pairs, [2]string{"Path", path})
 	}
@@ -175,12 +178,12 @@ func printUmountResult(path, uuid, devName, mountPoint string, wasDetached bool)
 		pairs = append(pairs, [2]string{"Device", "/dev/" + devName})
 	}
 	pairs = append(pairs, [2]string{"Mount Point", mountPoint})
-	
+
 	status := "unmounted"
 	if wasDetached {
 		status = "unmounted and detached"
 	}
 	pairs = append(pairs, [2]string{"Status", status})
-	
+
 	utils.KeyValueTable("VHD Umount Result", pairs, 14, 50)
 }

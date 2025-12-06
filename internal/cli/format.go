@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -41,6 +42,9 @@ func runFormat(devName, fsType string) error {
 	if err := validation.ValidateDeviceName(devName); err != nil {
 		return &types.VHDError{Op: "format", Err: err}
 	}
+	// Normalize device name (strip /dev/ prefix if present)
+	devName = strings.TrimPrefix(devName, "/dev/")
+
 	if err := validation.ValidateFilesystemType(fsType); err != nil {
 		return &types.VHDError{Op: "format", Err: err}
 	}
@@ -80,7 +84,7 @@ func runFormat(devName, fsType string) error {
 	}
 
 	log.Success("Device formatted successfully")
-	
+
 	pairs := [][2]string{
 		{"Device", "/dev/" + devName},
 		{"Filesystem", fsType},
@@ -90,12 +94,12 @@ func runFormat(devName, fsType string) error {
 	if path != "" {
 		pairs = append([][2]string{{"Path", path}}, pairs...)
 	}
-	
+
 	utils.KeyValueTable("Format Result", pairs, 14, 50)
-	
+
 	fmt.Println()
 	log.Info("To mount this VHD, run:")
 	log.Info("  vhdm mount --uuid %s --mount-point /mnt/your-mount-point", uuid)
-	
+
 	return nil
 }

@@ -2,6 +2,7 @@ package cli
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -65,6 +66,8 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 		if err := validation.ValidateDeviceName(devName); err != nil {
 			return &types.VHDError{Op: "mount", Err: err}
 		}
+		// Normalize device name (strip /dev/ prefix if present)
+		devName = strings.TrimPrefix(devName, "/dev/")
 	}
 	if err := validation.ValidateMountPoint(mountPoint); err != nil {
 		return &types.VHDError{Op: "mount", Err: err}
@@ -91,7 +94,7 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 				existingUUID = ""
 			}
 		}
-		
+
 		if existingUUID == "" {
 			// Try to attach
 			oldDevices, err := ctx.WSL.GetBlockDevices()
@@ -188,7 +191,7 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 
 func printMountResult(path, uuid, devName, mountPoint string, wasNewlyAttached bool) {
 	pairs := [][2]string{}
-	
+
 	if path != "" {
 		pairs = append(pairs, [2]string{"Path", path})
 	}
@@ -197,12 +200,12 @@ func printMountResult(path, uuid, devName, mountPoint string, wasNewlyAttached b
 		pairs = append(pairs, [2]string{"Device", "/dev/" + devName})
 	}
 	pairs = append(pairs, [2]string{"Mount Point", mountPoint})
-	
+
 	status := "mounted"
 	if wasNewlyAttached {
 		status = "attached and mounted"
 	}
 	pairs = append(pairs, [2]string{"Status", status})
-	
+
 	utils.KeyValueTable("VHD Mount Result", pairs, 14, 50)
 }
