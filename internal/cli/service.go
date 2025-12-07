@@ -228,6 +228,9 @@ func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
 		return fmt.Errorf("failed to get vhdm executable path: %w", err)
 	}
 
+	// Get tracking file path (use the context's config which handles SUDO_USER)
+	trackingFile := ctx.Config.TrackingFile
+
 	// Create systemd service content
 	// Use UUID instead of path to avoid device detection race conditions
 	// when multiple services start concurrently
@@ -241,6 +244,7 @@ Before=network.target
 Type=oneshot
 RemainAfterExit=yes
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
+Environment="VHDM_TRACKING_FILE=%s"
 ExecStart=%s mount --uuid "%s" --mount-point "%s"
 ExecStop=%s umount --mount-point "%s"
 TimeoutStartSec=60
@@ -248,7 +252,7 @@ TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
-`, vhdPath, vhdmPath, uuid, mountPoint, vhdmPath, mountPoint)
+`, vhdPath, trackingFile, vhdmPath, uuid, mountPoint, vhdmPath, mountPoint)
 
 	// System services require root privileges
 	if os.Geteuid() != 0 {
