@@ -17,7 +17,7 @@ func TestServiceCreationRequiresTrackedVHD(t *testing.T) {
 	env := NewTestEnvironment(t)
 	testID := fmt.Sprintf("svc-%d", time.Now().Unix())
 	serviceName := fmt.Sprintf("test-service-%s", testID)
-	serviceFile := filepath.Join("/etc/systemd/system", serviceName+".service")
+	serviceFile := filepath.Join("/usr/lib/systemd/system", serviceName+".service")
 
 	// Cleanup service file if it exists
 	defer func() {
@@ -63,7 +63,7 @@ func TestServiceCreationWithTrackedVHD(t *testing.T) {
 	env := NewTestEnvironment(t)
 	testID := fmt.Sprintf("svc-%d", time.Now().Unix())
 	serviceName := fmt.Sprintf("test-service-%s", testID)
-	serviceFile := filepath.Join("/etc/systemd/system", serviceName+".service")
+	serviceFile := filepath.Join("/usr/lib/systemd/system", serviceName+".service")
 
 	// Cleanup service file if it exists
 	defer func() {

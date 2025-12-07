@@ -784,11 +784,22 @@ wsl_convert_path() {
 2. Service creation requires `sudo` (system services only)
 3. Services use `mount --uuid` instead of `mount --vhd-path` in ExecStart
 
+**How UUID-based mounting works:**
+
+When `mount --uuid` is called (e.g., by systemd services on boot):
+1. **Path lookup**: The mount command looks up the VHD path from the tracking file using the UUID
+2. **Attach check**: Verifies if the VHD is already attached to WSL
+3. **Auto-attach**: If not attached, attaches the VHD using the path from tracking
+4. **Mount**: Mounts the filesystem to the specified mount point
+
+This enables services to work on boot without the VHD being pre-attached.
+
 **Benefits**:
 - ✅ No race conditions with concurrent service startup
 - ✅ All VHD services can start in parallel
 - ✅ Deterministic device identification
 - ✅ Forces best practice (test VHD before automation)
+- ✅ Automatic attachment on boot (VHDs don't need to be pre-attached)
 
 **Service Creation Flow**:
 ```bash
@@ -821,7 +832,7 @@ To fix this:
      sudo vhdm service create --vhd-path "C:/VMs/disk.vhdx" --mount-point "/mnt/data"
 ```
 
-**Generated Service File**:
+**Generated Service File** (created at `/usr/lib/systemd/system/vhdm-mount-disk.service`):
 ```ini
 [Unit]
 Description=Auto-mount VHD: C:/VMs/disk.vhdx
@@ -841,6 +852,11 @@ TimeoutStopSec=30
 [Install]
 WantedBy=multi-user.target
 ```
+
+**Service File Location**:
+- Files are created in `/usr/lib/systemd/system/` (standard location for package-installed services)
+- When enabled, systemd creates a symlink in `/etc/systemd/system/multi-user.target.wants/`
+- This follows standard systemd conventions used by distribution packages
 
 **Key Configuration Elements**:
 - `After=mnt-c.mount` - Ensures Windows C: drive is mounted first
@@ -887,10 +903,12 @@ func getUserHomeDir() string {
 
 **Mount** - Orchestration: Attach + mount workflow for user convenience
 - Attaches VHD if not already attached
+- When using `--uuid` only: Looks up VHD path from tracking file, then attaches if needed
 - Verifies VHD is formatted (errors if not)
 - Creates mount point if needed
 - Mounts to filesystem
 - Does NOT auto-format (directs user to format command)
+- **Service compatibility**: Services use `mount --uuid` which automatically attaches VHDs on boot
 
 **Format** - Single operation: Only formats device with filesystem
 - Requires explicit `--uuid` or `--name` (no path discovery)
@@ -951,11 +969,15 @@ func getUserHomeDir() string {
   - Generates service with `--uuid` in ExecStart (no race conditions)
   - Includes required systemd configuration (PATH, mount dependencies)
   - Requires `sudo` for system service creation
+  - Creates service files in `/usr/lib/systemd/system/` (standard package location)
 - **enable**: Enable service to start on boot (`systemctl enable`)
+  - Creates symlink in `/etc/systemd/system/multi-user.target.wants/`
 - **disable**: Disable auto-start (`systemctl disable`)
-- **remove**: Remove service file completely
+  - Removes symlink from `/etc/systemd/system/`
+- **remove**: Remove service file completely from `/usr/lib/systemd/system/`
 - **status**: Show service status (`systemctl status`)
-- **list**: List all vhdm mount services
+- **list**: List all vhdm mount services from `/usr/lib/systemd/system/`
 - Uses UUID-based mounting to prevent race conditions with concurrent service startup
 - Multiple VHD services can start in parallel without device conflicts
+- Follows standard systemd conventions: service files in `/usr/lib/systemd/system/`, symlinks in `/etc/systemd/system/` when enabled
 

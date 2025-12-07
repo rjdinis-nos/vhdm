@@ -310,7 +310,7 @@ For system-level services (running as root with `sudo systemctl`), the service f
    Requires=mnt-c.mount
    ```
 
-**Example system service file** (`/etc/systemd/system/vhdm-mount-data.service`):
+**Example system service file** (created at `/usr/lib/systemd/system/vhdm-mount-data.service`):
 ```ini
 [Unit]
 Description=Auto-mount VHD: C:/VMs/data.vhdx
@@ -332,10 +332,22 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 ```
 
-**Key differences from manual service creation:**
+> **Note**: Service files are created in `/usr/lib/systemd/system/` (standard location for package-installed services). When you enable a service, systemd automatically creates a symbolic link in `/etc/systemd/system/multi-user.target.wants/` pointing to the service file.
+
+**How UUID-based mounting works:**
+
+When a service starts with `mount --uuid`:
+1. **Path lookup**: The VHD path is automatically retrieved from the tracking file using the UUID
+2. **Auto-attach**: If the VHD isn't already attached, it's attached using the retrieved path
+3. **Mount**: The VHD is mounted to the specified mount point
+
+This means services don't need to know the VHD path - they only need the UUID and mount point.
+
+**Key benefits:**
 - `ExecStart` uses `--uuid` instead of `--vhd-path` for deterministic device identification
 - Eliminates snapshot-based device detection that fails with concurrent service startup
 - Multiple VHD services can start in parallel without conflicts
+- VHDs are automatically attached on boot even if not previously attached
 
 After creating or modifying service files:
 ```bash

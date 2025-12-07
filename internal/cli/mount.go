@@ -24,10 +24,13 @@ func newMountCmd() *cobra.Command {
 		Long: `Attach and mount a VHD file to WSL.
 
 This is an orchestration command that:
-1. Attaches the VHD if not already attached
+1. Attaches the VHD if not already attached (looks up path from tracking when using --uuid)
 2. Mounts the VHD to the specified mount point
 
-The VHD must be formatted before mounting.`,
+The VHD must be formatted before mounting.
+
+When using --uuid, the VHD path is automatically looked up from the tracking file,
+allowing services to mount VHDs by UUID without specifying the path.`,
 		Example: `  vhdm mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
   vhdm mount --uuid 57fd0f3a-4077-44b8-91ba-5abdee575293 --mount-point /mnt/data
   vhdm mount --dev-name sde --mount-point /mnt/data`,
@@ -77,25 +80,62 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 
 	var wasAttached bool
 
+	// If UUID provided but no path, try to look up path from tracking
+	if uuid != "" && vhdPath == "" {
+		lookupPath, err := ctx.Tracker.LookupPathByUUID(uuid)
+		if err == nil && lookupPath != "" {
+			vhdPath = lookupPath
+			log.Debug("Found VHD path from tracking: %s", vhdPath)
+		} else {
+			// Can't find path for UUID - check if VHD is already attached
+			attached, _ := ctx.WSL.IsAttached(uuid)
+			if !attached {
+				return &types.VHDError{
+					Op:  "mount",
+					Err: fmt.Errorf("UUID %s not found in tracking file and not currently attached", uuid),
+					Help: "The VHD path is unknown. Either:\n" +
+						"  1. Provide --vhd-path along with --uuid, or\n" +
+						"  2. Mount the VHD first with --vhd-path to register it",
+				}
+			}
+			// VHD is attached but we don't know the path - continue without path
+			wasAttached = true
+			log.Debug("UUID %s is attached but path unknown", uuid)
+		}
+	}
+
 	// Step 1: Attach if needed
 	if vhdPath != "" {
-		// Check if already attached - first check tracking, then verify in system
-		existingUUID, _ := ctx.Tracker.LookupUUIDByPath(vhdPath)
-		if existingUUID != "" {
-			// Verify the UUID is actually attached in the system
-			attached, _ := ctx.WSL.IsAttached(existingUUID)
+		// If UUID was provided, check if it's actually attached
+		if uuid != "" {
+			attached, _ := ctx.WSL.IsAttached(uuid)
 			if attached {
-				uuid = existingUUID
 				wasAttached = true
 				log.Debug("VHD already attached with UUID: %s", uuid)
 			} else {
-				log.Debug("UUID %s found in tracking but not attached, will attach", existingUUID)
-				// Fall through to attach
-				existingUUID = ""
+				log.Debug("UUID %s provided but not attached, will attach", uuid)
+				uuid = "" // Reset UUID so we detect it after attach
 			}
 		}
 
-		if existingUUID == "" {
+		// If no UUID yet, check tracking and verify in system
+		if uuid == "" {
+			existingUUID, _ := ctx.Tracker.LookupUUIDByPath(vhdPath)
+			if existingUUID != "" {
+				// Verify the UUID is actually attached in the system
+				attached, _ := ctx.WSL.IsAttached(existingUUID)
+				if attached {
+					uuid = existingUUID
+					wasAttached = true
+					log.Debug("VHD already attached with UUID: %s", uuid)
+				} else {
+					log.Debug("UUID %s found in tracking but not attached, will attach", existingUUID)
+				}
+			}
+		}
+
+		// Attach if not already attached
+		if uuid == "" {
 			// Try to attach
 			oldDevices, err := ctx.WSL.GetBlockDevices()
 			if err != nil {

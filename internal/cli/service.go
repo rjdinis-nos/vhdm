@@ -256,7 +256,9 @@ WantedBy=multi-user.target
 	}
 
 	// Create systemd system directory if it doesn't exist
-	systemdDir := "/etc/systemd/system"
+	// Use /usr/lib/systemd/system (standard location for package-installed services)
+	// When enabled, systemd will create a symlink in /etc/systemd/system
+	systemdDir := "/usr/lib/systemd/system"
 	if err := os.MkdirAll(systemdDir, 0755); err != nil {
 		return fmt.Errorf("failed to create systemd directory: %w", err)
 	}
@@ -377,8 +379,8 @@ func runServiceRemove(serviceName string) error {
 		log.Debug("Service not enabled or already disabled")
 	}
 
-	// Remove service file
-	systemdDir := "/etc/systemd/system"
+	// Remove service file from /usr/lib/systemd/system
+	systemdDir := "/usr/lib/systemd/system"
 	servicePath := filepath.Join(systemdDir, serviceName)
 
 	if err := os.Remove(servicePath); err != nil {
@@ -427,7 +429,7 @@ func runServiceList() error {
 	ctx := getContext()
 	log := ctx.Logger
 
-	systemdDir := "/etc/systemd/system"
+	systemdDir := "/usr/lib/systemd/system"
 
 	// Check if directory exists
 	if _, err := os.Stat(systemdDir); os.IsNotExist(err) {
