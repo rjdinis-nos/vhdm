@@ -42,10 +42,8 @@ func Load() (*Config, error) {
 	}
 
 	// Set default tracking file path
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "/tmp"
-	}
+	// When running with sudo, use the original user's home directory
+	home := getUserHomeDir()
 	defaultTrackingFile := filepath.Join(home, ".config", "vhdm", "vhd_tracking.json")
 	cfg.TrackingFile = envStr("VHDM_TRACKING_FILE", defaultTrackingFile)
 
@@ -77,4 +75,24 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+// getUserHomeDir returns the home directory, preferring SUDO_USER when running with sudo
+func getUserHomeDir() string {
+	// Check if running with sudo
+	if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+		// Try to get the original user's home directory
+		if sudoHome := os.Getenv("SUDO_HOME"); sudoHome != "" {
+			return sudoHome
+		}
+		// Fallback: construct from /home/<user>
+		return filepath.Join("/home", sudoUser)
+	}
+
+	// Normal case: use current user's home
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "/tmp"
+	}
+	return home
 }

@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- **UUID-based service creation**: Services now use filesystem UUIDs for reliable device identification
+  - Eliminates race conditions when multiple VHD services start simultaneously at boot
+  - Services require VHDs to be mounted at least once before service creation (ensures UUID is tracked)
+  - Clear error messages with step-by-step instructions when VHD is not tracked
+  - Multiple VHD services can now start in parallel without conflicts
+
+### Changed
+- `vhdm service create` now requires VHD to be tracked (have UUID in tracking file)
+- Service files use `mount --uuid` instead of `mount --vhd-path` in ExecStart
+- Service creation now requires `sudo` (system services only, for security and proper tracking file access)
+
+### Fixed
+- **Sudo context tracking file access**: Config now detects `SUDO_USER` and uses original user's home directory
+  - Fixes "VHD is not tracked" error when running `sudo vhdm service create`
+  - Ensures tracking file is read from correct user directory even under sudo
+- **Enhanced error messages**: VHDError help text now displays automatically in CLI output
+
 ## [1.1.2] - 2025-12-07
 
 ### Fixed

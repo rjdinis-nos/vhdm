@@ -182,6 +182,29 @@ func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
 		}
 	}
 
+	// Check if VHD is tracked (has been attached/mounted at least once)
+	// This is required to avoid race conditions during concurrent service startup
+	uuid, err := ctx.Tracker.LookupUUIDByPath(vhdPath)
+	if err != nil || uuid == "" {
+		return &types.VHDError{
+			Op:   "service create",
+			Path: vhdPath,
+			Err:  fmt.Errorf("VHD is not tracked in the system"),
+			Help: fmt.Sprintf("The VHD must be attached and mounted at least once before creating a service.\n"+
+				"This ensures the filesystem UUID is known and prevents device detection race conditions.\n\n"+
+				"To fix this:\n"+
+				"  1. Attach and mount the VHD manually first:\n"+
+				"     vhdm mount --vhd-path %q --mount-point %q\n"+
+				"  2. Verify it mounted successfully:\n"+
+				"     vhdm status --vhd-path %q\n"+
+				"  3. Then create the service:\n"+
+				"     sudo vhdm service create --vhd-path %q --mount-point %q",
+				vhdPath, mountPoint, vhdPath, vhdPath, mountPoint),
+		}
+	}
+
+	log.Debug("VHD is tracked with UUID: %s", uuid)
+
 	// Generate service name if not provided
 	if serviceName == "" {
 		// Extract filename without extension and sanitize
@@ -206,7 +229,8 @@ func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
 	}
 
 	// Create systemd service content
-	// Include PATH for wsl.exe and mount dependencies for Windows drives
+	// Use UUID instead of path to avoid device detection race conditions
+	// when multiple services start concurrently
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=Auto-mount VHD: %s
 After=local-fs.target mnt-c.mount
@@ -217,14 +241,14 @@ Before=network.target
 Type=oneshot
 RemainAfterExit=yes
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
-ExecStart=%s mount --vhd-path "%s" --mount-point "%s"
+ExecStart=%s mount --uuid "%s" --mount-point "%s"
 ExecStop=%s umount --mount-point "%s"
 TimeoutStartSec=60
 TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
-`, vhdPath, vhdmPath, vhdPath, mountPoint, vhdmPath, mountPoint)
+`, vhdPath, vhdmPath, uuid, mountPoint, vhdmPath, mountPoint)
 
 	// System services require root privileges
 	if os.Geteuid() != 0 {
@@ -245,12 +269,18 @@ WantedBy=multi-user.target
 
 	log.Info("✓ Service created: %s", serviceName)
 	log.Info("  Service file: %s", servicePath)
+	log.Info("  VHD Path: %s", vhdPath)
+	log.Info("  Mount Point: %s", mountPoint)
+	log.Info("  UUID: %s", uuid)
 	log.Info("")
 	log.Info("To enable the service to start on boot:")
 	log.Info("  sudo vhdm service enable --name %s", strings.TrimSuffix(serviceName, ".service"))
 	log.Info("")
 	log.Info("To start the service now:")
 	log.Info("  sudo systemctl start %s", serviceName)
+	log.Info("")
+	log.Info("Note: Service uses UUID for reliable device identification")
+	log.Info("      This prevents race conditions when multiple VHDs mount at boot")
 
 	return nil
 }

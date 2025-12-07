@@ -773,6 +773,107 @@ wsl_convert_path() {
 14. **Filesystem unmount vs detach**: To test "attached but not mounted" state, use `sudo umount` (not the script's umount command which fully detaches)
 15. **Flag exports**: QUIET and DEBUG flags must be exported at script initialization for child script access
 
+## Service Management
+
+### UUID-Based Service Creation
+
+**Design Philosophy**: Services use filesystem UUIDs instead of path-based device detection to eliminate race conditions when multiple VHD services start simultaneously at boot.
+
+**Requirements**:
+1. VHD must be mounted at least once before creating a service (registers UUID in tracking file)
+2. Service creation requires `sudo` (system services only)
+3. Services use `mount --uuid` instead of `mount --vhd-path` in ExecStart
+
+**Benefits**:
+- ✅ No race conditions with concurrent service startup
+- ✅ All VHD services can start in parallel
+- ✅ Deterministic device identification
+- ✅ Forces best practice (test VHD before automation)
+
+**Service Creation Flow**:
+```bash
+# Step 1: User must mount VHD first to register UUID
+vhdm mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
+# → UUID saved to tracking file
+
+# Step 2: Create service (checks tracking file for UUID)
+sudo vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
+# → Generates service with ExecStart using --uuid instead of --vhd-path
+
+# Step 3: Enable for auto-start
+sudo vhdm service enable --name vhdm-mount-disk
+```
+
+**Error Handling**:
+If VHD is not tracked, user gets detailed instructions:
+```
+Error: service create C:/VMs/disk.vhdx: VHD is not tracked in the system
+
+The VHD must be attached and mounted at least once before creating a service.
+This ensures the filesystem UUID is known and prevents device detection race conditions.
+
+To fix this:
+  1. Attach and mount the VHD manually first:
+     vhdm mount --vhd-path "C:/VMs/disk.vhdx" --mount-point "/mnt/data"
+  2. Verify it mounted successfully:
+     vhdm status --vhd-path "C:/VMs/disk.vhdx"
+  3. Then create the service:
+     sudo vhdm service create --vhd-path "C:/VMs/disk.vhdx" --mount-point "/mnt/data"
+```
+
+**Generated Service File**:
+```ini
+[Unit]
+Description=Auto-mount VHD: C:/VMs/disk.vhdx
+After=local-fs.target mnt-c.mount
+Requires=mnt-c.mount
+Before=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
+ExecStart=/usr/local/bin/vhdm mount --uuid "5c8bc48c-4254-4430-b76a-c495d763d067" --mount-point "/mnt/data"
+ExecStop=/usr/local/bin/vhdm umount --mount-point "/mnt/data"
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Key Configuration Elements**:
+- `After=mnt-c.mount` - Ensures Windows C: drive is mounted first
+- `Requires=mnt-c.mount` - Hard dependency on C: drive availability
+- `Environment="PATH=..."` - Includes Windows paths for `wsl.exe` access
+- `ExecStart` uses `--uuid` - No device detection, no race conditions
+
+**Sudo Context Handling**:
+When running `sudo vhdm service create`, the config system:
+1. Detects `SUDO_USER` environment variable
+2. Uses original user's home directory for tracking file
+3. Prevents "VHD is not tracked" error under sudo
+
+Implementation in `internal/config/config.go`:
+```go
+func getUserHomeDir() string {
+    // Check if running with sudo
+    if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
+        if sudoHome := os.Getenv("SUDO_HOME"); sudoHome != "" {
+            return sudoHome
+        }
+        return filepath.Join("/home", sudoUser)
+    }
+    
+    // Normal case
+    home, err := os.UserHomeDir()
+    if err != nil {
+        return "/tmp"
+    }
+    return home
+}
+```
+
 ## Workflow-Specific Notes
 
 **📖 For detailed command flow diagrams and function invocation hierarchies, see [copilot-code-architecture.md](copilot-code-architecture.md)**
@@ -843,3 +944,18 @@ wsl_convert_path() {
 - Supports `--dry-run` option to preview changes
 - Lightweight auto-sync runs on every vhdm.sh invocation (mappings only)
 - Configurable via `AUTO_SYNC_MAPPINGS` (default: true)
+
+**Service** - Systemd service management: Auto-mount VHDs on boot
+- **create**: Requires VHD to be tracked (mounted at least once)
+  - Validates UUID exists in tracking file
+  - Generates service with `--uuid` in ExecStart (no race conditions)
+  - Includes required systemd configuration (PATH, mount dependencies)
+  - Requires `sudo` for system service creation
+- **enable**: Enable service to start on boot (`systemctl enable`)
+- **disable**: Disable auto-start (`systemctl disable`)
+- **remove**: Remove service file completely
+- **status**: Show service status (`systemctl status`)
+- **list**: List all vhdm mount services
+- Uses UUID-based mounting to prevent race conditions with concurrent service startup
+- Multiple VHD services can start in parallel without device conflicts
+

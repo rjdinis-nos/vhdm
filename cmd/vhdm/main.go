@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/rjdinis/vhdm/internal/cli"
+	"github.com/rjdinis/vhdm/internal/types"
 )
 
 var (
@@ -18,6 +19,12 @@ func main() {
 	rootCmd := cli.NewRootCommand(version, commit, date)
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+
+		// If it's a VHDError with help text, print that too
+		if vhdErr, ok := err.(*types.VHDError); ok && vhdErr.Help != "" {
+			fmt.Fprintf(os.Stderr, "\n%s\n", vhdErr.Help)
+		}
+
 		os.Exit(1)
 	}
 }

@@ -241,11 +241,18 @@ vhdm resize --vhd-path C:/VMs/disk.vhdx --size 20G -y
 ### Auto-Mount on Boot (Systemd Service)
 
 ```bash
+# IMPORTANT: Mount the VHD manually first to register its UUID
+vhdm mount --vhd-path C:/VMs/data.vhdx --mount-point /mnt/data
+
+# Verify it's tracked (should show UUID)
+vhdm status --vhd-path C:/VMs/data.vhdx
+
 # Create a systemd service to auto-mount VHD on boot
-vhdm service create --vhd-path C:/VMs/data.vhdx --mount-point /mnt/data
+# (requires VHD to be tracked with UUID from previous mount)
+sudo vhdm service create --vhd-path C:/VMs/data.vhdx --mount-point /mnt/data
 
 # Enable the service to start on boot
-vhdm service enable --name vhdm-mount-data
+sudo vhdm service enable --name vhdm-mount-data
 
 # List all VHD mount services
 vhdm service list
@@ -254,16 +261,41 @@ vhdm service list
 vhdm service status --name vhdm-mount-data
 
 # Disable auto-mount on boot
-vhdm service disable --name vhdm-mount-data
+sudo vhdm service disable --name vhdm-mount-data
 
 # Remove the service completely
-vhdm service remove --name vhdm-mount-data
+sudo vhdm service remove --name vhdm-mount-data
 
 # Start service manually (without waiting for boot)
-systemctl --user start vhdm-mount-data.service
+sudo systemctl start vhdm-mount-data.service
 ```
 
-#### Important: Systemd Service Configuration
+#### Important: UUID-Based Service Creation
+
+**Why services require VHDs to be mounted first:**
+
+1. **Prevents Race Conditions**: When multiple VHD services start simultaneously at boot, using filesystem UUIDs instead of path-based device detection eliminates race conditions
+2. **Deterministic Identification**: Each VHD is identified by its unique UUID, not by detecting new devices
+3. **Reliable Parallel Startup**: All VHD services can start concurrently without conflicts
+4. **Best Practice Enforcement**: Ensures VHDs are properly formatted and tested before automation
+
+If you try to create a service for an untracked VHD, you'll get step-by-step instructions:
+```
+Error: service create C:/VMs/disk.vhdx: VHD is not tracked in the system
+
+The VHD must be attached and mounted at least once before creating a service.
+This ensures the filesystem UUID is known and prevents device detection race conditions.
+
+To fix this:
+  1. Attach and mount the VHD manually first:
+     vhdm mount --vhd-path "C:/VMs/disk.vhdx" --mount-point "/mnt/data"
+  2. Verify it mounted successfully:
+     vhdm status --vhd-path "C:/VMs/disk.vhdx"
+  3. Then create the service:
+     sudo vhdm service create --vhd-path "C:/VMs/disk.vhdx" --mount-point "/mnt/data"
+```
+
+#### Systemd Service Configuration
 
 For system-level services (running as root with `sudo systemctl`), the service file must include:
 
@@ -290,7 +322,8 @@ Before=network.target
 Type=oneshot
 RemainAfterExit=yes
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
-ExecStart=/usr/local/bin/vhdm mount --vhd-path "C:/VMs/data.vhdx" --mount-point "/mnt/data"
+# Uses UUID instead of path for reliable device identification (no race conditions)
+ExecStart=/usr/local/bin/vhdm mount --uuid "5c8bc48c-4254-4430-b76a-c495d763d067" --mount-point "/mnt/data"
 ExecStop=/usr/local/bin/vhdm umount --mount-point "/mnt/data"
 TimeoutStartSec=60
 TimeoutStopSec=30
@@ -299,6 +332,11 @@ TimeoutStopSec=30
 WantedBy=multi-user.target
 ```
 
+**Key differences from manual service creation:**
+- `ExecStart` uses `--uuid` instead of `--vhd-path` for deterministic device identification
+- Eliminates snapshot-based device detection that fails with concurrent service startup
+- Multiple VHD services can start in parallel without conflicts
+
 After creating or modifying service files:
 ```bash
 sudo systemctl daemon-reload
@@ -306,7 +344,7 @@ sudo systemctl enable vhdm-mount-data.service
 sudo systemctl start vhdm-mount-data.service
 ```
 
-> **Note**: User services (`systemctl --user`) may not require these PATH modifications as they inherit the user's environment, but system services always need explicit PATH configuration.
+> **Note**: Services created with `vhdm service create` automatically include all required configuration (PATH, mount dependencies, UUID-based mounting). Manual editing is not needed.
 
 ## Path Formats
 
