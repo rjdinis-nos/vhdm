@@ -18,11 +18,8 @@ endif
 PREFIX := /usr/local
 BINDIR := $(PREFIX)/bin
 
-# XDG user install location (XDG_BIN_HOME or ~/.local/bin)
-XDG_BIN_HOME := $(or $(XDG_BIN_HOME),$(HOME)/.local/bin)
-
 .PHONY: all build clean test test-unit test-integration install uninstall \
-        completion-bash completion-zsh completion-fish help dev lint fmt
+        completion-bash completion-zsh completion-fish help lint fmt
 
 # Default target
 all: build
@@ -36,10 +33,6 @@ build: ## Build the binary
 build-debug: ## Build with debug symbols
 	@echo "Building $(BINARY_NAME) $(VERSION) with debug symbols..."
 	go build -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)" -o $(BINARY_NAME) ./cmd/vhdm
-
-dev: build ## Build and copy to PATH (for development)
-	@echo "Installing to $(GOBIN)..."
-	cp $(BINARY_NAME) $(GOBIN)/
 
 ## Test targets
 
@@ -87,7 +80,9 @@ install: build ## Install binary (requires sudo)
 	@echo "Installation complete!"
 	@echo "Run 'vhdm --help' to get started."
 	@echo ""
-	@echo "To enable shell completions, add to your shell config:"
+	@echo "To enable shell completions:"
+	@echo ""
+	@echo "Option 1: Load on shell startup (add to shell config)"
 	@echo "  # Bash (~/.bashrc)"
 	@echo "  source <(vhdm completion bash)"
 	@echo ""
@@ -96,24 +91,19 @@ install: build ## Install binary (requires sudo)
 	@echo ""
 	@echo "  # Fish (~/.config/fish/config.fish)"
 	@echo "  vhdm completion fish | source"
-
-install-user: build ## Install to XDG_BIN_HOME or ~/.local/bin (no sudo required)
-	@echo "Installing $(BINARY_NAME) to $(XDG_BIN_HOME)..."
-	@mkdir -p $(XDG_BIN_HOME)
-	cp $(BINARY_NAME) $(XDG_BIN_HOME)/$(BINARY_NAME)
 	@echo ""
-	@echo "Installation complete!"
-	@echo "Make sure $(XDG_BIN_HOME) is in your PATH."
+	@echo "Option 2: Install permanently (requires sudo)"
+	@echo "  # Bash"
+	@echo "  sudo mkdir -p /etc/bash_completion.d"
+	@echo "  vhdm completion bash | sudo tee /etc/bash_completion.d/vhdm >/dev/null"
 	@echo ""
-	@echo "To enable shell completions, add to your shell config:"
-	@echo "  # Bash (~/.bashrc)"
-	@echo "  source <(vhdm completion bash)"
+	@echo "  # Zsh"
+	@echo "  sudo mkdir -p /usr/local/share/zsh/site-functions"
+	@echo "  vhdm completion zsh | sudo tee /usr/local/share/zsh/site-functions/_vhdm >/dev/null"
 	@echo ""
-	@echo "  # Zsh (~/.zshrc)"
-	@echo "  source <(vhdm completion zsh)"
-	@echo ""
-	@echo "  # Fish (~/.config/fish/config.fish)"
-	@echo "  vhdm completion fish | source"
+	@echo "  # Fish"
+	@echo "  sudo mkdir -p /usr/share/fish/vendor_completions.d"
+	@echo "  vhdm completion fish | sudo tee /usr/share/fish/vendor_completions.d/vhdm.fish >/dev/null"
 
 uninstall: ## Uninstall binary (requires sudo)
 	@echo "Uninstalling $(BINARY_NAME)..."
@@ -156,4 +146,3 @@ help: ## Show this help
 	@echo "  make build          # Build the binary"
 	@echo "  make test           # Run unit tests"
 	@echo "  make install        # Install system-wide (requires sudo)"
-	@echo "  make install-user   # Install to ~/.local/bin (or XDG_BIN_HOME)"

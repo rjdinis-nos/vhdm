@@ -15,31 +15,40 @@ func newCompletionCmd() *cobra.Command {
 To load completions:
 
 Bash:
-  # Linux:
-  $ vhdm completion bash > /etc/bash_completion.d/vhdm
-  # macOS:
-  $ vhdm completion bash > /usr/local/etc/bash_completion.d/vhdm
+  # Option 1: Install permanently (requires sudo)
+  $ sudo mkdir -p /etc/bash_completion.d
+  $ vhdm completion bash | sudo tee /etc/bash_completion.d/vhdm >/dev/null
 
-  # Or for current session only:
+  # Option 2: Load on shell startup (add to ~/.bashrc)
   $ source <(vhdm completion bash)
 
+  # Option 3: macOS
+  $ sudo mkdir -p /usr/local/etc/bash_completion.d
+  $ vhdm completion bash | sudo tee /usr/local/etc/bash_completion.d/vhdm >/dev/null
+
 Zsh:
-  # If shell completion is not already enabled in your environment,
-  # you will need to enable it. Execute the following once:
-  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
+  # Option 1: Install permanently (requires sudo)
+  $ sudo mkdir -p /usr/local/share/zsh/site-functions
+  $ vhdm completion zsh | sudo tee /usr/local/share/zsh/site-functions/_vhdm >/dev/null
 
-  # To load completions for each session:
-  $ vhdm completion zsh > "${fpath[1]}/_vhdm"
+  # Option 2: Load on shell startup (add to ~/.zshrc)
+  $ source <(vhdm completion zsh)
 
-  # Or for Oh My Zsh:
+  # Option 3: For Oh My Zsh
   $ vhdm completion zsh > ~/.oh-my-zsh/completions/_vhdm
 
-  # You will need to start a new shell for this setup to take effect.
+  # Note: If shell completion is not already enabled:
+  $ echo "autoload -U compinit; compinit" >> ~/.zshrc
 
 Fish:
+  # Option 1: Install permanently (requires sudo)
+  $ sudo mkdir -p /usr/share/fish/vendor_completions.d
+  $ vhdm completion fish | sudo tee /usr/share/fish/vendor_completions.d/vhdm.fish >/dev/null
+
+  # Option 2: User install
   $ vhdm completion fish > ~/.config/fish/completions/vhdm.fish
 
-  # Or for current session only:
+  # Option 3: Load on shell startup (add to ~/.config/fish/config.fish)
   $ vhdm completion fish | source
 
 PowerShell:

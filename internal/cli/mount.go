@@ -154,6 +154,12 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 	if existingMP != "" {
 		if existingMP == mountPoint {
 			// Already mounted at same location
+			// Update tracking to ensure OriginalPath is set (for migration from old format)
+			if vhdPath != "" {
+				if err := ctx.Tracker.SaveMapping(vhdPath, uuid, mountPoint, devName); err != nil {
+					log.Warn("Failed to save tracking: %v", err)
+				}
+			}
 			if ctx.Config.Quiet {
 				fmt.Printf("%s: already mounted at %s\n", vhdPath, mountPoint)
 			} else {

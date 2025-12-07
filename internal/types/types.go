@@ -12,11 +12,11 @@ import (
 type VHDState string
 
 const (
-	StateNotFound           VHDState = "not found"
-	StateDetached           VHDState = "detached"
+	StateNotFound            VHDState = "not found"
+	StateDetached            VHDState = "detached"
 	StateAttachedUnformatted VHDState = "attached (unformatted)"
 	StateAttachedFormatted   VHDState = "attached"
-	StateMounted            VHDState = "mounted"
+	StateMounted             VHDState = "mounted"
 )
 
 // VHDInfo holds detailed information about a VHD
@@ -40,14 +40,14 @@ func (m *MountPoints) UnmarshalJSON(data []byte) error {
 		*m = []string{}
 		return nil
 	}
-	
+
 	// Try array first
 	var arr []string
 	if err := json.Unmarshal(data, &arr); err == nil {
 		*m = arr
 		return nil
 	}
-	
+
 	// Try string
 	var s string
 	if err := json.Unmarshal(data, &s); err == nil {
@@ -58,7 +58,7 @@ func (m *MountPoints) UnmarshalJSON(data []byte) error {
 		}
 		return nil
 	}
-	
+
 	return fmt.Errorf("mount_points must be string or array")
 }
 
@@ -72,10 +72,11 @@ func (m MountPoints) MarshalJSON() ([]byte, error) {
 
 // TrackingEntry represents a single entry in the VHD tracking file
 type TrackingEntry struct {
-	UUID        string      `json:"uuid"`
-	LastSeen    string      `json:"last_seen"`
-	MountPoints MountPoints `json:"mount_points"`
-	DeviceName  string      `json:"dev_name"`
+	UUID         string      `json:"uuid"`
+	LastSeen     string      `json:"last_seen"`
+	MountPoints  MountPoints `json:"mount_points"`
+	DeviceName   string      `json:"dev_name"`
+	OriginalPath string      `json:"original_path,omitempty"` // Preserve original case
 }
 
 // TrackingFile represents the structure of the VHD tracking JSON file

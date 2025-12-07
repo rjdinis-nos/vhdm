@@ -33,6 +33,21 @@ sudo apt install golang qemu-utils jq
 
 ### Quick Install
 
+#### Option 1: Using Install Script
+
+```bash
+# One-command installation (recommended)
+curl -sSL https://raw.githubusercontent.com/rjdinis/vhdm/go/scripts/install.sh | bash
+```
+
+This will:
+- Clone the repository
+- Build the binary
+- Install to `/usr/local/bin` (requires sudo)
+- Set up shell completions
+
+#### Option 2: Manual Build
+
 ```bash
 # Clone and build
 git clone https://github.com/rjdinis/vhdm.git
@@ -41,23 +56,14 @@ git checkout go
 
 # Build and install
 make build
-make install-user  # Installs to ~/go/bin
-```
-
-### Install Options
-
-```bash
-# Install to /usr/local/bin (requires sudo)
 sudo make install
-
-# Install to ~/go/bin (no sudo)
-make install-user
-
-# Development - build and add to PATH
-make dev
 ```
+
+**Note:** Installation requires sudo as the binary is installed to `/usr/local/bin`.
 
 ### Shell Completions
+
+#### Option 1: Load on shell startup
 
 ```bash
 # Bash - add to ~/.bashrc
@@ -66,8 +72,25 @@ source <(vhdm completion bash)
 # Zsh - add to ~/.zshrc  
 source <(vhdm completion zsh)
 
+# Fish - add to ~/.config/fish/config.fish
+vhdm completion fish | source
+```
+
+#### Option 2: Install permanently (system-wide)
+
+```bash
+# Bash
+sudo mkdir -p /etc/bash_completion.d
+vhdm completion bash | sudo tee /etc/bash_completion.d/vhdm >/dev/null
+
+# Zsh
+sudo mkdir -p /usr/local/share/zsh/site-functions
+vhdm completion zsh | sudo tee /usr/local/share/zsh/site-functions/_vhdm >/dev/null
+
 # Fish
-vhdm completion fish > ~/.config/fish/completions/vhdm.fish
+sudo mkdir -p /usr/share/fish/vendor_completions.d
+vhdm completion fish | sudo tee /usr/share/fish/vendor_completions.d/vhdm.fish >/dev/null
+```
 
 # PowerShell
 vhdm completion powershell | Out-String | Invoke-Expression
@@ -246,6 +269,13 @@ make build-debug    # Build with debug symbols
 make clean          # Remove build artifacts
 ```
 
+### Install
+
+```bash
+sudo make install   # Install to /usr/local/bin (requires sudo)
+sudo make uninstall # Remove from /usr/local/bin
+```
+
 ### Test
 
 ```bash
@@ -287,6 +317,8 @@ tests/integration/  # Integration tests
    - VHDs remain tracked even when detached (status shows "detached")
    - Tracking is automatically updated on attach/mount/detach operations
    - Non-existent VHD files are automatically removed from tracking
+   - Original path casing is preserved (e.g., `C:/aNOS/VMs/disk.vhdx` not `c:/anos/vms/disk.vhdx`)
+   - Paths are normalized internally for case-insensitive matching
 
 3. **UUID changes**: Formatting or resizing a VHD generates a new UUID
 

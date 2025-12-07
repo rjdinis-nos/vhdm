@@ -6,7 +6,7 @@
 #   curl -sSL https://raw.githubusercontent.com/rjdinis/vhdm/go/scripts/install.sh | bash
 #
 # Options:
-#   INSTALL_DIR  - Installation directory (default: /usr/local/bin or ~/.local/bin)
+#   INSTALL_DIR  - Installation directory (default: /usr/local/bin)
 #
 
 set -euo pipefail
@@ -53,11 +53,8 @@ check_dependencies() {
 get_install_dir() {
     if [[ -n "${INSTALL_DIR:-}" ]]; then
         echo "$INSTALL_DIR"
-    elif [[ -w /usr/local/bin ]]; then
-        echo "/usr/local/bin"
     else
-        mkdir -p "$HOME/.local/bin"
-        echo "$HOME/.local/bin"
+        echo "/usr/local/bin"
     fi
 }
 
@@ -119,20 +116,33 @@ setup_completions() {
     case "$shell" in
         bash)
             if [[ -d /etc/bash_completion.d ]] && sudo test -w /etc/bash_completion.d 2>/dev/null; then
-                sudo "$vhdm" completion bash > /tmp/vhdm.bash
-                sudo mv /tmp/vhdm.bash /etc/bash_completion.d/vhdm
-                log_success "Bash completions installed"
+                "$vhdm" completion bash | sudo tee /etc/bash_completion.d/vhdm >/dev/null
+                log_success "Bash completions installed to /etc/bash_completion.d/vhdm"
             else
-                echo "  Add to ~/.bashrc: source <(vhdm completion bash)"
+                log_info "To enable completions, add to ~/.bashrc:"
+                echo "    source <(vhdm completion bash)"
+                echo ""
+                log_info "Or install permanently with:"
+                echo "    sudo mkdir -p /etc/bash_completion.d"
+                echo "    vhdm completion bash | sudo tee /etc/bash_completion.d/vhdm >/dev/null"
             fi
             ;;
         zsh)
-            echo "  Add to ~/.zshrc: source <(vhdm completion zsh)"
+            log_info "To enable completions, add to ~/.zshrc:"
+            echo "    source <(vhdm completion zsh)"
+            echo ""
+            log_info "Or install permanently with:"
+            echo "    sudo mkdir -p /usr/local/share/zsh/site-functions"
+            echo "    vhdm completion zsh | sudo tee /usr/local/share/zsh/site-functions/_vhdm >/dev/null"
             ;;
         fish)
-            mkdir -p "$HOME/.config/fish/completions"
-            "$vhdm" completion fish > "$HOME/.config/fish/completions/vhdm.fish"
-            log_success "Fish completions installed"
+            if mkdir -p "$HOME/.config/fish/completions" 2>/dev/null; then
+                "$vhdm" completion fish > "$HOME/.config/fish/completions/vhdm.fish"
+                log_success "Fish completions installed to ~/.config/fish/completions/vhdm.fish"
+                log_info "Or install system-wide with:"
+                echo "    sudo mkdir -p /usr/share/fish/vendor_completions.d"
+                echo "    vhdm completion fish | sudo tee /usr/share/fish/vendor_completions.d/vhdm.fish >/dev/null"
+            fi
             ;;
     esac
 }
@@ -162,12 +172,6 @@ main() {
     echo "  vhdm status"
     echo "  vhdm create --vhd-path C:/VMs/disk.vhdx --size 5G --format ext4"
     echo ""
-    
-    # Check PATH
-    if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-        log_warn "$install_dir is not in PATH"
-        echo "  Add: export PATH=\"\$PATH:$install_dir\""
-    fi
 }
 
 main "$@"

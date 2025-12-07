@@ -1,4 +1,10 @@
 // Package tracking manages persistent VHD state tracking.
+//
+// VHD paths are stored in a normalized form (lowercase, forward slashes) as map keys
+// for case-insensitive lookups, while the original path casing is preserved in the
+// OriginalPath field. This allows consistent tracking across different path variations
+// (e.g., C:/VMs/disk.vhdx, c:/vms/disk.vhdx, C:\VMs\disk.vhdx) while displaying
+// the original casing in status output.
 package tracking
 
 import (
@@ -57,7 +63,7 @@ func (t *Tracker) read() (*types.TrackingFile, error) {
 	if err := json.Unmarshal(data, &tf); err != nil {
 		return nil, fmt.Errorf("failed to parse tracking file: %w", err)
 	}
-	
+
 	if tf.Mappings == nil {
 		tf.Mappings = make(map[string]types.TrackingEntry)
 	}
@@ -77,7 +83,7 @@ func (t *Tracker) write(tf *types.TrackingFile) error {
 	if err := os.WriteFile(tmpFile, data, 0644); err != nil {
 		return fmt.Errorf("failed to write temp file: %w", err)
 	}
-	
+
 	if err := os.Rename(tmpFile, t.filePath); err != nil {
 		os.Remove(tmpFile)
 		return fmt.Errorf("failed to rename temp file: %w", err)
@@ -85,6 +91,9 @@ func (t *Tracker) write(tf *types.TrackingFile) error {
 	return nil
 }
 
+// normalizePath converts a Windows path to lowercase with forward slashes
+// for case-insensitive matching. The original path casing is preserved
+// separately in TrackingEntry.OriginalPath.
 func normalizePath(path string) string {
 	return strings.ToLower(strings.ReplaceAll(path, "\\", "/"))
 }
@@ -98,9 +107,10 @@ func (t *Tracker) SaveMapping(path, uuid, mountPoint, devName string) error {
 
 	normalized := normalizePath(path)
 	entry := types.TrackingEntry{
-		UUID:       uuid,
-		LastSeen:   time.Now().Format(time.RFC3339),
-		DeviceName: devName,
+		UUID:         uuid,
+		LastSeen:     time.Now().Format(time.RFC3339),
+		DeviceName:   devName,
+		OriginalPath: path, // Preserve original case
 	}
 	if mountPoint != "" {
 		entry.MountPoints = []string{mountPoint}
@@ -124,7 +134,8 @@ func (t *Tracker) LookupUUIDByPath(path string) (string, error) {
 	return "", nil
 }
 
-// LookupPathByUUID looks up VHD path by UUID
+// LookupPathByUUID looks up VHD path by UUID.
+// Returns the original path with preserved casing (e.g., C:/aNOS/VMs/disk.vhdx).
 func (t *Tracker) LookupPathByUUID(uuid string) (string, error) {
 	tf, err := t.read()
 	if err != nil {
@@ -133,13 +144,18 @@ func (t *Tracker) LookupPathByUUID(uuid string) (string, error) {
 
 	for path, entry := range tf.Mappings {
 		if entry.UUID == uuid {
+			// Return original path if available, fallback to normalized key
+			if entry.OriginalPath != "" {
+				return entry.OriginalPath, nil
+			}
 			return path, nil
 		}
 	}
 	return "", nil
 }
 
-// LookupPathByDevName looks up VHD path by device name
+// LookupPathByDevName looks up VHD path by device name.
+// Returns the original path with preserved casing (e.g., C:/aNOS/VMs/disk.vhdx).
 func (t *Tracker) LookupPathByDevName(devName string) (string, error) {
 	tf, err := t.read()
 	if err != nil {
@@ -148,6 +164,10 @@ func (t *Tracker) LookupPathByDevName(devName string) (string, error) {
 
 	for path, entry := range tf.Mappings {
 		if entry.DeviceName == devName {
+			// Return original path if available, fallback to normalized key
+			if entry.OriginalPath != "" {
+				return entry.OriginalPath, nil
+			}
 			return path, nil
 		}
 	}
@@ -182,7 +202,8 @@ func (t *Tracker) GetEntry(path string) (types.TrackingEntry, error) {
 	return types.TrackingEntry{}, fmt.Errorf("not found")
 }
 
-// GetAllPaths returns all tracked VHD paths
+// GetAllPaths returns all tracked VHD paths.
+// Returns original paths with preserved casing (e.g., C:/aNOS/VMs/disk.vhdx).
 func (t *Tracker) GetAllPaths() ([]string, error) {
 	tf, err := t.read()
 	if err != nil {
@@ -190,8 +211,13 @@ func (t *Tracker) GetAllPaths() ([]string, error) {
 	}
 
 	paths := make([]string, 0, len(tf.Mappings))
-	for path := range tf.Mappings {
-		paths = append(paths, path)
+	for path, entry := range tf.Mappings {
+		// Return original path if available, fallback to normalized key
+		if entry.OriginalPath != "" {
+			paths = append(paths, entry.OriginalPath)
+		} else {
+			paths = append(paths, path)
+		}
 	}
 	return paths, nil
 }
@@ -206,6 +232,10 @@ func (t *Tracker) UpdateMountPoints(path string, mountPoints []string) error {
 	normalized := normalizePath(path)
 	if entry, ok := tf.Mappings[normalized]; ok {
 		entry.MountPoints = mountPoints
+		// Preserve OriginalPath if not set
+		if entry.OriginalPath == "" {
+			entry.OriginalPath = path
+		}
 		tf.Mappings[normalized] = entry
 		return t.write(tf)
 	}
@@ -234,6 +264,10 @@ func (t *Tracker) UpdateLastSeen(path string) error {
 	normalized := normalizePath(path)
 	if entry, ok := tf.Mappings[normalized]; ok {
 		entry.LastSeen = time.Now().Format(time.RFC3339)
+		// Preserve OriginalPath if not set
+		if entry.OriginalPath == "" {
+			entry.OriginalPath = path
+		}
 		tf.Mappings[normalized] = entry
 		return t.write(tf)
 	}
@@ -249,10 +283,15 @@ func (t *Tracker) CleanupNonExistent(fileExists func(string) bool) ([]string, er
 	}
 
 	var removed []string
-	for path := range tf.Mappings {
+	for path, entry := range tf.Mappings {
 		if !fileExists(path) {
 			delete(tf.Mappings, path)
-			removed = append(removed, path)
+			// Return original path if available for better logging
+			if entry.OriginalPath != "" {
+				removed = append(removed, entry.OriginalPath)
+			} else {
+				removed = append(removed, path)
+			}
 		}
 	}
 

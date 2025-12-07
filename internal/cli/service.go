@@ -19,8 +19,10 @@ func newServiceCmd() *cobra.Command {
 		Short: "Manage systemd services for auto-mounting VHDs",
 		Long: `Manage systemd services to automatically mount VHDs on boot.
 
-This command creates, enables, disables, or removes systemd user services
-that will automatically attach and mount VHDs when your WSL instance starts.`,
+This command creates, enables, disables, or removes systemd system services
+that will automatically attach and mount VHDs when your WSL instance starts.
+
+Note: These operations require root privileges (sudo).`,
 	}
 
 	cmd.AddCommand(
@@ -46,13 +48,15 @@ func newServiceCreateCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a systemd service for auto-mounting a VHD",
-		Long: `Create a systemd user service that automatically attaches and mounts a VHD on boot.
+		Long: `Create a systemd system service that automatically attaches and mounts a VHD on boot.
 
 The service will:
 - Attach the VHD to WSL
 - Create the mount point if needed
 - Mount the VHD to the specified path
-- Run automatically when WSL starts`,
+- Run automatically when WSL starts
+
+Note: Requires root privileges (sudo).`,
 		Example: `  vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
   vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data --name my-disk`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -204,20 +208,28 @@ func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
 	// Create systemd service content
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=Auto-mount VHD: %s
-After=network.target
+After=local-fs.target
+Before=network.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
 ExecStart=%s mount --vhd-path "%s" --mount-point "%s"
 ExecStop=%s umount --mount-point "%s"
+TimeoutStartSec=60
+TimeoutStopSec=30
 
 [Install]
-WantedBy=default.target
+WantedBy=multi-user.target
 `, vhdPath, vhdmPath, vhdPath, mountPoint, vhdmPath, mountPoint)
 
-	// Create systemd user directory if it doesn't exist
-	systemdDir := filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user")
+	// System services require root privileges
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("creating system services requires root privileges. Please run with sudo")
+	}
+
+	// Create systemd system directory if it doesn't exist
+	systemdDir := "/etc/systemd/system"
 	if err := os.MkdirAll(systemdDir, 0755); err != nil {
 		return fmt.Errorf("failed to create systemd directory: %w", err)
 	}
@@ -232,10 +244,10 @@ WantedBy=default.target
 	log.Info("  Service file: %s", servicePath)
 	log.Info("")
 	log.Info("To enable the service to start on boot:")
-	log.Info("  vhdm service enable --name %s", strings.TrimSuffix(serviceName, ".service"))
+	log.Info("  sudo vhdm service enable --name %s", strings.TrimSuffix(serviceName, ".service"))
 	log.Info("")
 	log.Info("To start the service now:")
-	log.Info("  systemctl --user start %s", serviceName)
+	log.Info("  sudo systemctl start %s", serviceName)
 
 	return nil
 }
@@ -251,13 +263,18 @@ func runServiceEnable(serviceName string) error {
 
 	log.Debug("Enabling service: %s", serviceName)
 
+	// System services require root privileges
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("enabling system services requires root privileges. Please run with sudo")
+	}
+
 	// Reload systemd daemon
-	if err := exec.Command("systemctl", "--user", "daemon-reload").Run(); err != nil {
+	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
 		log.Debug("Failed to reload systemd daemon: %v", err)
 	}
 
 	// Enable service
-	cmd := exec.Command("systemctl", "--user", "enable", serviceName)
+	cmd := exec.Command("systemctl", "enable", serviceName)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to enable service: %w\n%s", err, string(output))
 	}
@@ -266,7 +283,7 @@ func runServiceEnable(serviceName string) error {
 	log.Info("  The service will start automatically on next boot")
 	log.Info("")
 	log.Info("To start the service now:")
-	log.Info("  systemctl --user start %s", serviceName)
+	log.Info("  sudo systemctl start %s", serviceName)
 
 	return nil
 }
@@ -282,8 +299,13 @@ func runServiceDisable(serviceName string) error {
 
 	log.Debug("Disabling service: %s", serviceName)
 
+	// System services require root privileges
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("disabling system services requires root privileges. Please run with sudo")
+	}
+
 	// Disable service
-	cmd := exec.Command("systemctl", "--user", "disable", serviceName)
+	cmd := exec.Command("systemctl", "disable", serviceName)
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("failed to disable service: %w\n%s", err, string(output))
 	}
@@ -305,20 +327,25 @@ func runServiceRemove(serviceName string) error {
 
 	log.Debug("Removing service: %s", serviceName)
 
+	// System services require root privileges
+	if os.Geteuid() != 0 {
+		return fmt.Errorf("removing system services requires root privileges. Please run with sudo")
+	}
+
 	// Stop service if running
-	stopCmd := exec.Command("systemctl", "--user", "stop", serviceName)
+	stopCmd := exec.Command("systemctl", "stop", serviceName)
 	if err := stopCmd.Run(); err != nil {
 		log.Debug("Service not running or already stopped")
 	}
 
 	// Disable service
-	disableCmd := exec.Command("systemctl", "--user", "disable", serviceName)
+	disableCmd := exec.Command("systemctl", "disable", serviceName)
 	if err := disableCmd.Run(); err != nil {
 		log.Debug("Service not enabled or already disabled")
 	}
 
 	// Remove service file
-	systemdDir := filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user")
+	systemdDir := "/etc/systemd/system"
 	servicePath := filepath.Join(systemdDir, serviceName)
 
 	if err := os.Remove(servicePath); err != nil {
@@ -329,7 +356,7 @@ func runServiceRemove(serviceName string) error {
 	}
 
 	// Reload systemd daemon
-	if err := exec.Command("systemctl", "--user", "daemon-reload").Run(); err != nil {
+	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
 		log.Debug("Failed to reload systemd daemon: %v", err)
 	}
 
@@ -345,7 +372,7 @@ func runServiceStatus(serviceName string) error {
 	}
 
 	// Show service status
-	cmd := exec.Command("systemctl", "--user", "status", serviceName)
+	cmd := exec.Command("systemctl", "status", serviceName)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -367,7 +394,7 @@ func runServiceList() error {
 	ctx := getContext()
 	log := ctx.Logger
 
-	systemdDir := filepath.Join(os.Getenv("HOME"), ".config", "systemd", "user")
+	systemdDir := "/etc/systemd/system"
 
 	// Check if directory exists
 	if _, err := os.Stat(systemdDir); os.IsNotExist(err) {
@@ -403,11 +430,11 @@ func runServiceList() error {
 
 	for _, service := range services {
 		// Get service status
-		cmd := exec.Command("systemctl", "--user", "is-enabled", service)
+		cmd := exec.Command("systemctl", "is-enabled", service)
 		output, _ := cmd.Output()
 		enabled := strings.TrimSpace(string(output))
 
-		cmd = exec.Command("systemctl", "--user", "is-active", service)
+		cmd = exec.Command("systemctl", "is-active", service)
 		output, _ = cmd.Output()
 		active := strings.TrimSpace(string(output))
 

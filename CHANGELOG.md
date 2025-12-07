@@ -35,6 +35,11 @@ All notable changes to this project will be documented in this file.
   - Commands now properly handle `--dev-name` with or without `/dev/` prefix
   - Fixed tracking file lookup when using `--dev-name=/dev/sdd` format
   - Device names are normalized after validation for consistent tracking
+- VHD path casing preservation in status output
+  - Added `original_path` field to tracking entries to preserve original case
+  - Status command now displays VHD paths with correct casing (e.g., `C:/aNOS/VMs/disk.vhdx`)
+  - Backward compatible: old tracking entries without `original_path` fall back to normalized paths
+  - Automatic migration: `original_path` is populated on next attach/mount operation
 
 #### Build System
 - Makefile with build, test, install, and lint targets
