@@ -206,14 +206,17 @@ func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
 	}
 
 	// Create systemd service content
+	// Include PATH for wsl.exe and mount dependencies for Windows drives
 	serviceContent := fmt.Sprintf(`[Unit]
 Description=Auto-mount VHD: %s
-After=local-fs.target
+After=local-fs.target mnt-c.mount
+Requires=mnt-c.mount
 Before=network.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
 ExecStart=%s mount --vhd-path "%s" --mount-point "%s"
 ExecStop=%s umount --mount-point "%s"
 TimeoutStartSec=60

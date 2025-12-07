@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.2] - 2025-12-07
+
+### Fixed
+- **Service creation** now includes critical systemd configuration:
+  - Automatically adds PATH environment variable with Windows directories
+  - Automatically adds mount dependencies (`After=mnt-c.mount`, `Requires=mnt-c.mount`)
+  - Generated service files now work reliably on boot without manual editing
+  - Prevents `wsl.exe attach failed` errors during boot
+
+### Changed
+- `vhdm service create` now generates complete, production-ready service files
+- Service files include inline comments explaining Windows PATH and mount requirements
+
 ## [1.1.1] - 2025-12-07
 
 ### Fixed
