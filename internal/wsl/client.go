@@ -55,6 +55,7 @@ type BlockDevice struct {
 	MountPoints []string `json:"mountpoints"`
 	FSAvail     string   `json:"fsavail"`
 	FSUseP      string   `json:"fsuse%"`
+	Size        string   `json:"size"`
 }
 
 // dynamicVHDPattern matches dynamically attached VHD devices (sd[d-z] and beyond)
@@ -85,9 +86,9 @@ func (c *Client) GetBlockDevices() ([]string, error) {
 
 // GetBlockDevicesWithInfo returns detailed block device information
 func (c *Client) GetBlockDevicesWithInfo() ([]BlockDevice, error) {
-	c.logger.Debug("Running: lsblk -f -J")
+	c.logger.Debug("Running: lsblk -f -o NAME,UUID,FSTYPE,MOUNTPOINTS,FSAVAIL,FSUSE%,SIZE -J")
 
-	cmd := exec.Command("lsblk", "-f", "-J")
+	cmd := exec.Command("lsblk", "-f", "-o", "NAME,UUID,FSTYPE,MOUNTPOINTS,FSAVAIL,FSUSE%,SIZE", "-J")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("lsblk failed: %w", err)

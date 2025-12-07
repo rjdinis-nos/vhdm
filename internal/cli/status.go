@@ -246,14 +246,31 @@ func filterEmptyMountPoints(mps []string) []string {
 	return result
 }
 
+// parseSizeToBytes converts human-readable size strings (like "3.2G", "934.8G") to bytes
+func parseSizeToBytes(sizeStr string) int64 {
+	if sizeStr == "" || sizeStr == "-" {
+		return 0
+	}
+
+	// Remove any whitespace
+	sizeStr = strings.TrimSpace(sizeStr)
+
+	// Try to parse using the utils function
+	bytes, err := utils.ConvertSizeToBytes(sizeStr)
+	if err != nil {
+		return 0
+	}
+	return bytes
+}
+
 func printAllDisksTable(disks []wsl.BlockDevice) {
 	fmt.Println()
 	fmt.Println("WSL Attached Disks")
 	fmt.Println()
 
-	// Calculate column widths
-	colWidths := []int{10, 36, 10, 40, 10, 8}
-	headers := []string{"Device", "UUID", "Type", "Mount Points", "Available", "Use%"}
+	// Calculate column widths - added Total column
+	colWidths := []int{10, 36, 10, 30, 10, 10, 8}
+	headers := []string{"Device", "UUID", "Type", "Mount Points", "Total", "Available", "Use%"}
 
 	utils.PrintTableHeader(colWidths, headers)
 
@@ -272,6 +289,10 @@ func printAllDisksTable(disks []wsl.BlockDevice) {
 		if len(mps) > 0 {
 			mp = strings.Join(mps, ", ")
 		}
+		total := disk.Size
+		if total == "" {
+			total = "-"
+		}
 		avail := disk.FSAvail
 		if avail == "" {
 			avail = "-"
@@ -280,7 +301,7 @@ func printAllDisksTable(disks []wsl.BlockDevice) {
 		if useP == "" {
 			useP = "-"
 		}
-		utils.PrintTableRow(colWidths, disk.Name, uuid, fsType, mp, avail, useP)
+		utils.PrintTableRow(colWidths, disk.Name, uuid, fsType, mp, total, avail, useP)
 	}
 
 	utils.PrintTableFooter(colWidths)
