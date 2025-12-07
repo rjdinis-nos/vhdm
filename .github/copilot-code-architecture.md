@@ -265,32 +265,36 @@ attach_vhd()
 
 ```
 mount_vhd()
-├─→ Parse arguments (--vhd-path, --mount-point, --dev-name)
-├─→ Validate VHD file exists
-├─→ Take snapshot: wsl_get_block_devices()
-├─→ wsl_attach_vhd(path)  [may fail if already attached]
-│   └─→ wsl.exe --mount --vhd --bare
-├─→ Detect device: detect_new_device_after_attach("" "${old_devs[@]}")
-│   └─→ Filters old devices before sleep (only sd[d-z] pattern)
-│   └─→ Compares before/after to find new device
-├─→ Get UUID from device: wsl_get_uuid_by_device(dev_name)
-├─→ If device not found, try path-based discovery: wsl_find_uuid_by_path()
-│   └─→ handle_uuid_discovery_result() for consistent error handling
-├─→ Check if device/UUID found
-│   ├─→ Yes: Verify filesystem exists
-│   └─→ No: Error - VHD is unformatted
-├─→ wsl_is_vhd_mounted(uuid)
-│   ├─→ Already mounted: Skip mount step
-│   └─→ Not mounted: Continue
-├─→ wsl_mount_vhd(uuid, mount_point)
-│   ├─→ create_mount_point(mount_point)
-│   │   └─→ mkdir -p
-│   └─→ mount_filesystem(uuid, mount_point)
-│       └─→ sudo mount UUID=...
-└─→ Report status
+├─→ Parse arguments (--vhd-path, --uuid, --mount-point, --dev-name)
+├─→ Validate inputs
+├─→ If UUID provided but no path:
+│   ├─→ Lookup path from tracking file
+│   └─→ Set expectedUUID = uuid (preserve for verification)
+├─→ If vhdPath provided:
+│   ├─→ If UUID provided: Set expectedUUID, check if attached
+│   ├─→ If no UUID: Lookup from tracking, set expectedUUID if found
+│   └─→ If not already attached:
+│       ├─→ Attach VHD (wsl.exe --mount --vhd --bare)
+│       └─→ **Critical race condition fix:**
+│           ├─→ If expectedUUID known (from --uuid or tracking):
+│           │   ├─→ Skip device detection entirely
+│           │   ├─→ Use expectedUUID directly
+│           │   └─→ Get device name by UUID lookup
+│           └─→ If expectedUUID unknown (first-time attach):
+│               ├─→ Snapshot devices before attach
+│               ├─→ Detect new device after attach
+│               └─→ Get UUID from detected device
+├─→ Verify UUID is available (VHD is formatted)
+├─→ Check if already mounted (skip if same mount point)
+├─→ Mount filesystem: sudo mount UUID=... mount_point
+└─→ Update tracking file (save UUID, mount point, device name)
 ```
 
-**Key Point**: Mount is an **orchestration function** combining attach + mount operations for user convenience.
+**Key Points**: 
+- Mount is an **orchestration function** combining attach + mount operations
+- **Race condition prevention**: When UUID is known (from service files or tracking), device detection is skipped
+- **Concurrent service safety**: Multiple services with `--uuid` can start simultaneously without conflicts
+- Device detection only used for truly unknown VHDs (first-time attach without tracking)
 
 ### Format Command Flow
 

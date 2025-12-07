@@ -10,13 +10,28 @@ All notable changes to this project will be documented in this file.
   - Services require VHDs to be mounted at least once before service creation (ensures UUID is tracked)
   - Clear error messages with step-by-step instructions when VHD is not tracked
   - Multiple VHD services can now start in parallel without conflicts
+- **Auto-attach on boot**: Services with `mount --uuid` automatically attach VHDs if not already attached
+  - VHDs don't need to be pre-attached when WSL starts
+  - Service looks up VHD path from tracking file using UUID
+  - Attaches VHD on-demand during service startup
 
 ### Changed
 - `vhdm service create` now requires VHD to be tracked (have UUID in tracking file)
 - Service files use `mount --uuid` instead of `mount --vhd-path` in ExecStart
 - Service creation now requires `sudo` (system services only, for security and proper tracking file access)
+- **Service file location**: Services now created in `/usr/lib/systemd/system/` (standard package location)
+  - Enabled services create symlinks in `/etc/systemd/system/multi-user.target.wants/`
+  - Follows systemd conventions for package-installed services
 
 ### Fixed
+- **Critical: UUID overwrite race condition in mount command**
+  - When services with `--uuid` started concurrently, device detection race caused wrong UUIDs to be saved
+  - Mount command now skips device detection when UUID is provided (trusts expected UUID)
+  - Only performs device detection for truly unknown VHDs (first-time attach without tracking)
+  - Verified with concurrent 4-service startup test - all VHDs mount with correct UUIDs
+- **Tracking file environment variable**: Service files now include `VHDM_TRACKING_FILE` environment variable
+  - Ensures services running as root can access user's tracking file
+  - Fixes "UUID not found in tracking file" errors on boot
 - **Sudo context tracking file access**: Config now detects `SUDO_USER` and uses original user's home directory
   - Fixes "VHD is not tracked" error when running `sudo vhdm service create`
   - Ensures tracking file is read from correct user directory even under sudo

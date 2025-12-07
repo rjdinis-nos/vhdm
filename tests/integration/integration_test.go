@@ -2,7 +2,8 @@
 // These tests create actual VHD files and interact with WSL.
 //
 // To run integration tests:
-//   VHDM_INTEGRATION_TESTS=1 go test -v ./tests/integration/...
+//
+//	VHDM_INTEGRATION_TESTS=1 go test -v ./tests/integration/...
 //
 // Requirements:
 //   - WSL2 environment
@@ -37,58 +38,71 @@ func skipIfNotIntegration(t *testing.T) {
 type TestEnvironment struct {
 	t          *testing.T
 	vhdmBinary string
-	testDir    string      // WSL path for test directory
-	winTestDir string      // Windows path for test directory
-	vhdPath    string      // Windows path for VHD
-	mountPoint string      // WSL path for mount point
+	testDir    string // WSL path for test directory
+	winTestDir string // Windows path for test directory
+	vhdPath    string // Windows path for VHD
+	mountPoint string // WSL path for mount point
+	homeDir    string // User home directory (for tracking file access)
 }
 
 // NewTestEnvironment creates a new test environment
 func NewTestEnvironment(t *testing.T) *TestEnvironment {
 	t.Helper()
-	
+	return NewTestEnvironmentWithID(t, time.Now().Format("20060102_150405"))
+}
+
+// NewTestEnvironmentWithID creates a test environment with a custom ID
+func NewTestEnvironmentWithID(t *testing.T, testID string) *TestEnvironment {
+	t.Helper()
+
 	// Find vhdm binary
 	projectRoot := findProjectRoot(t)
 	vhdmBinary := filepath.Join(projectRoot, "vhdm")
-	
+
 	if _, err := os.Stat(vhdmBinary); os.IsNotExist(err) {
 		t.Fatalf("vhdm binary not found at %s. Run 'go build -o vhdm ./cmd/vhdm' first", vhdmBinary)
 	}
-	
+
 	// Get test directory from environment or use default
 	winTestDir := os.Getenv("VHDM_TEST_DIR")
 	if winTestDir == "" {
 		// Default to a Windows-native path that exists
 		winTestDir = "C:/Anos/VMs/wsl_tests"
 	}
-	
+
 	// Convert to WSL path
 	testDir := convertToWSLPath(t, winTestDir)
-	
+
 	// Verify the directory exists
 	if _, err := os.Stat(testDir); os.IsNotExist(err) {
 		t.Fatalf("Test directory does not exist: %s (WSL: %s). "+
 			"Create it or set VHDM_TEST_DIR environment variable.", winTestDir, testDir)
 	}
-	
+
 	// Create unique test subdirectory
-	testSubDir := "go_test_" + time.Now().Format("20060102_150405")
+	testSubDir := "go_test_" + testID
 	testDir = filepath.Join(testDir, testSubDir)
 	winTestDir = winTestDir + "/" + testSubDir
-	
+
 	if err := os.MkdirAll(testDir, 0755); err != nil {
 		t.Fatalf("Failed to create test directory: %v", err)
 	}
-	
+
 	// Create mount point
 	mountPoint := filepath.Join(testDir, "mount")
 	if err := os.MkdirAll(mountPoint, 0755); err != nil {
 		t.Fatalf("Failed to create mount point: %v", err)
 	}
-	
+
 	// VHD path in Windows format
 	vhdPath := winTestDir + "/test_integration.vhdx"
-	
+
+	// Get home directory
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("Failed to get home directory: %v", err)
+	}
+
 	env := &TestEnvironment{
 		t:          t,
 		vhdmBinary: vhdmBinary,
@@ -96,36 +110,37 @@ func NewTestEnvironment(t *testing.T) *TestEnvironment {
 		winTestDir: winTestDir,
 		vhdPath:    vhdPath,
 		mountPoint: mountPoint,
+		homeDir:    homeDir,
 	}
-	
+
 	t.Logf("Test environment:")
 	t.Logf("  WSL test dir: %s", testDir)
 	t.Logf("  Win test dir: %s", winTestDir)
 	t.Logf("  VHD path: %s", vhdPath)
 	t.Logf("  Mount point: %s", mountPoint)
-	
+
 	// Register cleanup
 	t.Cleanup(func() {
 		env.Cleanup()
 	})
-	
+
 	return env
 }
 
 // findProjectRoot finds the project root directory
 func findProjectRoot(t *testing.T) string {
 	t.Helper()
-	
+
 	dir, err := os.Getwd()
 	if err != nil {
 		t.Fatalf("Failed to get working directory: %v", err)
 	}
-	
+
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
 			return dir
 		}
-		
+
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			t.Fatalf("Could not find project root (go.mod)")
@@ -137,27 +152,27 @@ func findProjectRoot(t *testing.T) string {
 // convertToWSLPath converts a Windows path to WSL path
 func convertToWSLPath(t *testing.T, winPath string) string {
 	t.Helper()
-	
+
 	// Simple conversion: C:/path -> /mnt/c/path
 	if len(winPath) >= 2 && winPath[1] == ':' {
 		drive := strings.ToLower(string(winPath[0]))
 		return "/mnt/" + drive + strings.ReplaceAll(winPath[2:], "\\", "/")
 	}
-	
+
 	return winPath
 }
 
 // RunVHDM runs the vhdm binary with given arguments
 func (e *TestEnvironment) RunVHDM(args ...string) (string, error) {
 	e.t.Helper()
-	
+
 	e.t.Logf("Running: %s %s", e.vhdmBinary, strings.Join(args, " "))
-	
+
 	cmd := exec.Command(e.vhdmBinary, args...)
 	output, err := cmd.CombinedOutput()
-	
+
 	e.t.Logf("Output: %s", string(output))
-	
+
 	return string(output), err
 }
 
@@ -171,18 +186,18 @@ func (e *TestEnvironment) RunVHDMQuiet(args ...string) (string, error) {
 func (e *TestEnvironment) Cleanup() {
 	e.t.Helper()
 	e.t.Log("Cleaning up test environment...")
-	
+
 	// Try to unmount and detach (ignore errors)
 	e.RunVHDM("umount", "--vhd-path", e.vhdPath)
-	
+
 	// Wait a bit for detach to complete
 	time.Sleep(1 * time.Second)
-	
+
 	// Remove test directory
 	if e.testDir != "" {
 		os.RemoveAll(e.testDir)
 	}
-	
+
 	e.t.Log("Cleanup complete")
 }
 
