@@ -239,6 +239,51 @@ vhdm service remove --name vhdm-mount-data
 systemctl --user start vhdm-mount-data.service
 ```
 
+#### Important: Systemd Service Configuration
+
+For system-level services (running as root with `sudo systemctl`), the service file must include:
+
+1. **Windows PATH directories** - Required for `wsl.exe` to be accessible:
+   ```ini
+   Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
+   ```
+
+2. **Mount dependencies** - Required to ensure Windows drives are mounted before VHD access:
+   ```ini
+   After=local-fs.target mnt-c.mount
+   Requires=mnt-c.mount
+   ```
+
+**Example system service file** (`/etc/systemd/system/vhdm-mount-data.service`):
+```ini
+[Unit]
+Description=Auto-mount VHD: C:/VMs/data.vhdx
+After=local-fs.target mnt-c.mount
+Requires=mnt-c.mount
+Before=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
+ExecStart=/usr/local/bin/vhdm mount --vhd-path "C:/VMs/data.vhdx" --mount-point "/mnt/data"
+ExecStop=/usr/local/bin/vhdm umount --mount-point "/mnt/data"
+TimeoutStartSec=60
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+After creating or modifying service files:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable vhdm-mount-data.service
+sudo systemctl start vhdm-mount-data.service
+```
+
+> **Note**: User services (`systemctl --user`) may not require these PATH modifications as they inherit the user's environment, but system services always need explicit PATH configuration.
+
 ## Path Formats
 
 | Context | Format | Example |

@@ -2,7 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased] - Go Branch
+## [1.1.1] - 2025-12-07
+
+### Fixed
+- Systemd service configuration documentation updated with critical requirements:
+  - Added PATH environment variable requirement for system services (must include `/mnt/c/WINDOWS/system32` for `wsl.exe` access)
+  - Added mount dependency requirements (`After=mnt-c.mount`, `Requires=mnt-c.mount`) to ensure Windows drives are mounted before VHD operations
+  - Added example system service file configuration
+  - Clarified differences between user and system services
+
+### Documentation
+- Enhanced README with complete systemd service configuration guide
+- Added troubleshooting information for service startup failures
+- Included example service file with all required configuration
+
+## [1.1.0] - 2024-12-06 - Go Branch
 
 ### Added
 
