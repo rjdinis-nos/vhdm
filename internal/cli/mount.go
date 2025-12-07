@@ -105,23 +105,26 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 	}
 
 	// Step 1: Attach if needed
+	var expectedUUID string // Track the UUID we expect to find
 	if vhdPath != "" {
 		// If UUID was provided, check if it's actually attached
 		if uuid != "" {
+			expectedUUID = uuid // Remember the expected UUID
 			attached, _ := ctx.WSL.IsAttached(uuid)
 			if attached {
 				wasAttached = true
 				log.Debug("VHD already attached with UUID: %s", uuid)
 			} else {
 				log.Debug("UUID %s provided but not attached, will attach", uuid)
-				uuid = "" // Reset UUID so we detect it after attach
+				// Don't reset UUID - we'll verify it matches after attach
 			}
 		}
 
-		// If no UUID yet, check tracking and verify in system
+		// If no UUID provided, check tracking and verify in system
 		if uuid == "" {
 			existingUUID, _ := ctx.Tracker.LookupUUIDByPath(vhdPath)
 			if existingUUID != "" {
+				expectedUUID = existingUUID // Remember expected UUID from tracking
 				// Verify the UUID is actually attached in the system
 				attached, _ := ctx.WSL.IsAttached(existingUUID)
 				if attached {
@@ -135,28 +138,33 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 		}
 
 		// Attach if not already attached
-		if uuid == "" {
-			// Try to attach
-			oldDevices, err := ctx.WSL.GetBlockDevices()
-			if err != nil {
-				return fmt.Errorf("failed to get block devices: %w", err)
+		if !wasAttached {
+			var err error
+			_, err = ctx.WSL.AttachVHD(vhdPath)
+			if err != nil && !types.IsAlreadyAttached(err) {
+				return fmt.Errorf("failed to attach: %w", err)
 			}
 
-			_, err = ctx.WSL.AttachVHD(vhdPath)
-			if err != nil {
-				if types.IsAlreadyAttached(err) {
-					wasAttached = true
-					// Try to find UUID from disk
-					uuid, _ = ctx.WSL.FindUUIDByPath(vhdPath)
-				} else {
-					return fmt.Errorf("failed to attach: %w", err)
-				}
+			// If we had an expected UUID, just verify it's now attached
+			if expectedUUID != "" {
+				uuid = expectedUUID
+				// Get device name by UUID
+				devName, _ = ctx.WSL.GetDeviceByUUID(uuid)
+				log.Debug("VHD attached with expected UUID: %s (device: %s)", uuid, devName)
 			} else {
+				// No expected UUID - need to detect device and get UUID
+				oldDevices, err := ctx.WSL.GetBlockDevices()
+				if err != nil {
+					return fmt.Errorf("failed to get block devices before attach: %w", err)
+				}
+
 				// Detect new device
 				devName, err = ctx.WSL.DetectNewDevice(oldDevices)
 				if err != nil {
 					return fmt.Errorf("failed to detect device: %w", err)
 				}
+
+				// Get UUID from the newly attached device
 				uuid, _ = ctx.WSL.GetUUIDByDevice(devName)
 				log.Debug("Attached new device: %s (UUID: %s)", devName, uuid)
 			}
