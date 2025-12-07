@@ -2,6 +2,30 @@
 
 A comprehensive command-line tool for managing VHD/VHDX virtual disk files in WSL2.
 
+## Why Use VHDM?
+
+When working with WSL2, you have two options for accessing Windows files: direct Windows mounts (e.g., `/mnt/c/`) or native Linux filesystems on VHD/VHDX disks. **VHDM makes it easy to use VHD disks, which offer significant advantages:**
+
+### Performance Benefits
+
+- **10-100x faster I/O operations** - Native Linux filesystem performance vs. Windows filesystem translation layer
+- **No cross-filesystem overhead** - Direct kernel access to ext4/xfs/btrfs instead of translating NTFS calls
+- **Better for development** - Compiling code, running tests, and file-intensive operations are dramatically faster
+
+### Symbolic Link Support
+
+- **Full symlink support** - Windows filesystem mounts (`/mnt/c/`) have limited or broken symbolic link support
+- **Package manager compatibility** - npm, yarn, pip, and other tools that rely on symlinks work correctly
+- **No permission issues** - Avoid the complexity of Windows symlink permissions and Developer Mode requirements
+
+### WSL2 Best Practices
+
+- **Recommended by Microsoft** - Microsoft's official WSL2 documentation recommends storing project files in the Linux filesystem for best performance
+- **Native Linux experience** - Work with true Linux filesystem semantics (permissions, case-sensitivity, symlinks)
+- **Container-friendly** - Docker and other containerized workflows perform better with native Linux filesystems
+
+**VHDM simplifies VHD management** by providing an intuitive CLI for creating, mounting, resizing, and tracking VHD disks - no more manual `wsl.exe --mount` commands or lost track of which disks are attached where.
+
 ## Features
 
 - **Attach/Detach** - Connect VHD files to WSL as block devices
