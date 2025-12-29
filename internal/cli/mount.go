@@ -80,6 +80,37 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 
 	var wasAttached bool
 
+	// Early check: If mount point already has something mounted, try to use that
+	if mountPoint != "" {
+		existingUUID, _ := ctx.WSL.GetUUIDByMountPoint(mountPoint)
+		if existingUUID != "" {
+			log.Debug("Mount point %s already has VHD with UUID: %s", mountPoint, existingUUID)
+			// If user didn't provide UUID or provided matching UUID, use the existing one
+			if uuid == "" || uuid == existingUUID {
+				uuid = existingUUID
+				wasAttached = true
+				// If we have vhdPath, save tracking for this already-mounted VHD
+				if vhdPath != "" {
+					devName, _ := ctx.WSL.GetDeviceByUUID(uuid)
+					if err := ctx.Tracker.SaveMapping(vhdPath, uuid, mountPoint, devName); err != nil {
+						log.Warn("Failed to save tracking: %v", err)
+					} else {
+						log.Debug("Updated tracking for already-mounted VHD")
+					}
+					if ctx.Config.Quiet {
+						fmt.Printf("%s (%s): already mounted at %s\n", vhdPath, uuid, mountPoint)
+					} else {
+						log.Info("VHD is already mounted at %s", mountPoint)
+						printMountResult(vhdPath, uuid, devName, mountPoint, false)
+					}
+					return nil
+				}
+			} else if uuid != existingUUID {
+				return fmt.Errorf("mount point %s already has a different VHD mounted (UUID: %s)", mountPoint, existingUUID)
+			}
+		}
+	}
+
 	// If UUID provided but no path, try to look up path from tracking
 	if uuid != "" && vhdPath == "" {
 		lookupPath, err := ctx.Tracker.LookupPathByUUID(uuid)

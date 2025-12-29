@@ -190,6 +190,26 @@ func (c *Client) GetMountPoint(uuid string) (string, error) {
 	return "", nil
 }
 
+// GetUUIDByMountPoint gets the UUID for a filesystem mounted at a mount point
+func (c *Client) GetUUIDByMountPoint(mountPoint string) (string, error) {
+	devices, err := c.GetBlockDevicesWithInfo()
+	if err != nil {
+		return "", err
+	}
+
+	for _, dev := range devices {
+		if len(dev.MountPoints) > 0 {
+			for _, mp := range dev.MountPoints {
+				if mp == mountPoint && dev.UUID != "" {
+					return dev.UUID, nil
+				}
+			}
+		}
+	}
+
+	return "", nil
+}
+
 // GetVHDInfo gets information about a VHD by UUID
 func (c *Client) GetVHDInfo(uuid string) (*types.VHDInfo, error) {
 	devices, err := c.GetBlockDevicesWithInfo()

@@ -105,6 +105,14 @@ func (t *Tracker) SaveMapping(path, uuid, mountPoint, devName string) error {
 		return err
 	}
 
+	// Remove any placeholder entries for this UUID (auto-discovered entries)
+	// This prevents duplicates when the real path is learned
+	for key, entry := range tf.Mappings {
+		if entry.UUID == uuid && strings.HasPrefix(key, "unknown-") {
+			delete(tf.Mappings, key)
+		}
+	}
+
 	normalized := normalizePath(path)
 	entry := types.TrackingEntry{
 		UUID:         uuid,
@@ -272,6 +280,48 @@ func (t *Tracker) UpdateLastSeen(path string) error {
 		return t.write(tf)
 	}
 	return nil
+}
+
+// SaveMappingByUUID saves or updates a VHD mapping using only UUID and device info
+// when the VHD path is unknown (e.g., for auto-discovered mounted VHDs)
+func (t *Tracker) SaveMappingByUUID(uuid, mountPoint, devName string) error {
+	tf, err := t.read()
+	if err != nil {
+		return err
+	}
+
+	// Check if UUID already exists in any mapping
+	for normalized, entry := range tf.Mappings {
+		if entry.UUID == uuid {
+			// Update existing entry
+			if mountPoint != "" {
+				entry.MountPoints = []string{mountPoint}
+			}
+			if devName != "" {
+				entry.DeviceName = devName
+			}
+			entry.LastSeen = time.Now().Format(time.RFC3339)
+			tf.Mappings[normalized] = entry
+			return t.write(tf)
+		}
+	}
+
+	// Create new entry with placeholder path based on UUID
+	// This allows partial tracking until the actual path is known
+	placeholderPath := fmt.Sprintf("unknown-%s", uuid)
+	normalized := normalizePath(placeholderPath)
+	entry := types.TrackingEntry{
+		UUID:         uuid,
+		LastSeen:     time.Now().Format(time.RFC3339),
+		DeviceName:   devName,
+		OriginalPath: placeholderPath,
+	}
+	if mountPoint != "" {
+		entry.MountPoints = []string{mountPoint}
+	}
+	tf.Mappings[normalized] = entry
+
+	return t.write(tf)
 }
 
 // CleanupNonExistent removes tracked VHDs where the file no longer exists

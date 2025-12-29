@@ -92,6 +92,11 @@ func showAllStatus(ctx *AppContext) error {
 		ctx.Logger.Debug("Failed to get disks: %v", err)
 	}
 
+	// Auto-discover: track any formatted, mounted, non-system disks not already tracked
+	if err := autoDiscoverMountedVHDs(ctx, allDisks); err != nil {
+		ctx.Logger.Debug("Failed to auto-discover VHDs: %v", err)
+	}
+
 	// Get tracked VHDs
 	paths, err := ctx.Tracker.GetAllPaths()
 	if err != nil {
@@ -146,6 +151,67 @@ func showAllStatus(ctx *AppContext) error {
 		ctx.Logger.Debug("Failed to get WSL distributions: %v", err)
 	} else if len(distributions) > 0 {
 		printWSLDistributionsTable(distributions)
+	}
+
+	return nil
+}
+
+// autoDiscoverMountedVHDs automatically tracks formatted, mounted, non-system disks
+// that are not already in the tracking file
+func autoDiscoverMountedVHDs(ctx *AppContext, allDisks []wsl.BlockDevice) error {
+	// System disks to skip (sda, sdb, sdc are typically WSL system volumes)
+	systemDisks := map[string]bool{
+		"sda": true,
+		"sdb": true,
+		"sdc": true,
+	}
+
+	ctx.Logger.Debug("Auto-discovery: checking %d disks for tracking", len(allDisks))
+
+	for _, disk := range allDisks {
+		// Skip system disks
+		if systemDisks[disk.Name] {
+			ctx.Logger.Debug("Auto-discovery: skipping system disk %s", disk.Name)
+			continue
+		}
+
+		// Only track formatted disks with UUID
+		if disk.UUID == "" {
+			ctx.Logger.Debug("Auto-discovery: skipping %s (no UUID)", disk.Name)
+			continue
+		}
+
+		// Only track mounted disks
+		if len(disk.MountPoints) == 0 || (len(disk.MountPoints) == 1 && disk.MountPoints[0] == "") {
+			ctx.Logger.Debug("Auto-discovery: skipping %s (not mounted)", disk.Name)
+			continue
+		}
+
+		// Check if already tracked
+		existingPath, err := ctx.Tracker.LookupPathByUUID(disk.UUID)
+		if err == nil && existingPath != "" {
+			// Already tracked, skip
+			ctx.Logger.Debug("Auto-discovery: %s already tracked (UUID: %s)", disk.Name, disk.UUID)
+			continue
+		}
+
+		// Auto-track this unknown VHD
+		mountPoint := ""
+		for _, mp := range disk.MountPoints {
+			if mp != "" {
+				mountPoint = mp
+				break
+			}
+		}
+
+		ctx.Logger.Debug("Auto-discovery: tracking %s (UUID: %s, mount: %s)", disk.Name, disk.UUID, mountPoint)
+		if err := ctx.Tracker.SaveMappingByUUID(disk.UUID, mountPoint, disk.Name); err != nil {
+			ctx.Logger.Debug("Failed to auto-track VHD (UUID: %s): %v", disk.UUID, err)
+			continue
+		}
+
+		ctx.Logger.Info("Auto-discovered and tracked VHD: device=%s, UUID=%s, mount=%s", 
+			disk.Name, disk.UUID, mountPoint)
 	}
 
 	return nil
