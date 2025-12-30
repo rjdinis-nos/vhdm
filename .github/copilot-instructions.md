@@ -2,15 +2,20 @@
 
 ## Project Overview
 
-Bash scripts for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Multi-script architecture:
-- `vhdm.sh` - Comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize, history, sync)
-- `libs/wsl_vhd_mngt.sh` - Shared WSL-specific function library
-- `libs/wsl_vhd_tracking.sh` - Persistent tracking file management functions
-- `libs/utils.sh` - Shared utility functions for size calculations, conversions, and input validation
+Go-based command-line tool for managing VHD/VHDX files in Windows Subsystem for Linux (WSL2). Modern architecture:
+- **Single binary** (`vhdm`) with comprehensive CLI for VHD operations (attach, mount, umount, detach, status, create, delete, resize, history, sync, service)
+- **Internal packages**:
+  - `internal/cli/` - Command implementations using Cobra framework
+  - `internal/wsl/` - WSL-specific operations (attach, detach, mount, distributions)
+  - `internal/tracking/` - Persistent VHD tracking file management
+  - `internal/validation/` - Input validation and security
+  - `internal/config/` - Configuration management
+  - `internal/logging/` - Structured logging system
+  - `internal/types/` - Shared types and error handling
+- **Helper packages**:
+  - `pkg/utils/` - Utility functions (path conversion, size calculations, table formatting)
 
-The `vhdm.sh` script sources `libs/wsl_vhd_mngt.sh` (which sources `libs/wsl_vhd_tracking.sh`) and `libs/utils.sh` for core functionality.
-
-**📖 For comprehensive architecture details, function flows, and responsibility matrix, see [copilot-code-architecture.md](copilot-code-architecture.md)**
+**📖 For comprehensive architecture details, see [copilot-code-architecture.md](copilot-code-architecture.md)**
 
 ## Architecture & Core Patterns
 
@@ -775,31 +780,30 @@ wsl_convert_path() {
 
 ## Service Management
 
-### UUID-Based Service Creation
+### UUID-Based Service Creation with Health Monitoring
 
-**Design Philosophy**: Services use filesystem UUIDs instead of path-based device detection to eliminate race conditions when multiple VHD services start simultaneously at boot.
+**Design Philosophy**: Services use filesystem UUIDs with continuous health monitoring to eliminate race conditions and provide automatic recovery when mounts become inaccessible.
 
 **Requirements**:
 1. VHD must be mounted at least once before creating a service (registers UUID in tracking file)
 2. Service creation requires `sudo` (system services only)
-3. Services use `mount --uuid` instead of `mount --vhd-path` in ExecStart
+3. Services use `vhdm service monitor` subcommand for mount + health monitoring
 
-**How UUID-based mounting works:**
+**How UUID-based monitoring works:**
 
-When `mount --uuid` is called (e.g., by systemd services on boot):
-1. **Path lookup**: The mount command looks up the VHD path from the tracking file using the UUID
-2. **Attach check**: Verifies if the VHD is already attached to WSL
-3. **Auto-attach**: If not attached, attaches the VHD using the path from tracking
-4. **Mount**: Mounts the filesystem to the specified mount point
-
-This enables services to work on boot without the VHD being pre-attached.
+When `vhdm service monitor --uuid <uuid> --mount-point <path> --interval <seconds>` is called by systemd:
+1. **Mount VHD**: Mounts the VHD using UUID (auto-attaches if needed)
+2. **Health check loop**: Continuously monitors mount accessibility at configured interval
+3. **Failure detection**: If mount becomes inaccessible, exits with error
+4. **Automatic restart**: Systemd restarts the service (waits 10s), remounting the VHD
 
 **Benefits**:
 - ✅ No race conditions with concurrent service startup
 - ✅ All VHD services can start in parallel
-- ✅ Deterministic device identification
-- ✅ Forces best practice (test VHD before automation)
-- ✅ Automatic attachment on boot (VHDs don't need to be pre-attached)
+- ✅ Deterministic device identification via UUID
+- ✅ **Automatic recovery** - Remounts VHD if mount is lost
+- ✅ **Health monitoring** - Checks mount every N seconds (configurable)
+- ✅ **Resilient** - Survives network interruptions, WSL restarts, etc.
 
 **Service Creation Flow**:
 ```bash
@@ -807,9 +811,11 @@ This enables services to work on boot without the VHD being pre-attached.
 vhdm mount --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
 # → UUID saved to tracking file
 
-# Step 2: Create service (checks tracking file for UUID)
+# Step 2: Create service with optional health check interval
 sudo vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
-# → Generates service with ExecStart using --uuid instead of --vhd-path
+# Or with custom health check interval (default: 30 seconds):
+sudo vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data --health-check-interval 60
+# → Generates service using 'vhdm service monitor' subcommand
 
 # Step 3: Enable for auto-start
 sudo vhdm service enable --name vhdm-mount-disk
@@ -841,11 +847,13 @@ Requires=mnt-c.mount
 Before=network.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
-ExecStart=/usr/local/bin/vhdm mount --uuid "5c8bc48c-4254-4430-b76a-c495d763d067" --mount-point "/mnt/data"
-ExecStop=/usr/local/bin/vhdm umount --mount-point "/mnt/data"
+Environment="VHDM_TRACKING_FILE=/home/user/.config/vhdm/vhd_tracking.json"
+Environment="HOME=/home/user"
+ExecStart=/usr/local/bin/vhdm service monitor --uuid "5c8bc48c-4254-4430-b76a-c495d763d067" --mount-point "/mnt/data" --interval 30
+Restart=on-failure
+RestartSec=10
 TimeoutStartSec=60
 TimeoutStopSec=30
 
@@ -859,10 +867,14 @@ WantedBy=multi-user.target
 - This follows standard systemd conventions used by distribution packages
 
 **Key Configuration Elements**:
+- `Type=simple` - Long-running process for health monitoring
 - `After=mnt-c.mount` - Ensures Windows C: drive is mounted first
 - `Requires=mnt-c.mount` - Hard dependency on C: drive availability
 - `Environment="PATH=..."` - Includes Windows paths for `wsl.exe` access
-- `ExecStart` uses `--uuid` - No device detection, no race conditions
+- `ExecStart` uses `service monitor` subcommand - Mounts VHD and monitors health
+- `Restart=on-failure` - Auto-restart if mount becomes inaccessible
+- `RestartSec=10` - Wait 10 seconds before restart attempt
+- `--interval 30` - Check mount health every 30 seconds (configurable)
 
 **Sudo Context Handling**:
 When running `sudo vhdm service create`, the config system:
@@ -870,25 +882,21 @@ When running `sudo vhdm service create`, the config system:
 2. Uses original user's home directory for tracking file
 3. Prevents "VHD is not tracked" error under sudo
 
-Implementation in `internal/config/config.go`:
-```go
-func getUserHomeDir() string {
-    // Check if running with sudo
-    if sudoUser := os.Getenv("SUDO_USER"); sudoUser != "" {
-        if sudoHome := os.Getenv("SUDO_HOME"); sudoHome != "" {
-            return sudoHome
-        }
-        return filepath.Join("/home", sudoUser)
-    }
-    
-    // Normal case
-    home, err := os.UserHomeDir()
-    if err != nil {
-        return "/tmp"
-    }
-    return home
-}
-```
+**Service Monitor Command**:
+The `vhdm service monitor` subcommand is a hidden command used internally by systemd services:
+- **Hidden from help** - Not shown in main `vhdm --help` output
+- **Purpose**: Mount VHD + continuous health monitoring
+- **Parameters**:
+  - `--uuid <uuid>` - VHD filesystem UUID (required)
+  - `--mount-point <path>` - Mount point path (required)
+  - `--interval <seconds>` - Health check interval (default: 30)
+- **Behavior**:
+  1. Mounts VHD using UUID (auto-attaches if needed)
+  2. Enters infinite loop checking mount accessibility
+  3. Exits with error if mount fails → triggers systemd restart
+- **Validation**: Rejects invalid UUIDs, mount points, or intervals < 1 second
+
+Implementation in `internal/cli/service.go` and `internal/config/config.go`
 
 ## Workflow-Specific Notes
 
@@ -963,11 +971,12 @@ func getUserHomeDir() string {
 - Lightweight auto-sync runs on every vhdm.sh invocation (mappings only)
 - Configurable via `AUTO_SYNC_MAPPINGS` (default: true)
 
-**Service** - Systemd service management: Auto-mount VHDs on boot
+**Service** - Systemd service management: Auto-mount VHDs on boot with health monitoring
 - **create**: Requires VHD to be tracked (mounted at least once)
   - Validates UUID exists in tracking file
-  - Generates service with `--uuid` in ExecStart (no race conditions)
-  - Includes required systemd configuration (PATH, mount dependencies)
+  - Generates service using `vhdm service monitor` subcommand
+  - Supports `--health-check-interval <seconds>` (default: 30)
+  - Includes required systemd configuration (PATH, mount dependencies, restart policies)
   - Requires `sudo` for system service creation
   - Creates service files in `/usr/lib/systemd/system/` (standard package location)
 - **enable**: Enable service to start on boot (`systemctl enable`)
@@ -977,7 +986,11 @@ func getUserHomeDir() string {
 - **remove**: Remove service file completely from `/usr/lib/systemd/system/`
 - **status**: Show service status (`systemctl status`)
 - **list**: List all vhdm mount services from `/usr/lib/systemd/system/`
+- **monitor**: (Hidden) Mount VHD + continuous health monitoring (used by systemd)
+  - Mounts VHD, then loops checking mount accessibility every N seconds
+  - Exits with error if mount fails → triggers systemd auto-restart
+  - Configurable health check interval via `--interval` flag
 - Uses UUID-based mounting to prevent race conditions with concurrent service startup
 - Multiple VHD services can start in parallel without device conflicts
-- Follows standard systemd conventions: service files in `/usr/lib/systemd/system/`, symlinks in `/etc/systemd/system/` when enabled
+- Automatic recovery: Services restart automatically if mount becomes inaccessible
 

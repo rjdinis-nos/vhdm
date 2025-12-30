@@ -232,7 +232,8 @@ func TestConcurrentServiceStartup(t *testing.T) {
 			args = append(args, name+".service")
 		}
 
-		cmd := exec.Command("sudo", "systemctl", args...)
+		cmdArgs := append([]string{"systemctl"}, args...)
+		cmd := exec.Command("sudo", cmdArgs...)
 		output, err := cmd.CombinedOutput()
 
 		if err != nil {

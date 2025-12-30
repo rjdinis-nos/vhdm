@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -32,6 +33,7 @@ Note: These operations require root privileges (sudo).`,
 		newServiceRemoveCmd(),
 		newServiceStatusCmd(),
 		newServiceListCmd(),
+		newServiceMonitorCmd(),
 	)
 
 	return cmd
@@ -39,10 +41,11 @@ Note: These operations require root privileges (sudo).`,
 
 func newServiceCreateCmd() *cobra.Command {
 	var (
-		vhdPath     string
-		mountPoint  string
-		fsType      string
-		serviceName string
+		vhdPath            string
+		mountPoint         string
+		fsType             string
+		serviceName        string
+		healthCheckInterval int
 	)
 
 	cmd := &cobra.Command{
@@ -54,13 +57,15 @@ The service will:
 - Attach the VHD to WSL
 - Create the mount point if needed
 - Mount the VHD to the specified path
+- Monitor mount health with configurable interval
 - Run automatically when WSL starts
 
 Note: Requires root privileges (sudo).`,
 		Example: `  vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data
-  vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data --name my-disk`,
+  vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data --name my-disk
+  vhdm service create --vhd-path C:/VMs/disk.vhdx --mount-point /mnt/data --health-check-interval 60`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runServiceCreate(vhdPath, mountPoint, fsType, serviceName)
+			return runServiceCreate(vhdPath, mountPoint, fsType, serviceName, healthCheckInterval)
 		},
 	}
 
@@ -68,6 +73,7 @@ Note: Requires root privileges (sudo).`,
 	cmd.Flags().StringVar(&mountPoint, "mount-point", "", "Mount point path (required)")
 	cmd.Flags().StringVar(&fsType, "type", "ext4", "Filesystem type")
 	cmd.Flags().StringVar(&serviceName, "name", "", "Service name (auto-generated if not provided)")
+	cmd.Flags().IntVar(&healthCheckInterval, "health-check-interval", 30, "Health check interval in seconds")
 	cmd.MarkFlagRequired("vhd-path")
 	cmd.MarkFlagRequired("mount-point")
 
@@ -156,7 +162,7 @@ func newServiceListCmd() *cobra.Command {
 	}
 }
 
-func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
+func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string, healthCheckInterval int) error {
 	ctx := getContext()
 	log := ctx.Logger
 
@@ -169,6 +175,9 @@ func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
 	}
 	if err := validation.ValidateFilesystemType(fsType); err != nil {
 		return &types.VHDError{Op: "service create", Err: err}
+	}
+	if healthCheckInterval < 1 {
+		return &types.VHDError{Op: "service create", Err: fmt.Errorf("health check interval must be at least 1 second")}
 	}
 
 	// Check if VHD file exists
@@ -222,16 +231,17 @@ func runServiceCreate(vhdPath, mountPoint, fsType, serviceName string) error {
 
 	log.Debug("Creating service: %s", serviceName)
 
+	// Get tracking file path (use the context's config which handles SUDO_USER)
+	trackingFile := ctx.Config.TrackingFile
+
 	// Get vhdm binary path
 	vhdmPath, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("failed to get vhdm executable path: %w", err)
 	}
 
-	// Get tracking file path (use the context's config which handles SUDO_USER)
-	trackingFile := ctx.Config.TrackingFile
-
 	// Create systemd service content
+	// Use 'vhdm service monitor' subcommand with health monitoring for automatic restart if mount fails
 	// Use UUID instead of path to avoid device detection race conditions
 	// when multiple services start concurrently
 	serviceContent := fmt.Sprintf(`[Unit]
@@ -241,18 +251,19 @@ Requires=mnt-c.mount
 Before=network.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/mnt/c/WINDOWS/system32:/mnt/c/WINDOWS"
 Environment="VHDM_TRACKING_FILE=%s"
-ExecStart=%s mount --uuid "%s" --mount-point "%s"
-ExecStop=%s umount --mount-point "%s"
+Environment="HOME=%s"
+ExecStart=%s service monitor --uuid "%s" --mount-point "%s" --interval %d
+Restart=on-failure
+RestartSec=10
 TimeoutStartSec=60
 TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target
-`, vhdPath, trackingFile, vhdmPath, uuid, mountPoint, vhdmPath, mountPoint)
+`, vhdPath, trackingFile, os.Getenv("HOME"), vhdmPath, uuid, mountPoint, healthCheckInterval)
 
 	// System services require root privileges
 	if os.Geteuid() != 0 {
@@ -279,14 +290,40 @@ WantedBy=multi-user.target
 	log.Info("  Mount Point: %s", mountPoint)
 	log.Info("  UUID: %s", uuid)
 	log.Info("")
-	log.Info("To enable the service to start on boot:")
-	log.Info("  sudo vhdm service enable --name %s", strings.TrimSuffix(serviceName, ".service"))
+	log.Info("Features:")
+	log.Info("  • UUID-based mounting (prevents race conditions)")
+	log.Info("  • Health monitoring (checks mount every %ds)", healthCheckInterval)
+	log.Info("  • Auto-restart on failure (10s delay)")
 	log.Info("")
-	log.Info("To start the service now:")
-	log.Info("  sudo systemctl start %s", serviceName)
+
+	// Reload systemd daemon
+	log.Info("Reloading systemd daemon...")
+	if err := exec.Command("systemctl", "daemon-reload").Run(); err != nil {
+		log.Warn("Failed to reload systemd daemon: %v", err)
+	}
+
+	// Enable service
+	log.Info("Enabling service...")
+	cmd := exec.Command("systemctl", "enable", serviceName)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to enable service: %w\n%s", err, string(output))
+	}
+	log.Info("✓ Service enabled (will start on boot)")
+
+	// Start service
+	log.Info("Starting service...")
+	cmd = exec.Command("systemctl", "start", serviceName)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to start service: %w\n%s", err, string(output))
+	}
+	log.Info("✓ Service started")
 	log.Info("")
-	log.Info("Note: Service uses UUID for reliable device identification")
-	log.Info("      This prevents race conditions when multiple VHDs mount at boot")
+
+	// Show service status
+	log.Info("Service Status:")
+	cmd = exec.Command("systemctl", "status", serviceName, "--no-pager", "--lines=10")
+	output, _ := cmd.CombinedOutput()
+	fmt.Println(string(output))
 
 	return nil
 }
@@ -489,4 +526,83 @@ func runServiceList() error {
 	}
 
 	return nil
+}
+
+func newServiceMonitorCmd() *cobra.Command {
+	var (
+		uuid     string
+		mountPoint string
+		interval int
+	)
+
+	cmd := &cobra.Command{
+		Use:    "monitor",
+		Short:  "Monitor VHD mount health (internal use by systemd services)",
+		Hidden: true, // Hidden from main help - internal command for systemd services
+		Long: `Monitor VHD mount health with automatic restart on failure.
+
+This command is used internally by systemd services to:
+1. Mount the VHD using the provided UUID
+2. Monitor mount health at configurable intervals
+3. Exit with error if mount becomes inaccessible (triggers systemd restart)
+
+This command should not be run manually - it's called by systemd services.`,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runServiceMonitor(uuid, mountPoint, interval)
+		},
+	}
+
+	cmd.Flags().StringVar(&uuid, "uuid", "", "VHD filesystem UUID (required)")
+	cmd.Flags().StringVar(&mountPoint, "mount-point", "", "Mount point path (required)")
+	cmd.Flags().IntVar(&interval, "interval", 30, "Health check interval in seconds")
+	cmd.MarkFlagRequired("uuid")
+	cmd.MarkFlagRequired("mount-point")
+
+	return cmd
+}
+
+func runServiceMonitor(uuid, mountPoint string, interval int) error {
+	ctx := getContext()
+	log := ctx.Logger
+
+	// Validate inputs
+	if err := validation.ValidateUUID(uuid); err != nil {
+		return &types.VHDError{Op: "service monitor", Err: err}
+	}
+	if err := validation.ValidateMountPoint(mountPoint); err != nil {
+		return &types.VHDError{Op: "service monitor", Err: err}
+	}
+	if interval < 1 {
+		return &types.VHDError{Op: "service monitor", Err: fmt.Errorf("health check interval must be at least 1 second")}
+	}
+
+	log.Info("Starting VHD mount monitor")
+	log.Info("  UUID: %s", uuid)
+	log.Info("  Mount Point: %s", mountPoint)
+	log.Info("  Check Interval: %ds", interval)
+
+	// First, mount the VHD
+	log.Info("Mounting VHD...")
+	if err := runMount("", uuid, "", mountPoint); err != nil {
+		return fmt.Errorf("failed to mount VHD: %w", err)
+	}
+
+	log.Info("✓ Mount successful")
+	log.Info("Starting health check loop (every %d seconds)...", interval)
+
+	// Health check loop
+	for {
+		// Check if mount point is accessible
+		cmd := exec.Command("mountpoint", "-q", mountPoint)
+		if err := cmd.Run(); err != nil {
+			log.Error("Health check failed: mount point inaccessible")
+			log.Error("Mount point: %s", mountPoint)
+			return fmt.Errorf("mount point %s is no longer accessible - triggering systemd restart", mountPoint)
+		}
+
+		log.Debug("Health check passed: mount point is accessible")
+		
+		// Wait for configured interval before next check
+		time.Sleep(time.Duration(interval) * time.Second)
+	}
 }

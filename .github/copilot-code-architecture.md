@@ -1,6 +1,15 @@
 # WSL VHD Disk Management - Code Architecture
 
-## High-Level Architecture
+> **⚠️ HISTORICAL REFERENCE**: This document describes the original Bash implementation architecture.
+> The project has been rewritten in Go. This file is kept for reference of design patterns and concepts
+> that remain relevant (e.g., persistent tracking, UUID-based mounting, service management with health checks).
+> 
+> For the current Go implementation, see:
+> - Source code in `internal/` and `pkg/` directories
+> - Main documentation in [copilot-instructions.md](copilot-instructions.md)
+> - Architecture follows similar patterns but implemented in Go with Cobra framework
+
+## High-Level Architecture (Original Bash Implementation)
 
 ### System Components
 

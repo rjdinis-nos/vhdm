@@ -86,7 +86,7 @@ func (c *Client) GetBlockDevices() ([]string, error) {
 
 // GetBlockDevicesWithInfo returns detailed block device information
 func (c *Client) GetBlockDevicesWithInfo() ([]BlockDevice, error) {
-	c.logger.Debug("Running: lsblk -f -o NAME,UUID,FSTYPE,MOUNTPOINTS,FSAVAIL,FSUSE%,SIZE -J")
+	c.logger.Debug("Running: lsblk -f -o NAME,UUID,FSTYPE,MOUNTPOINTS,FSAVAIL,FSUSE%%,SIZE -J")
 
 	cmd := exec.Command("lsblk", "-f", "-o", "NAME,UUID,FSTYPE,MOUNTPOINTS,FSAVAIL,FSUSE%,SIZE", "-J")
 	output, err := cmd.Output()

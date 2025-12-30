@@ -15,7 +15,7 @@ ifeq ($(GOBIN),)
 endif
 
 # Install locations
-PREFIX := /usr/local
+PREFIX ?= /usr/local
 BINDIR := $(PREFIX)/bin
 
 .PHONY: all build clean test test-unit test-integration install uninstall \
