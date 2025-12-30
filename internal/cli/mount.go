@@ -170,9 +170,19 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 
 		// Attach if not already attached
 		if !wasAttached {
+			// Capture device list BEFORE attaching (for new device detection)
+			var oldDevices []string
 			var err error
+			if expectedUUID == "" {
+				oldDevices, err = ctx.WSL.GetBlockDevices()
+				if err != nil {
+					return fmt.Errorf("failed to get block devices before attach: %w", err)
+				}
+			}
+
 			_, err = ctx.WSL.AttachVHD(vhdPath)
-			if err != nil && !types.IsAlreadyAttached(err) {
+			alreadyAttached := types.IsAlreadyAttached(err)
+			if err != nil && !alreadyAttached {
 				return fmt.Errorf("failed to attach: %w", err)
 			}
 
@@ -182,14 +192,26 @@ func runMount(vhdPath, uuid, devName, mountPoint string) error {
 				// Get device name by UUID
 				devName, _ = ctx.WSL.GetDeviceByUUID(uuid)
 				log.Debug("VHD attached with expected UUID: %s (device: %s)", uuid, devName)
-			} else {
-				// No expected UUID - need to detect device and get UUID
-				oldDevices, err := ctx.WSL.GetBlockDevices()
-				if err != nil {
-					return fmt.Errorf("failed to get block devices before attach: %w", err)
+			} else if alreadyAttached {
+				// VHD was already attached - try to use expectedUUID from tracking
+				if expectedUUID != "" {
+					uuid = expectedUUID
+					devName, _ = ctx.WSL.GetDeviceByUUID(uuid)
+					log.Debug("VHD already attached, using tracked UUID: %s (device: %s)", uuid, devName)
+				} else {
+					// No tracking info available - cannot determine which device
+					return &types.VHDError{
+						Op:   "mount",
+						Path: vhdPath,
+						Err:  fmt.Errorf("VHD is already attached but cannot determine device"),
+						Help: "The VHD is already attached but not tracked. Either:\n" +
+							"  1. Detach the VHD first: wsl.exe --unmount <vhd-path>\n" +
+							"  2. Find the device manually and use: vhdm mount --dev-name <device> --mount-point <path>\n" +
+							"  3. If you know the UUID, use: vhdm mount --uuid <uuid> --mount-point <path>",
+					}
 				}
-
-				// Detect new device
+			} else {
+				// Successfully attached - detect new device
 				devName, err = ctx.WSL.DetectNewDevice(oldDevices)
 				if err != nil {
 					return fmt.Errorf("failed to detect device: %w", err)
